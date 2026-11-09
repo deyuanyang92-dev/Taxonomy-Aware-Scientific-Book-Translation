@@ -1,0 +1,134 @@
+"""术语库存储：SQLite。一个库服务所有领域；领域、类群范围、来源层级都是字段。
+
+库位置：--db 参数 > 环境变量 YIKU_DB > ~/.yiku/yiku.db
+"""
+from __future__ import annotations
+
+import os
+import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+
+# 来源类型的默认层级（数字越小越权威）。每个来源可单独指定 tier 覆盖默认值。
+KIND_TIER = {
+    "user": 0,          # 用户裁定
+    "authority": 1,     # 正式记述该类群/概念的权威专著、志书
+    "checklist": 3,     # 物种名录
+    "standard": 4,      # 全国科技名词委、国家标准
+    "translation": 5,   # 名家译本（中英对照书）
+    "zh_original": 5,   # 名家中文论著里的「中文（English）」
+    "thesis": 6,        # 学位论文：仅供参考
+    "external": 8,      # Wikidata 等网络库：只作线索
+    "model": 9,         # 模型建议
+}
+STATUSES = ("已核", "候选", "否决")
+DOMAINS = ("分类学", "进化生物学", "科学史", "分子系统学")  # 常用领域；'*' = 通用
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS sources(
+  key TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, tier INTEGER NOT NULL,
+  domain TEXT NOT NULL DEFAULT '*', path TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS terms(
+  id INTEGER PRIMARY KEY, en TEXT NOT NULL, en_norm TEXT NOT NULL, zh TEXT NOT NULL,
+  domain TEXT NOT NULL DEFAULT '*', scope TEXT NOT NULL DEFAULT '*',
+  source TEXT NOT NULL REFERENCES sources(key), page TEXT, context TEXT,
+  status TEXT NOT NULL DEFAULT '候选', note TEXT,
+  created TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(en_norm, zh, domain, scope, source));
+CREATE INDEX IF NOT EXISTS terms_en ON terms(en_norm);
+"""
+
+
+def default_path() -> Path:
+    return Path(os.environ.get("YIKU_DB") or Path.home() / ".yiku" / "yiku.db")
+
+
+def connect(path: str | Path | None = None) -> sqlite3.Connection:
+    p = Path(path) if path else default_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(p)
+    con.row_factory = sqlite3.Row
+    con.executescript(SCHEMA)
+    return con
+
+
+def norm(en: str) -> str:
+    """英文规范化：小写、合并空白、去首尾标点。学名大小写不敏感地匹配。"""
+    return re.sub(r"\s+", " ", en.strip().strip(".,;:()[]\"'")).lower()
+
+
+def add_source(con, key, title, kind, tier=None, domain="*", path=None, note=None):
+    if kind not in KIND_TIER:
+        raise ValueError(f"kind 必须是 {sorted(KIND_TIER)} 之一")
+    con.execute(
+        "INSERT INTO sources(key,title,kind,tier,domain,path,note) VALUES(?,?,?,?,?,?,?) "
+        "ON CONFLICT(key) DO UPDATE SET title=excluded.title, kind=excluded.kind, tier=excluded.tier, "
+        "domain=excluded.domain, path=excluded.path, note=excluded.note",
+        (key, title, kind, KIND_TIER[kind] if tier is None else tier, domain, path, note))
+    con.commit()
+
+
+def add_term(con, en, zh, source, domain="*", scope="*", page=None, context=None,
+             status="候选", note=None) -> bool:
+    """写入一条术语；同一 (en, zh, 领域, 范围, 来源) 已存在时只在新状态更确定时升级状态。返回是否新增。"""
+    if status not in STATUSES:
+        raise ValueError(f"status 必须是 {STATUSES} 之一")
+    en, zh = en.strip(), zh.strip()
+    if not en or not zh:
+        return False
+    if not con.execute("SELECT 1 FROM sources WHERE key=?", (source,)).fetchone():
+        raise KeyError(f"来源 {source!r} 未登记，先 yiku source add")
+    cur = con.execute(
+        "INSERT OR IGNORE INTO terms(en,en_norm,zh,domain,scope,source,page,context,status,note) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        (en, norm(en), zh, domain or "*", scope or "*", source, page, context, status, note))
+    if cur.rowcount == 0 and status == "已核":
+        con.execute("UPDATE terms SET status='已核' WHERE en_norm=? AND zh=? AND domain=? AND scope=? AND source=?",
+                    (norm(en), zh, domain or "*", scope or "*", source))
+    return cur.rowcount == 1
+
+
+@dataclass
+class Hit:
+    en: str
+    zh: str
+    domain: str
+    scope: str
+    source: str
+    tier: int
+    status: str
+    page: str | None
+    note: str | None
+
+    def cite(self) -> str:
+        return f"{self.source}" + (f" p.{self.page}" if self.page else "")
+
+
+def candidates(con, en: str, domain: str = "*", scope: set[str] | None = None) -> list[Hit]:
+    """某英文术语的全部译名，按可信度排序：已核 > 候选；领域吻合 > 通用；类群吻合 > 通用；来源层级。
+    否决的不返回；其他领域的专用译名不返回（避免把植物学用字带进动物学）。"""
+    scope = scope or set()
+    rows = con.execute(
+        "SELECT t.*, s.tier FROM terms t JOIN sources s ON s.key=t.source "
+        "WHERE t.en_norm=? AND t.status!='否决' AND (t.domain='*' OR t.domain=?)",
+        (norm(en), domain)).fetchall()
+    out = []
+    for r in rows:
+        sc = {x.strip() for x in r["scope"].split(";")}
+        if "*" not in sc and not (sc & scope):
+            continue  # 只适用于别的类群
+        out.append((r, sc))
+
+    def key(item):
+        r, sc = item
+        return (r["status"] != "已核", r["domain"] == "*", "*" in sc, r["tier"])
+
+    out.sort(key=key)
+    return [Hit(r["en"], r["zh"], r["domain"], r["scope"], r["source"], r["tier"], r["status"],
+                r["page"], r["note"]) for r, _ in out]
+
+
+def best(con, en, domain="*", scope=None) -> Hit | None:
+    c = candidates(con, en, domain, scope)
+    return c[0] if c else None

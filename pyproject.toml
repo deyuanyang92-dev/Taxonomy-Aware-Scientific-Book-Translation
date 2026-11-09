@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yiku"
+version = "0.1.0"
+description = "Domain-aware English-Chinese terminology base for scientific translation: learn terms from translated books, inject them into any LLM prompt, check consistency."
+requires-python = ">=3.9"
+dependencies = ["pymupdf", "beautifulsoup4", "python-docx"]
+
+[project.optional-dependencies]
+ocr = ["rapidocr_onnxruntime"]
+dev = ["pytest", "ruff", "mypy"]
+
+[project.scripts]
+yiku = "yiku.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["yiku*"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.mypy]
+ignore_missing_imports = true
