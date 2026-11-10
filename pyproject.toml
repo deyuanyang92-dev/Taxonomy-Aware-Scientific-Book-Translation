@@ -15,9 +15,10 @@ dev = ["pytest", "ruff", "mypy"]
 
 [project.scripts]
 docstore = "docstore.cli:main"
+taxadb = "taxadb.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["docstore*"]
+include = ["docstore*", "taxadb*"]
 
 [tool.ruff]
 line-length = 120

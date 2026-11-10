@@ -87,9 +87,24 @@ _资料库/
 
 ## 3. taxadb 分类数据库
 
-**主库**：`taxa.sqlite`（表 `work / treatment / name_usage`，与 yzz-compilation 对齐）。
-**输入**：docstore 的页面；分卷切分规则在配置里（标题格式、小标题词）。
-**命令**：`taxadb split <key> --rules <规则.toml>`、`taxadb verify <key>`（列关键字段待看图核对）、`taxadb export --family X --format tsv`（名录）、`taxadb worms`（经 oworms 对照有效名）。
+**主库**：`taxa.sqlite`（`<库根>/taxa.sqlite`，即 `/mnt/p/翻译-译作/参考资料/_资料库/taxa.sqlite`），表 `work / treatment / name_usage / field_check`，字段与 yzz-compilation 的 work.csv / treatment.csv / name_usage.csv 对齐。可用 `TAXADB_PATH` 覆盖（测试用）。
+
+**输入**：docstore 的页面（只读 `open_store / pages / page / doc`，不改页文本）；分卷切分规则在 `taxadb/rules/*.toml`（标题格式、小标题词、页眉噪声、图注剥离、清单比对、规范化）。
+
+**命令**（全局 `--db --root --by`，写入者缺省取 `TAXADB_AGENT` / `DOCSTORE_AGENT`）：
+| 命令 | 作用 |
+|---|---|
+| `taxadb split <key> --rules <规则.toml> [--dry]` | 切分一卷：标题 → treatment，异名列表 → name_usage，写入 taxa.sqlite；重切保留 field_check 已核值 |
+| `taxadb verify <key> [--reference tsv] [--sample N] [-o 待核.tsv]` | 列关键字段（学名、命名人年份、中文名、页码、地理分布）待看原页核对的记录；`--sample` 固定种子随机抽查 |
+| `taxadb check <核对.jsonl> [--key]` | 导入看原页核对结果（`{treatment_id, field, db_value, page_value, ok, pdf_page, note}`）；ok=0 的 page_value 写回 treatment；5 个关键字段全核后 verify_status=「关键字段已核」 |
+| `taxadb export [--family X] [--work K] --format tsv\|csv\|json` | 导出名录 |
+| `taxadb status` | 每份 work：书中种数 / 切分数 / 已核数 / 带疑点数 |
+| `taxadb worms` | （计划）经 oworms 对照有效名 |
+
+**规则**（`taxadb/rules/动物志.toml`，按卷33 实际版式）：种标题 `(编号)中文名 学名 命名人,年份（图N）`；编号可独立成行；小标题 `标本采集地/形态特征/生殖和发育/地理分布/讨论`（OCR 变体 fuzzy 匹配）；图注只剥「图 N」开头的短段；页眉按页首 N 行剥；两个数字间的「一」等按 OCR 对范围号「—」的误识规范化为「—」（只改写入副本，不改 docstore 页文本）；主 300 dpi 版本与低 dpi 版本合并补漏（只补插入，替换保留主版本）。
+
+**验收（卷33 试点，2026-11-10）**：切分 203 种 = 书中所列种数（英文摘要 p474「203 species」，总论表 2 编号 (1)–(203)；清单页 OCR 漏 (144)(186) 两行，正文按编号连续接受）；随机抽 20 种关键字段逐字对原页核对（`taxadb/验证/pilot33_v2.jsonl`），11 处 OCR 疑误已修正并留痕，抽查后 20 条错误 0；OCR 疑误清单 `taxadb/验证/ocr_疑误.tsv`（docstore 页文本不动）。
+
 **约束**：用于名录和描述的记录，学名、命名人、年份、数字须为「关键字段已核」。
 
 ---
@@ -123,6 +138,6 @@ _资料库/
 | 3 | translate + `book.toml`：把 Rouse 的写死值移到配置 | 用配置重排 Rouse，与当前成品逐字一致 |
 | 4 | qa 拆出通用与分类学插件；陷阱表回归 | 已知 9 个陷阱均能自动检出 |
 | 5 | publish 配置化；LibreOffice 后端 | 同上逐字一致；无 Word 也能出 PDF |
-| 6 | taxadb 改读 docstore；卷33 修切分规则后推广 | 试点 20 条关键字段错误率达标 |
+| 6 | taxadb 改读 docstore；卷33 修切分规则后推广 | 试点 20 条关键字段错误率达标（✅ 2026-11-10：切分 203=书中 203，抽查 20 条修正后错误 0） |
 
 每步一个提交、配测试；不新建任何「临时的第 N 个库」。
