@@ -10,6 +10,27 @@
 
 核心与领域无关；专业知识放在「领域包」里。分类学（多毛类、星虫、螠虫、蛭类等）是第一个领域包，进化生物学、科学史已有雏形。
 
+
+## 流程总览
+
+```mermaid
+flowchart LR
+    A["权威资料<br/>志书·名录·对照译本"] -->|资料管理员<br/>页面校对员| B[("本地资料库<br/>docstore")]
+    B -->|术语员| C[("术语库<br/>yiku")]
+    B -->|数据整理员| D[("分类数据库<br/>taxadb")]
+    C --> E["初译<br/>模型 A"]
+    B -. 志书例句 .-> E
+    E --> F["双语译审<br/>模型 B"]
+    F --> G["领域验证<br/>表述核对"]
+    G --> H{"主编裁定"}
+    H --> I["闸口改稿"] --> J["出版<br/>Word·PDF"]
+    D --> K["名录·物种汇编"]
+    J -. 读者·审查反馈 .-> L["领域包<br/>规则·陷阱"]
+    L -.-> F
+```
+
+各模块的专职 agent、详细流程图与协作规则见 [agents/README.md](agents/README.md)；通用化设计见 [docs/generic.md](docs/generic.md)。
+
 ## 文档
 
 | 文件 | 内容 |
@@ -17,6 +38,8 @@
 | [docs/design.md](docs/design.md) | 顶层设计：定位、原则、四层架构、数据与状态、模块、模型分配、质量体系、路线图 |
 | [docs/workflow.md](docs/workflow.md) | 工作流细则：依据次序、学习新资料、每章翻译命令、质量门、出版、回流、软件设计 |
 | [docs/architecture.md](docs/architecture.md) | **组件架构与接口**：docstore 本地资料库、termbase、taxadb、translate、qa、publish；重构顺序与验收 |
+| [agents/README.md](agents/README.md) | **多智能体分工**：10 个角色（主编、资料管理员、页面校对员、术语员、数据整理员、译者、双语审校、领域验证员、表述编辑、出版员）、流程图、协作规则；`.claude/agents/` 为可直接调用的定义 |
+| [docs/generic.md](docs/generic.md) | **通用专业翻译系统**：核心概念、十阶段流程、领域包插件接口、学习回路、软件形态 |
 | [docs/comparison.md](docs/comparison.md) | 与开源翻译项目（translation-agent、translate-book、book-translator、claude-translation-skill、PDFMathTranslate/BabelDOC 等）和行业标准（ISO 17100/18587、MQM、CAT 工具）的对比 |
 | [skill/](skill/) | 给模型用的技能（任何模型照着执行）：SKILL.md、RULES、PROMPTS、TERMS、STYLE、领域包 |
 
