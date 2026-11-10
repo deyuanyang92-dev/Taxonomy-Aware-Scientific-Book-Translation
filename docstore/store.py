@@ -135,9 +135,9 @@ class Store:
         (self.root / "pages").mkdir(exist_ok=True)
         self.registry_path = self.root / "registry.tsv"
         self.db_path = self.root / "docstore.sqlite"
-        self.con = sqlite3.connect(self.db_path, timeout=60)
+        self.con = sqlite3.connect(self.db_path, timeout=600)
         self.con.execute("PRAGMA journal_mode=WAL")
-        self.con.execute("PRAGMA busy_timeout=60000")
+        self.con.execute("PRAGMA busy_timeout=600000")
         self.con.executescript(_SCHEMA)
         self._reg: dict[str, dict] | None = None
         self._reg_mtime = 0.0
@@ -269,6 +269,30 @@ class Store:
             self.con.execute("DELETE FROM docs WHERE key=?", (old,))
             self.con.execute("UPDATE pages SET key=? WHERE key=?", (new, old))
 
+    def attach(self, key: str, path: str | Path, *, by: str | None = None) -> dict:
+        """给已登记（如「原件缺失」）的资料绑定原件：补 path、sha256、pages，status 改为 registered。
+        不复制、不移动原件。返回核对信息（PDF 页数 vs 已有页面记录）。"""
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(str(p))
+        sha = sha256_file(p)
+        npages = _pdf_pages(p)
+        with self.edit_registry() as reg:
+            if key not in reg:
+                raise KeyError(f"未登记的资料: {key}")
+            other = next((r["key"] for r in reg.values() if r["sha256"] == sha and r["key"] != key), None)
+            if other:
+                raise ValueError(f"该原件已登记为 {other}")
+            row = reg[key]
+            if row["sha256"] and row["sha256"] != sha:
+                raise ValueError(f"{key} 已绑定另一原件（sha256 {row['sha256'][:12]}…）")
+            row.update(path=str(p), sha256=sha, pages=str(npages or ""),
+                       status="registered" if row["status"] == "原件缺失" else row["status"])
+            row["note"] = _append_note(row["note"], f"原件绑定 {now()[:10]} by {agent(by)}")
+        nums = self.page_numbers(key)
+        return {"key": key, "sha256": sha, "pdf_pages": npages, "page_records": len(nums),
+                "min_page": min(nums) if nums else None, "max_page": max(nums) if nums else None}
+
     # ---------------- 页面 ----------------
     def page_path(self, key: str, n: int) -> Path:
         return self.root / "pages" / key / f"p{int(n):04d}.json"
@@ -367,20 +391,27 @@ class Store:
 
     def rebuild(self) -> dict:
         """由 registry.tsv 与 pages/*/pNNNN.json 完全重建 sqlite。"""
-        self.con.executescript("DROP TABLE IF EXISTS docs; DROP TABLE IF EXISTS pages; DROP TABLE IF EXISTS fts;")
-        self.con.executescript(_SCHEMA)
+        # 先读完所有页面，再在一个写事务里替换，避免其他进程写到一半看到「表不存在」
         self._reg = None
-        n = 0
-        for row in self.docs():
-            self._index_doc(row)
+        all_pages = []
         for d in sorted((self.root / "pages").iterdir()):
-            if not d.is_dir():
-                continue
-            for f in sorted(d.glob("p[0-9][0-9][0-9][0-9].json")):
-                self._index_page(json.loads(f.read_text(encoding="utf-8")))
-                n += 1
+            if d.is_dir():
+                for f in sorted(d.glob("p[0-9][0-9][0-9][0-9].json")):
+                    all_pages.append(json.loads(f.read_text(encoding="utf-8")))
         self.con.commit()
-        return {"docs": len(self.docs()), "pages": n}
+        self.con.execute("BEGIN IMMEDIATE")
+        try:
+            for stmt in ("DELETE FROM docs", "DELETE FROM pages", "DELETE FROM fts"):
+                self.con.execute(stmt)
+            for row in self.docs():
+                self._index_doc(row)
+            for pg in all_pages:
+                self._index_page(pg)
+            self.con.commit()
+        except BaseException:
+            self.con.rollback()
+            raise
+        return {"docs": len(self.docs()), "pages": len(all_pages)}
 
     # ---------------- 读取接口 ----------------
     def printed(self, key: str, n: int) -> int | None:

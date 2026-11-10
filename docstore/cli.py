@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach"}
 
 
 def _by(args) -> str:
@@ -193,6 +193,50 @@ def cmd_rename(st: Store, a) -> None:
     print(f"{a.old} → {a.new}")
 
 
+def check_offset(st: Store, key: str, samples: int = 3) -> list[tuple[int, int | None, float]]:
+    """抽几页：用 PDF 文本层（无则 OCR）比对已有页文本，返回 (PDF页, 最像的已有页, 相似度)。"""
+    import difflib
+
+    import fitz
+
+    d = st.doc(key)
+    nums = st.page_numbers(key)
+    out: list[tuple[int, int | None, float]] = []
+    if not nums:
+        return out
+    with fitz.open(d["path"]) as pdf:
+        n = len(pdf)
+        picks = [max(1, n * i // (samples + 1)) for i in range(1, samples + 1)]
+        for pg in picks:
+            txt = pdf[pg - 1].get_text()
+            if len("".join(txt.split())) < 30:
+                txt, _ = textify.OCR_FUNC(d["path"], pg, 200)
+            a = "".join(txt.split())[:500]
+            best, best_r = None, 0.0
+            for m in range(pg - 8, pg + 9):
+                rec = st.read_page(key, m)
+                if not rec:
+                    continue
+                for v in [rec] + rec.get("alternates", []):
+                    r = difflib.SequenceMatcher(None, a, "".join((v.get("text") or "").split())[:500]).ratio()
+                    if r > best_r:
+                        best, best_r = m, r
+            out.append((pg, best, round(best_r, 2)))
+    return out
+
+
+def cmd_attach(st: Store, a) -> None:
+    r = st.attach(a.key, a.pdf, by=_by(a))
+    print(json.dumps(r, ensure_ascii=False))
+    if r["pdf_pages"] != r["page_records"]:
+        print(f"提醒：PDF {r['pdf_pages']} 页，已有页面记录 {r['page_records']} 页，不一致（未改页号）")
+    if a.check:
+        res = check_offset(st, a.key)
+        for pg, best, ratio in res:
+            flag = "一致" if best == pg and ratio >= 0.5 else "不一致或无法确认"
+            print(f"  PDF p{pg} ↔ 已有 p{best}  相似度 {ratio}  {flag}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="docstore", description="本地资料库：登记、文本化、核对、检索、引页")
     ap.add_argument("--root", help="库根（默认 $DOCSTORE_ROOT 或 /mnt/p/翻译-译作/参考资料/_资料库）")
@@ -286,6 +330,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("key")
     s.add_argument("fields", nargs="+")
     s.set_defaults(fn=cmd_set)
+
+    s = sub.add_parser("attach", help="给已登记资料（如「原件缺失」）绑定原件 PDF，不复制不移动")
+    s.add_argument("key")
+    s.add_argument("pdf")
+    s.add_argument("--check", action="store_true", help="抽页比对 PDF 与已有页文本，核页码偏移")
+    s.set_defaults(fn=cmd_attach)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")

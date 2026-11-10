@@ -18,6 +18,7 @@
 - 写入一律带 `--by <模型名>`（如 `codex`、`claude-opus`、`claude-haiku`、`deepseek`），或先设环境变量 `DOCSTORE_AGENT`。未带时命令会提醒，写入者记为 `unknown`。
 - 多个模型可同时写：同一页的不同版本并存（按核对等级、dpi 选主版本），校正走 `docstore verify`，不覆盖他人结果。
 - 发现库外已有的页面数据（pNNNN.json / pNNNN.txt / 含 pages 表的 sqlite），先 `docstore detect <目录>`，再 `docstore import <目录> --adapter <名>` 收编；不要另起炉灶。
+- 找原件 PDF 要同时搜 `/mnt/n` 和 `/mnt/p` 两个盘（不少原件在 `/mnt/n/Sandisk/`、OneDrive、微信/QQ 目录）；找到后先比 sha256，再用 `docstore attach <key> <pdf> --check` 绑定到已登记资料（不复制、不移动原件），不要另登记一份。
 - 库根默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可用 `--root` 或 `DOCSTORE_ROOT` 覆盖。
 
 ## 单一主库

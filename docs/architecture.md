@@ -61,7 +61,8 @@ _资料库/
 | `docstore rebuild` | 由 registry.tsv 与 pages/*.json 重建 sqlite |
 | `docstore detect <目录>` | 扫描库外疑似页面库，报告格式、对应资料（sha256 / 目录名 / 页数）、是否已导入 |
 | `docstore import <目录> --adapter codex_kb\|sqlite_pages\|json_pages\|txt_pages [--map M] [--key K --offset N --dpi D] [--producer P]` | 收编库外页面库，只读来源 |
-| `docstore pair <keyA> <keyB>`、`docstore set <key> 字段=值…` | 设对照书、改登记字段 |
+| `docstore attach <key> <pdf> [--check]` | 给已登记资料（如「原件缺失」）绑定原件：补 path、sha256、pages，status 改回 registered；`--check` 抽页比对 PDF 与已有页文本核页码偏移。不复制、不移动原件；找原件要搜 `/mnt/n` 与 `/mnt/p` 两个盘 |
+| `docstore pair <keyA> <keyB>`、`docstore set <key> 字段=值…`、`docstore rename <旧> <新>` | 设对照书、改登记字段、改 key |
 
 **库接口（Python）**：`open_store(root)`、`store.search(q, **filters)`、`store.page(key, n)`、`store.pages(key)`、`store.doc(key)`。其他组件和技能只用这几个函数。
 

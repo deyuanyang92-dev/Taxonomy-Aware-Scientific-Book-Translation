@@ -209,3 +209,22 @@ def test_map_key_reuses_registered_doc(lib):
     m.write_text("dir\tkey\toffset\tdpi\n志测叶须\t志测\t0\t200\n", encoding="utf-8")
     r = adapters.run_import(st, tmp / "R", "txt_pages", map_file=str(m), log=lambda m: None)
     assert r["docs"] == ["志测"] and len(st.docs()) == 1
+
+
+def test_attach_binds_original(lib, capsys):
+    st, pdf, tmp = lib
+    key, _ = st.register(None, key="论文_缺", status="原件缺失")
+    for n in (1, 2, 3):
+        st.put_version(key, n, __import__("docstore.store", fromlist=["x"]).make_version(
+            "欧努菲虫科 Onuphidae 体长形，口前叶具五个后头触手，背须指状。" * 2 if n == 1 else f"第{n}页",
+            "ocr", producer="claude-script", dpi=200))
+    cli.main(["--root", str(st.root), "--by", "pytest", "attach", key, str(pdf), "--check"])
+    out = capsys.readouterr().out
+    st2 = open_store(st.root)
+    d = st2.doc(key)
+    assert d["status"] == "registered" and d["pages"] == "3" and len(d["sha256"]) == 64 and d["path"] == str(pdf)
+    assert "PDF p" in out
+    with pytest.raises(ValueError):          # 同一原件不能绑到第二个 key
+        k2, _ = st2.register(None, key="另一", status="原件缺失")
+        st2.attach(k2, pdf)
+    assert pdf.exists()                       # 不移动原件
