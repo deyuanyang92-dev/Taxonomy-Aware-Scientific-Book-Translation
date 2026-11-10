@@ -6,3 +6,5 @@ __pycache__/
 *.docx
 preface_config.json
 .pytest_cache/
+_资料库/
+build/
