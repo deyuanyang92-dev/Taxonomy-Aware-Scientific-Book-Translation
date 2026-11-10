@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import classify
-from .store import Store, _flock, _int, agent, make_version, now, sha256_file
+from .store import Store, _flock, _int, agent, check_key, make_version, now, sha256_file
 
 PAGE_JSON = re.compile(r"^p(\d{4})\.json$")
 PAGE_TXT = re.compile(r"^p(\d{4})\.txt$")
@@ -51,10 +51,11 @@ def resolve_doc(store: Store, *, key_hint: str, path: str = "", sha: str = "", b
         hit = store.find_sha(sha)
         if hit:
             return hit["key"]
+    check_key(key_hint)
     if not (path and os.path.exists(path)):
         reg = {r["key"]: r for r in store.docs()}
-        if key_hint in reg and (reg[key_hint]["status"] == "原件缺失" or not reg[key_hint]["sha256"]):
-            return key_hint
+        if key_hint in reg and (not sha or reg[key_hint]["status"] == "原件缺失" or not reg[key_hint]["sha256"]):
+            return key_hint   # 来源只给了名字（如 --map 指定的 key）：用已登记的同名资料
         key, _ = store.register(None, by=by, key=key_hint, sha=sha, pages=pages, status="原件缺失", **meta)
         log(f"  登记（原件缺失）{key}")
         return key
@@ -243,6 +244,8 @@ def _load_map(path: str | None) -> dict[str, dict]:
     out = {}
     with open(path, encoding="utf-8", newline="") as f:
         for row in csv.DictReader((ln for ln in f if not ln.startswith("#")), delimiter="\t"):
+            if row.get("key") and row["key"] != "-":
+                check_key(row["key"])
             out[row["dir"]] = row
     return out
 
@@ -355,6 +358,8 @@ def run_import(store: Store, src: str | Path, adapter: str, *, by: str | None = 
         raise ValueError(f"未知 adapter {adapter}；可选 {', '.join(ADAPTERS)}")
     by = agent(by)
     src = Path(src)
+    if kw.get("key"):
+        check_key(kw["key"])
     fn = ADAPTERS[adapter]
     args = {"by": by, "log": log, **kw}
     if producer:

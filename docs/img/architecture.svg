@@ -125,9 +125,9 @@
     <line x1="780" y1="328" x2="790" y2="234" stroke="#a8641a" stroke-dasharray="5 4" marker-end="url(#aha)"/>
   </g>
   <g font-size="11.5" paint-order="stroke" stroke="#f4f6f5" stroke-width="4" stroke-linejoin="round">
-    <text x="146" y="270" fill="#1f6f5c">术语注入</text>
+    <text x="200" y="282" fill="#1f6f5c">术语注入</text>
     <text x="356" y="278" fill="#1f6f5c">志书例句</text>
-    <text x="574" y="262" fill="#1f6f5c">规则 · 陷阱 · 验证器</text>
+    <text x="655" y="252" text-anchor="end" fill="#1f6f5c">规则 · 陷阱 · 验证器</text>
     <text x="796" y="300" fill="#a8641a">回流：新规则 · 新陷阱</text>
   </g>
 

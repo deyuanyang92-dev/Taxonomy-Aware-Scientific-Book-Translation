@@ -159,3 +159,53 @@ def test_import_sqlite_and_codex_kb(lib):
     assert p["verify_level"] == "ocr_verified" and p["text"] == "盘首蚕 Lopadorhynchus"
     assert p["history"][-1]["fixes"] == {"盘首垂": "盘首蚕", "Lopadorhynthus": "Lopadorhynchus"}
     assert len(p["alternates"]) >= 2      # 旧库版本 + OCR初识原文 + 空文本层都在
+
+
+def test_rename_moves_pages(lib):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, log=lambda m: None)
+    st.rename(key, "志测2")
+    assert st.page("志测2", 1)["key"] == "志测2" and st.search("欧努菲虫")[0]["key"] == "志测2"
+    assert "曾用 key" in st.doc("志测2")["note"]
+
+
+def test_registry_roundtrip_quotes_tabs(lib):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    title = 'A "quoted"\ttitle, with tab'
+    st.update_doc(key, title=title, note='说"明"')
+    st2 = open_store(st.root)
+    assert st2.doc(key)["title"] == title and st2.doc(key)["note"] == '说"明"'
+    assert len(st2.docs()) == 1
+
+
+def test_key_validation(lib):
+    from docstore.store import check_key
+    st, pdf, tmp = lib
+    for bad in ("../x", ".hidden", "a/b", "a..b", ""):
+        with pytest.raises(ValueError):
+            check_key(bad)
+    with pytest.raises(ValueError):
+        adapters.run_import(st, tmp, "txt_pages", key="../evil", log=lambda m: None)
+    m = tmp / "map.tsv"
+    m.write_text("dir\tkey\toffset\tdpi\nx\t../evil\t0\t200\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        adapters.run_import(st, tmp, "txt_pages", map_file=str(m), log=lambda m: None)
+    with pytest.raises(ValueError):
+        st.rename("nope", "..")
+    key, _ = st.register(pdf, key="..evil/../k")
+    check_key(key)
+
+
+def test_map_key_reuses_registered_doc(lib):
+    st, pdf, tmp = lib
+    key, _ = st.register(pdf, key="志测")
+    d = tmp / "R" / "志测叶须"
+    d.mkdir(parents=True)
+    for n in (1, 2, 3):
+        (d / f"p{n:04d}.txt").write_text(f"缓存第{n}页", encoding="utf-8")
+    m = tmp / "map.tsv"
+    m.write_text("dir\tkey\toffset\tdpi\n志测叶须\t志测\t0\t200\n", encoding="utf-8")
+    r = adapters.run_import(st, tmp / "R", "txt_pages", map_file=str(m), log=lambda m: None)
+    assert r["docs"] == ["志测"] and len(st.docs()) == 1

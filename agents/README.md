@@ -4,47 +4,13 @@
 
 ## 总流程图
 
-```mermaid
-flowchart TB
-    subgraph SRC["① 资料层"]
-        PDF["权威资料<br/>志书·名录·专著·论文·对照译本"]
-        EXT["外部规范<br/>名词委·WoRMS·ANNiKEY"]
-    end
+![系统架构](../docs/img/architecture.svg)
 
-    subgraph KB["② 知识底座（单一主库）"]
-        DS[("docstore<br/>本地资料库<br/>页文本·检索·核对等级")]
-        TB[("termbase / yiku<br/>术语库<br/>定名·出处·依据等级")]
-        TX[("taxadb<br/>分类数据库<br/>记述·名称用法·名录")]
-        DP["领域包<br/>依据次序·写法·陷阱·验证器"]
-    end
+绿色实线框是主库（每类数据只存一处）；绿色虚线是参考输入，不直接改译文；橙色虚线是反馈回流。
 
-    subgraph LINE["③ 翻译生产线"]
-        T1["术语表与缺口"] --> T2["初译<br/>模型 A"]
-        T2 --> T3["双语译审<br/>模型 B ≠ A"]
-        T3 --> T4["领域验证<br/>学名·数字·引文·检索表"]
-        T4 --> T5["本行表述核对"]
-        T5 --> T6{"主编裁定"}
-        T6 -->|采纳| T7["闸口：唯一改稿入口"]
-        T6 -->|驳回| LOG["裁定记录"]
-    end
+## 模型分派与升级
 
-    subgraph OUT["④ 出口"]
-        BOOK["译著<br/>Word·PDF·传播版"]
-        LIST["名录·物种汇编"]
-    end
-
-    PDF -->|资料管理员<br/>页面校对员| DS
-    EXT -->|术语员| TB
-    DS -->|术语员| TB
-    DS -->|数据整理员| TX
-    DS -. 志书例句 .-> T2
-    TB --> T1
-    DP -.-> T3 & T4 & T5
-    T7 --> PUB["出版员"] --> BOOK
-    TX --> LIST
-    BOOK -. 读者·外部审查 .-> FB["反馈"]
-    FB -->|主编| DP
-```
+![模型分派与升级](../docs/img/model-routing.svg)
 
 ## 角色表
 

@@ -13,6 +13,7 @@ import datetime as _dt
 import difflib
 import fcntl
 import hashlib
+import io
 import json
 import os
 import re
@@ -150,15 +151,18 @@ class Store:
         if self.registry_path.exists():
             with open(self.registry_path, encoding="utf-8", newline="") as f:
                 for row in csv.DictReader(f, delimiter="\t"):
+                    check_key(row["key"])
                     reg[row["key"]] = {k: (row.get(k) or "") for k in FIELDS}
         self._reg, self._reg_mtime = reg, mt
         return reg
 
     def _save_registry(self, reg: dict[str, dict]) -> None:
-        lines = ["\t".join(FIELDS)]
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter="\t", lineterminator="\n")
+        w.writerow(FIELDS)
         for row in reg.values():
-            lines.append("\t".join(str(row.get(k, "")).replace("\t", " ").replace("\n", " ") for k in FIELDS))
-        _atomic_write(self.registry_path, "\n".join(lines) + "\n")
+            w.writerow([str(row.get(k, "")) for k in FIELDS])
+        _atomic_write(self.registry_path, buf.getvalue())
         self._reg = None
 
     @contextlib.contextmanager
@@ -239,6 +243,31 @@ class Store:
             for f, v in fields.items():
                 if f in FIELDS and f != "key":
                     reg[key][f] = "" if v is None else str(v)
+
+    def rename(self, old: str, new: str) -> None:
+        """改 key：登记表、对照书引用、pages/<key>/ 目录与索引一起改（目录整体移动，不删数据）。"""
+        check_key(new)
+        with self.edit_registry() as reg:
+            if old not in reg:
+                raise KeyError(old)
+            if new in reg:
+                raise ValueError(f"key 已存在: {new}")
+            row = reg.pop(old)
+            row["key"] = new
+            row["note"] = _append_note(row["note"], f"曾用 key {old}")
+            reg[new] = row
+            for r in reg.values():
+                if r["pair"] == old:
+                    r["pair"] = new
+            src, dst = self.root / "pages" / old, self.root / "pages" / new
+            if src.exists():
+                os.rename(src, dst)
+                for f in dst.glob("p[0-9][0-9][0-9][0-9].json"):
+                    pg = json.loads(f.read_text(encoding="utf-8"))
+                    pg["key"] = new
+                    _atomic_write(f, json.dumps(pg, ensure_ascii=False, indent=1))
+            self.con.execute("DELETE FROM docs WHERE key=?", (old,))
+            self.con.execute("UPDATE pages SET key=? WHERE key=?", (new, old))
 
     # ---------------- 页面 ----------------
     def page_path(self, key: str, n: int) -> Path:
@@ -468,8 +497,23 @@ def _append_note(note: str, add: str) -> str:
     return add if not note else (note if add in note else f"{note}；{add}")
 
 
+def clean_key(k: str) -> str:
+    prev = None
+    while prev != k:
+        prev = k
+        k = re.sub(r"[\s/\\:*?\"<>|]+", "_", k.replace("..", "_")).strip("_").lstrip(".")
+    return k or "doc"
+
+
+def check_key(k: str) -> str:
+    """key 会拼进 pages/<key>/、images/<key>/ 路径：必须已清洗、不含 ..、不以 . 开头。"""
+    if not k or k != clean_key(k) or ".." in k or k.startswith("."):
+        raise ValueError(f"key 不合法: {k!r}")
+    return k
+
+
 def _unique_key(k: str, reg: dict) -> str:
-    k = re.sub(r"[\s/\\:*?\"<>|]+", "_", k).strip("_") or "doc"
+    k = clean_key(k)
     if k not in reg:
         return k
     i = 2

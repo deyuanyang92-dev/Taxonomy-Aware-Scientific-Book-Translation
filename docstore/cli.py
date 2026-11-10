@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename"}
 
 
 def _by(args) -> str:
@@ -188,6 +188,11 @@ def cmd_set(st: Store, a) -> None:
     print(st.doc(a.key))
 
 
+def cmd_rename(st: Store, a) -> None:
+    st.rename(a.old, a.new)
+    print(f"{a.old} → {a.new}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="docstore", description="本地资料库：登记、文本化、核对、检索、引页")
     ap.add_argument("--root", help="库根（默认 $DOCSTORE_ROOT 或 /mnt/p/翻译-译作/参考资料/_资料库）")
@@ -281,6 +286,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("key")
     s.add_argument("fields", nargs="+")
     s.set_defaults(fn=cmd_set)
+
+    s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
+    s.add_argument("old")
+    s.add_argument("new")
+    s.set_defaults(fn=cmd_rename)
 
     a = ap.parse_args(argv)
     if a.cmd in WRITE_CMDS and not a.by and not os.environ.get("DOCSTORE_AGENT"):

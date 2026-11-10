@@ -13,21 +13,11 @@
 
 ## 流程总览
 
-```mermaid
-flowchart LR
-    A["权威资料<br/>志书·名录·对照译本"] -->|资料管理员<br/>页面校对员| B[("本地资料库<br/>docstore")]
-    B -->|术语员| C[("术语库<br/>yiku")]
-    B -->|数据整理员| D[("分类数据库<br/>taxadb")]
-    C --> E["初译<br/>模型 A"]
-    B -. 志书例句 .-> E
-    E --> F["双语译审<br/>模型 B"]
-    F --> G["领域验证<br/>表述核对"]
-    G --> H{"主编裁定"}
-    H --> I["闸口改稿"] --> J["出版<br/>Word·PDF"]
-    D --> K["名录·物种汇编"]
-    J -. 读者·审查反馈 .-> L["领域包<br/>规则·陷阱"]
-    L -.-> F
-```
+![系统架构：资料层 → 知识底座 → 翻译生产线 → 出口](docs/img/architecture.svg)
+
+四层自上而下：资料进本地资料库（docstore），术语员建术语库（yiku），数据整理员建分类数据库（taxadb）；生产线上初译与译审必须是两个不同模型，所有修改经主编裁定后只从闸口进入译文；读者意见和审查结果回流成领域包里的规则与陷阱。
+
+![模型分派与升级](docs/img/model-routing.svg)
 
 各模块的专职 agent、详细流程图与协作规则见 [agents/README.md](agents/README.md)；通用化设计见 [docs/generic.md](docs/generic.md)。
 

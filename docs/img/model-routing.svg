@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 300" width="1180" height="300" role="img" aria-label="模型分派与升级：能脚本化的任务交脚本；否则从 haiku 起步，失败或拿不准升到 sonnet、Codex 或 DeepSeek，再失败升到 opus，仍不行交主编；遇到规则没覆盖的判断，任何一级都可以直接向主编求助。" font-family="Noto Sans SC, PingFang SC, Microsoft YaHei, Source Han Sans SC, sans-serif">
+  <defs>
+    <marker id="mh" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3d4a44"/>
+    </marker>
+    <marker id="mha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a8641a"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1180" height="300" fill="#ffffff"/>
+  <rect x="10" y="10" width="1160" height="280" rx="12" fill="#f4f6f5"/>
+
+  <!-- 任务与判断 -->
+  <g text-anchor="middle">
+    <rect x="30" y="112" width="110" height="56" rx="8" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="85" y="137" font-size="14" font-weight="700" fill="#1d2420">任务</text>
+    <text x="85" y="156" font-size="11" fill="#5b6660">主编写任务书</text>
+
+    <polygon points="250,100 310,140 250,180 190,140" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="250" y="137" font-size="12.5" font-weight="700" fill="#1d2420">能脚本化？</text>
+
+    <rect x="195" y="222" width="110" height="50" rx="8" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="250" y="244" font-size="14" font-weight="700" fill="#1d2420">脚本</text>
+    <text x="250" y="262" font-size="11" fill="#5b6660">无模型成本</text>
+  </g>
+
+  <!-- 升级阶梯 -->
+  <g text-anchor="middle">
+    <rect x="360" y="108" width="170" height="64" rx="8" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="445" y="133" font-size="14" font-weight="700" fill="#1d2420">haiku</text>
+    <text x="445" y="152" font-size="11" fill="#5b6660">跑流程 · 看图核对</text>
+    <text x="445" y="166" font-size="11" fill="#5b6660">机械抽取</text>
+
+    <rect x="580" y="108" width="190" height="64" rx="8" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="675" y="133" font-size="14" font-weight="700" fill="#1d2420">sonnet / Codex / DeepSeek</text>
+    <text x="675" y="152" font-size="11" fill="#5b6660">初译 · 译审 · 查证</text>
+    <text x="675" y="166" font-size="11" fill="#5b6660">归纳 · 排障</text>
+
+    <rect x="820" y="108" width="140" height="64" rx="8" fill="#ffffff" stroke="#3d4a44"/>
+    <text x="890" y="133" font-size="14" font-weight="700" fill="#1d2420">opus</text>
+    <text x="890" y="152" font-size="11" fill="#5b6660">多文件实现</text>
+    <text x="890" y="166" font-size="11" fill="#5b6660">疑难调试</text>
+
+    <rect x="1010" y="108" width="140" height="64" rx="8" fill="#fdf1de" stroke="#a8641a" stroke-width="1.8"/>
+    <text x="1080" y="133" font-size="14" font-weight="700" fill="#7a4510">主编</text>
+    <text x="1080" y="152" font-size="11" fill="#8a5a22">最强模型</text>
+    <text x="1080" y="166" font-size="11" fill="#8a5a22">设计 · 裁定 · 疑难</text>
+  </g>
+
+  <g stroke="#3d4a44" stroke-width="1.5" fill="none">
+    <line x1="140" y1="140" x2="188" y2="140" marker-end="url(#mh)"/>
+    <line x1="250" y1="180" x2="250" y2="220" marker-end="url(#mh)"/>
+    <line x1="310" y1="140" x2="358" y2="140" marker-end="url(#mh)"/>
+    <line x1="530" y1="140" x2="578" y2="140" marker-end="url(#mh)"/>
+    <line x1="770" y1="140" x2="818" y2="140" marker-end="url(#mh)"/>
+    <line x1="960" y1="140" x2="1008" y2="140" marker-end="url(#mh)"/>
+  </g>
+  <g font-size="11.5" fill="#3d4a44" text-anchor="middle">
+    <text x="262" y="204" text-anchor="start">能</text>
+    <text x="334" y="132">不能</text>
+    <text x="555" y="118">失败或</text>
+    <text x="555" y="132">拿不准</text>
+    <text x="794" y="126">再失败</text>
+    <text x="984" y="126">仍不行</text>
+  </g>
+
+  <!-- 求助通道 -->
+  <g stroke="#a8641a" stroke-width="1.5" stroke-dasharray="5 4" fill="none">
+    <polyline points="445,108 445,52 1060,52 1060,106" marker-end="url(#mha)"/>
+    <line x1="675" y1="108" x2="675" y2="54"/>
+    <line x1="890" y1="108" x2="890" y2="54"/>
+  </g>
+  <text x="560" y="44" font-size="11.5" fill="#a8641a" text-anchor="middle">任何一级遇到规则没覆盖的判断：写「问题 + 证据 + 备选」直接求助，不猜</text>
+</svg>
