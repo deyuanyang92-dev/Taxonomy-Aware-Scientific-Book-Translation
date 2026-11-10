@@ -48,12 +48,30 @@ flowchart LR
 ```
 docs/        设计与对比
 skill/       模型技能（流程、规则、提示词、领域包）
+docstore/    本地资料库（资料登记、逐页文本与核对等级、FTS5 检索、引页、detect/import 收编）
+tests/       docstore 测试
 yiku/        术语库模块（原独立仓库 yiku，含历史迁入）
 scripts/     流水线脚本：术语查询、验证、闸口、批量翻译与核译、排版
 yiku/tests/ 术语库测试
 ```
 
 数据（原书、译文、OCR、术语数据库、分类数据库）不进仓库，路径由各工程目录配置。
+
+### docstore 快速上手
+
+```bash
+pip install -e .                      # 注册命令 docstore
+export DOCSTORE_AGENT=codex           # 或每条写入命令加 --by <模型名>
+docstore add <PDF 或目录>              # 登记（sha256 去重）
+docstore text --pending --workers 4   # 文本化：文本层直取，扫描页 RapidOCR 300 dpi，断点续跑
+docstore search "欧努菲虫" --kind 志书
+docstore page 动物志33 100            # 文本 + producer + 核对等级；--image 出页图
+docstore cite 动物志33 100
+docstore status
+docstore detect <目录> && docstore import <目录> --adapter txt_pages   # 收编库外页面库
+```
+
+模型协作规则见 [AGENTS.md](AGENTS.md)。
 
 ## 状态
 

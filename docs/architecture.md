@@ -29,35 +29,49 @@
 
 **定位**：用户把任何 PDF（志书、名录、专著、论文、译本、原著）放进来，就能随时检索、取原文、引页码。服务翻译，也服务物种汇编、写新种稿、审稿、日常查资料。
 
-**主库**：`<库根>/`（默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可配置）
+**主库**：`<库根>/`（默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可用 `--root` 或环境变量 `DOCSTORE_ROOT` 覆盖）
 ```
 _资料库/
   registry.tsv            资料登记（唯一进度来源）
-  docstore.sqlite         页文本 + 全文索引（FTS5，中文 trigram）
-  pages/<key>/pNNNN.json  逐页证据：文本、方法、质量、核对状态（sqlite 可由此重建）
+  docstore.sqlite         页文本 + 全文索引（FTS5，trigram；可由 pages/ 完全重建：docstore rebuild）
+  pages/<key>/pNNNN.json  逐页证据：主版本（文本、方法、引擎、producer、时间、dpi、质量、核对等级）+ alternates + history
+  imports.tsv             收编记录（detect 用它判断「已导入」）
+  quality/<key>.tsv       抽查单
   images/<key>/           按需渲染的页图缓存（可删）
 ```
 
-**资料登记字段**：key、path、sha256、pages、kind（志书/名录/专著/学位论文/译本/英文原著/中文论著/论文）、lang、pair（对照书）、domain、tier（依据等级）、title、authors、year、page_offset（印刷页 − PDF 页）、status（各阶段）、note。
+**资料登记字段**：key、path、sha256、pages、kind（志书/名录/专著/学位论文/译本/英文原著/中文论著/论文）、lang、pair（对照书）、domain、tier（依据等级）、title、authors、year、page_offset（印刷页 − PDF 页）、status、note、added_by、added_at。原件不在本机而只有页文本的资料，status 记「原件缺失」，sha256 为空。
 
-**页面核对等级**：`text_layer`（原生文本层）＞ `ocr_verified`（逐页核过）＞ `ocr_sampled`（抽查过）＞ `ocr_raw`（机器初识）＞ `blank`。
+**页面核对等级**：`text_layer`（原生文本层）＞ `ocr_verified`（逐页核过）＞ `ocr_sampled`（抽查过）＞ `ocr_raw`（机器初识）＞ `blank`。PDF 自带的 OCR 文本层（producer 为 Paper Capture、ABBYY 等）不算原生文本层，记 `ocr_raw` 并以 300 dpi 重识。
 
-**命令**
+**页面 json**：顶层是主版本；同一页的其他版本放 `alternates`，一律保留不丢；`verify` 校正记入 `history`（by、时间、前后等级、confirmed fixes、diff）。主版本取核对等级最高者，同级 300 dpi > 200 dpi > 其他，再同级则先到者。
+
+**命令**（全局参数 `--root`、`--by`）
 | 命令 | 作用 |
 |---|---|
-| `docstore add <文件或目录>` | 登记（按 sha256 去重；改名不重登；内容变即新版本），初判 kind/lang/domain，标「待确认」 |
-| `docstore text [<key>…\|--pending] [--workers N]` | 文本化：有文本层直取；扫描页 OCR（默认 RapidOCR 300 dpi，可换引擎）；断点续跑 |
-| `docstore quality <key>` | 列低质量页（低置信、乱码、少字、生僻字缺失），生成抽查单 |
-| `docstore verify <key> <页> --fix <file>` | 写入人工/模型对原页的校正，页面升级为 ocr_verified，留改动记录 |
-| `docstore search "<词>" [--key K] [--kind 志书] [--domain D]` | 全文检索，返回 key、PDF 页、印刷页、片段、页面核对等级 |
-| `docstore page <key> <页> [--image]` | 取一页文本（或渲染页图），用于引用和看图核对 |
-| `docstore cite <key> <页>` | 生成规范引注（书目 + 印刷页 + PDF 页） |
-| `docstore export <key> --txt\|--md` | 导出全文 |
-| `docstore status` | 每份资料的页数、文本化进度、各核对等级页数 |
+| `docstore add <文件或目录>…` | 登记 PDF（按 sha256 去重；改名只更新 path；同路径内容变即新 key），初判 kind/lang/domain，note 标「初判，待确认」。跳过 `_资料库 _本地知识库 知识库 参考库 _work` 等派生目录 |
+| `docstore text [<key>…\|--pending] [--workers N] [--dpi 300] [--limit N]` | 文本化：每页可抽字符 ≥30 直取文本层；否则 RapidOCR 300 dpi，多进程；已有记录的页跳过（断点续跑），`.part` 原子写 |
+| `docstore quality <key>` | 列低置信、少字、乱码（私用区/替换符）、缺字□ 页，生成 `quality/<key>.tsv` 抽查单 |
+| `docstore verify <key> <页> --fix <file> [--level ocr_verified\|ocr_sampled]` | 写入校正：file 为全文 txt，或 json `{"text": …}` / `{"replace": {"误": "正"}}`；旧版本进 alternates，改动进 history |
+| `docstore search "<词>" [--key K] [--kind 志书] [--domain D] [--level L]` | 全文检索（≥3 字走 FTS5 trigram，1–2 字走 LIKE），返回 key、PDF 页、印刷页、核对等级、producer、片段 |
+| `docstore page <key> <页> [--image] [--json]` | 取一页文本（显示 producer、引擎、其他版本、校正记录），或渲染页图 |
+| `docstore cite <key> <页>` | 规范引注（作者. 年份. 书名. 印刷页（PDF 页）. [docstore:key]） |
+| `docstore export <key> --txt\|--md [-o 文件]` | 导出全文 |
+| `docstore status` | 每份资料的页数、已文本化页数、各核对等级页数、各 producer 页数 |
+| `docstore rebuild` | 由 registry.tsv 与 pages/*.json 重建 sqlite |
+| `docstore detect <目录>` | 扫描库外疑似页面库，报告格式、对应资料（sha256 / 目录名 / 页数）、是否已导入 |
+| `docstore import <目录> --adapter codex_kb\|sqlite_pages\|json_pages\|txt_pages [--map M] [--key K --offset N --dpi D] [--producer P]` | 收编库外页面库，只读来源 |
+| `docstore pair <keyA> <keyB>`、`docstore set <key> 字段=值…` | 设对照书、改登记字段 |
 
 **库接口（Python）**：`open_store(root)`、`store.search(q, **filters)`、`store.page(key, n)`、`store.pages(key)`、`store.doc(key)`。其他组件和技能只用这几个函数。
 
-**迁移**：现有三处页文本——`参考资料/_本地知识库/`（Codex：OCR、校正规则、已核页）、`一些经典译作/知识库/`、`Rouse2022_Annelida/术语库/OCR/`——迁入 docstore。迁移只搬数据、保留各页的方法与核对状态，不重做 OCR；Codex 的 `confirmed_fixes / approved_pages` 转成 `ocr_verified`。迁完后旧目录标「只读，已迁移」。
+### 多模型协作
+
+- **producer 留痕**：每个页面版本记录 `producer`（模型或工具名：codex、claude-opus、claude-haiku、rapidocr、claude-script…）、`engine`（如 RapidOCR 300dpi）、`time`；每次 verify 记录 `by` 与时间。命令行 `--by <名称>`，缺省取 `DOCSTORE_AGENT`，再缺省为 `unknown`（写入命令会打印提醒）。`status` 与 `page` 显示 producer。
+- **并发写入**：每页写入持文件锁、读-合并-原子写；不同来源的版本并存于 alternates，不覆盖；sqlite 只是索引，坏了可 `rebuild`。
+- **收编流程**：别的模型在库外自建了页面数据时，`docstore detect <目录>` → 看清格式与对应资料 → `docstore import <目录> --adapter <名>`（目录名对不上 key 时写 `--map`：`dir key offset dpi`）→ `docstore status` 核对。收编记入 `imports.tsv`，之后 detect 显示「已导入」。不要另建库。
+
+**迁移（2026-11-10 已完成）**：三处旧页文本——`参考资料/_本地知识库/`（adapter codex_kb；`confirmed_fixes / approved_pages` 转成 `ocr_verified` 并记入 history）、`一些经典译作/知识库/知识库.sqlite`（sqlite_pages）与 `参考库/*/OCR`（json_pages）、`Rouse2022_Annelida/术语库/OCR/`（txt_pages，200 dpi）与 `_本地知识库/分类数据层/ocr300/动物志33`（txt_pages，300 dpi）——按原件 sha256 并到同一 key。只搬数据、不重做 OCR；旧目录只新增「已迁移至_资料库.md」说明，其余不动。迁移报告见 `_资料库/迁移报告.md`。
 
 ---
 
