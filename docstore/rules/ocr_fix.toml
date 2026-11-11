@@ -1,0 +1,35 @@
+[latin]
+max_distance = 2
+sources = ["/mnt/p/翻译-译作/参考资料/名称库"]
+taxadb_sqlite = "/mnt/p/翻译-译作/参考资料/_资料库/taxa.sqlite"
+builtin = [
+  "Lopadorhynchus",
+  "Heteropodarke xiamenensis",
+  "Ceratonereis hircinicola",
+]
+
+[chinese]
+max_distance = 1
+sources = ["/mnt/p/翻译-译作/参考资料/名称库"]
+builtin = ["分布于南海", "安达曼群岛", "围沙蚕", "单钩鳃裂虫", "环带沙蚕"]
+
+[[regex_rules]]
+name = "digit_range_dash"
+pattern = "(?<=\\d)一(?=\\d)"
+replace = "—"
+
+[[replace_rules]]
+name = "rare_char_27352"
+before = "虫甸"
+after = "𧍒"
+
+[[replace_rules]]
+name = "rare_char_yi"
+before = "罗因"
+after = "螠"
+
+[[replace_rules]]
+name = "rare_char_palea"
+before = "孚片刚毛"
+after = "稃片刚毛"
+

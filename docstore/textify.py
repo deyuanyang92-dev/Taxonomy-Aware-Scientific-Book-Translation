@@ -1,53 +1,39 @@
-"""文本化：有文本层（每页可抽字符 ≥30）直取；否则 RapidOCR 300 dpi。断点续跑：已有页面记录的页跳过。
-
-OCR 引擎可替换：把 OCR_FUNC 换成签名为 (pdf_path, page_no, dpi) -> (text, mean_conf) 的函数即可（测试用桩函数）。
-"""
+"""文本化：文本层直取，扫描页多引擎 OCR 共识 + 规则纠错。"""
 
 from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable
 
+from .consensus import Reading, vote
+from .engines import ENGINE_MAP
+from .engines.rapidocr import rapidocr_run
+from .lexicon import Fixer
 from .store import Store, agent, make_version
 
 MIN_CHARS = 30
 # 这些 producer 生成的「文本层」本身是机器 OCR，不当原生文本层
 OCR_LAYER_PRODUCERS = ("paper capture", "abbyy", "finereader", "clearscan", "ocr")
 
-_ENGINE = None
+_FIXER = None
 
 
 def rapid_ocr(pdf_path: str, n: int, dpi: int) -> tuple[str, float | None]:
-    global _ENGINE
-    import warnings
-
-    import fitz
-
-    warnings.filterwarnings("ignore")
-    if _ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
-
-        _ENGINE = RapidOCR()
-    with fitz.open(pdf_path) as d:
-        png = d[n - 1].get_pixmap(dpi=dpi).tobytes("png")
-    res, _ = _ENGINE(png)
-    res = res or []
-    text = "\n".join(r[1] for r in res)
-    conf = (sum(float(r[2]) for r in res) / len(res)) if res else None
-    return text, conf
+    return rapidocr_run(pdf_path, n, dpi)
 
 
 OCR_FUNC: Callable[[str, int, int], tuple[str, float | None]] = rapid_ocr
 OCR_ENGINE_NAME = "RapidOCR (rapidocr_onnxruntime)"
 
 
-def _job(args):
-    pdf_path, n, dpi = args
-    t0 = time.time()
-    text, conf = OCR_FUNC(pdf_path, n, dpi)
-    return n, text, conf, time.time() - t0
+def _run_engine(name: str, pdf_path: str, n: int, dpi: int) -> tuple[str, float | None]:
+    if name == "rapidocr":
+        return OCR_FUNC(pdf_path, n, dpi)
+    fn = ENGINE_MAP.get(name)
+    if fn is None:
+        raise ValueError(f"未知 OCR 引擎: {name}")
+    return fn(pdf_path, n, dpi)
 
 
 def layer_is_ocr(meta: dict) -> bool:
@@ -55,8 +41,18 @@ def layer_is_ocr(meta: dict) -> bool:
     return any(w in prod for w in OCR_LAYER_PRODUCERS)
 
 
-def textify(store: Store, key: str, *, by: str | None = None, workers: int = 4, dpi: int = 300,
-            limit: int | None = None, log: Callable[[str], None] = print) -> dict:
+def textify(
+    store: Store,
+    key: str,
+    *,
+    by: str | None = None,
+    workers: int = 4,
+    dpi: int = 300,
+    limit: int | None = None,
+    engines: list[str] | None = None,
+    vlm: str | None = None,
+    log: Callable[[str], None] = print,
+) -> dict:
     import fitz
 
     d = store.doc(key)
@@ -103,12 +99,65 @@ def textify(store: Store, key: str, *, by: str | None = None, workers: int = 4, 
         log(f"[{key}] 文本层 {n_text} 页")
     t0 = time.time()
     done = 0
+    engines = engines or ["rapidocr", "tesseract"]
+    global _FIXER
+    if _FIXER is None:
+        _FIXER = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
 
-    def save(n, text, conf, secs):
+    def save(n: int):
         nonlocal done
-        v = make_version(text, "ocr", producer="rapidocr" if OCR_FUNC is rapid_ocr else f"ocr({by})",
-                         engine=f"{OCR_ENGINE_NAME} {dpi}dpi", dpi=dpi, conf=conf, source=path,
-                         extra={"run_by": by, "seconds": round(secs, 2)})
+        t_page = time.time()
+        readings: list[Reading] = []
+        for eng in engines:
+            txt, conf = _run_engine(eng, path, n, dpi)
+            c = float(conf) if conf is not None else 0.5
+            readings.append(Reading(source=eng, text=txt, conf=c))
+            ev = make_version(
+                txt,
+                "ocr",
+                producer=eng,
+                engine=f"{eng} {dpi}dpi",
+                dpi=dpi,
+                conf=conf,
+                source=path,
+                extra={"run_by": by, "seconds": round(time.time() - t_page, 2)},
+            )
+            store.put_version(key, n, ev, index=False)
+        pg = store.read_page(key, n) or {}
+        for av in pg.get("alternates", []):
+            if av.get("method") == "ocr":
+                txt = av.get("text") or ""
+                q = av.get("quality") or {}
+                readings.append(
+                    Reading(
+                        source=av.get("producer") or "alternate",
+                        text=txt,
+                        conf=float(q.get("ocr_conf") or 0.5),
+                    )
+                )
+        text, conf, disagreements, unresolved = vote(readings)
+        fixed, changes = _FIXER.apply(text)
+        lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
+        if vlm and unresolved > 0:
+            # VLM 接口保留，未能确定时继续保留 [?]
+            lv = "ocr_raw"
+        tag = "+".join(engines) + ("+vlm" if vlm else "")
+        v = make_version(
+            fixed,
+            "ocr",
+            producer=f"consensus({tag})",
+            engine=f"consensus {dpi}dpi",
+            dpi=dpi,
+            conf=conf,
+            source=f"{path}#consensus",
+            level=lv,
+            extra={
+                "run_by": by,
+                "disagreements": disagreements,
+                "unresolved_chars": unresolved,
+                "lexicon_changes": changes,
+            },
+        )
         store.put_version(key, n, v)
         done += 1
         if done % 10 == 0 or done == len(need_ocr):
@@ -117,20 +166,66 @@ def textify(store: Store, key: str, *, by: str | None = None, workers: int = 4, 
             log(f"[{key}] OCR {done}/{len(need_ocr)}  {rate:.1f}s/页(墙钟)  预计剩余 {rate * (len(need_ocr) - done) / 60:.1f} 分钟")
 
     if need_ocr:
-        log(f"[{key}] 需 OCR {len(need_ocr)} 页，workers={workers}")
-        jobs = [(path, n, dpi) for n in need_ocr]
-        if workers <= 1:
-            for j in jobs:
-                save(*_job(j))
-        else:
-            with ProcessPoolExecutor(max_workers=workers) as ex:
-                futs = [ex.submit(_job, j) for j in jobs]
-                for f in as_completed(futs):
-                    save(*f.result())
+        log(f"[{key}] 需 OCR {len(need_ocr)} 页，engines={','.join(engines)}")
+        for n in need_ocr:
+            save(n)
     total = len(store.page_numbers(key))
     store.update_doc(key, status="text_done" if total >= npages else f"text_partial {total}/{npages}")
-    return {"key": key, "text_layer": n_text, "ocr": len(need_ocr), "seconds": round(time.time() - t0, 1),
-            "pages_done": total, "pages": npages}
+    return {
+        "key": key,
+        "text_layer": n_text,
+        "ocr": len(need_ocr),
+        "seconds": round(time.time() - t0, 1),
+        "pages_done": total,
+        "pages": npages,
+        "engines": engines,
+        "vlm": vlm or "",
+    }
+
+
+def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str | None = None, dpi: int = 300) -> dict:
+    """Recompute consensus from existing OCR alternates/pages without rerunning OCR."""
+    by = agent(by)
+    nums = pages or store.page_numbers(key)
+    touched = 0
+    for n in nums:
+        pg = store.read_page(key, n)
+        if not pg:
+            continue
+        vars_ = [pg] + pg.get("alternates", [])
+        readings = []
+        for v in vars_:
+            if v.get("method") == "ocr":
+                readings.append(
+                    Reading(
+                        source=v.get("producer") or "ocr",
+                        text=v.get("text") or "",
+                        conf=float((v.get("quality") or {}).get("ocr_conf") or 0.5),
+                    )
+                )
+        if len(readings) < 2:
+            continue
+        txt, conf, disagreements, unresolved = vote(readings)
+        if _FIXER is None:
+            fixer = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
+        else:
+            fixer = _FIXER
+        fixed, changes = fixer.apply(txt)
+        lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
+        ver = make_version(
+            fixed,
+            "ocr",
+            producer="consensus(rebuild)",
+            engine=f"consensus {dpi}dpi",
+            dpi=dpi,
+            conf=conf,
+            level=lv,
+            source=(store.doc(key).get("path") or "") + "#consensus",
+            extra={"run_by": by, "disagreements": disagreements, "lexicon_changes": changes},
+        )
+        store.put_version(key, n, ver)
+        touched += 1
+    return {"key": key, "recomputed": touched}
 
 
 def _reindex(store: Store, key: str) -> None:

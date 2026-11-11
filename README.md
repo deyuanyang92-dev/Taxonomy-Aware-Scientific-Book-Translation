@@ -51,9 +51,11 @@ yiku/tests/ 术语库测试
 
 ```bash
 pip install -e .                      # 注册命令 docstore
+sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
 export DOCSTORE_AGENT=codex           # 或每条写入命令加 --by <模型名>
 docstore add <PDF 或目录>              # 登记（sha256 去重）
-docstore text --pending --workers 4   # 文本化：文本层直取，扫描页 RapidOCR 300 dpi，断点续跑
+docstore text --pending --workers 4   # 文本化：文本层直取，扫描页 RapidOCR+Tesseract 共识，断点续跑
+docstore consensus 动物志33 --pages 1-50
 docstore search "欧努菲虫" --kind 志书
 docstore page 动物志33 100            # 文本 + producer + 核对等级；--image 出页图
 docstore cite 动物志33 100

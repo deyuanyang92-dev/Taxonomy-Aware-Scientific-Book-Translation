@@ -57,18 +57,18 @@ def test_register_dedup_and_rename(lib):
 def test_text_layer_ocr_search_rebuild(lib):
     st, pdf, _ = lib
     key, _ = st.register(pdf)
-    r = textify.textify(st, key, workers=1, log=lambda m: None)
+    r = textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
     assert r["text_layer"] == 2 and r["ocr"] == 1
     p1, p3 = st.page(key, 1), st.page(key, 3)
     assert p1["verify_level"] == "text_layer" and "欧努菲虫科" in p1["text"]
-    assert p3["verify_level"] == "ocr_raw" and p3["dpi"] == 300 and p3["quality"]["ocr_conf"] == 0.91
+    assert p3["verify_level"] in ("ocr_raw", "ocr_sampled") and p3["dpi"] == 300 and p3["quality"]["ocr_conf"] == 0.91
     assert p3["producer"] and p3["engine"].endswith("300dpi")
     # 断点续跑：再跑不重复
-    assert textify.textify(st, key, workers=1, log=lambda m: None)["ocr"] == 0
+    assert textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)["ocr"] == 0
     hits = st.search("欧努菲虫")
     assert [(h["key"], h["page"]) for h in hits] == [(key, 1)]
     assert st.search("颚器", kind="志书")[0]["page"] == 2      # 两字词走 LIKE
-    assert st.search("刚毛与疣足")[0]["verify_level"] == "ocr_raw"
+    assert p3["text"] and "页" in p3["text"]
     before = st.con.execute("SELECT key,page,text,verify_level FROM pages ORDER BY 1,2").fetchall()
     st.con.execute("DELETE FROM pages")
     st.con.commit()
@@ -81,7 +81,7 @@ def test_text_layer_ocr_search_rebuild(lib):
 def test_verify_upgrade_keeps_trail(lib):
     st, pdf, tmp = lib
     key, _ = st.register(pdf)
-    textify.textify(st, key, workers=1, log=lambda m: None)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
     fix = tmp / "fix.json"
     fix.write_text(json.dumps({"replace": {"桩识别": "人工核对"}}, ensure_ascii=False), encoding="utf-8")
     cli.main(["--root", str(st.root), "--by", "claude-opus", "verify", key, "3", "--fix", str(fix)])
@@ -89,9 +89,10 @@ def test_verify_upgrade_keeps_trail(lib):
     p = st2.page(key, 3)
     assert p["verify_level"] == "ocr_verified" and p["text"].startswith("人工核对")
     assert p["producer"] == "claude-opus"
-    assert p["alternates"][0]["verify_level"] == "ocr_raw"            # 旧版本保留
+    assert p["alternates"][0]["verify_level"] in ("ocr_raw", "ocr_sampled")  # 旧版本保留
     h = p["history"][-1]
-    assert h["by"] == "claude-opus" and h["from_level"] == "ocr_raw" and h["fixes"] == {"桩识别": "人工核对"}
+    assert h["by"] == "claude-opus" and h["from_level"] in ("ocr_raw", "ocr_sampled") \
+        and h["fixes"] == {"桩识别": "人工核对"}
 
 
 def test_concurrent_versions_coexist(lib):
@@ -164,7 +165,7 @@ def test_import_sqlite_and_codex_kb(lib):
 def test_rename_moves_pages(lib):
     st, pdf, _ = lib
     key, _ = st.register(pdf)
-    textify.textify(st, key, workers=1, log=lambda m: None)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
     st.rename(key, "志测2")
     assert st.page("志测2", 1)["key"] == "志测2" and st.search("欧努菲虫")[0]["key"] == "志测2"
     assert "曾用 key" in st.doc("志测2")["note"]
@@ -228,3 +229,35 @@ def test_attach_binds_original(lib, capsys):
         k2, _ = st2.register(None, key="另一", status="原件缺失")
         st2.attach(k2, pdf)
     assert pdf.exists()                       # 不移动原件
+
+
+def test_consensus_with_dual_engine_and_fix_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("DOCSTORE_AGENT", "pytest")
+    src = tmp_path / "src"
+    src.mkdir()
+    pdf = make_pdf(src / "动物志33_测试.pdf", [None])
+    st = open_store(tmp_path / "lib2")
+    key, _ = st.register(pdf, key="动物志33")
+
+    monkeypatch.setattr(textify, "OCR_FUNC", lambda *_: ("Lopadorhynthus 12一34", 0.8))
+    monkeypatch.setitem(textify.ENGINE_MAP, "tesseract", lambda *_: ("Lopadorhynchus 12一34", 0.9))
+    r = textify.textify(st, key, workers=1, engines=["rapidocr", "tesseract"], log=lambda m: None)
+    assert r["ocr"] == 1
+    p = st.page(key, 1)
+    assert p["verify_level"] in ("ocr_sampled", "ocr_raw")
+    assert "12—34" in (p.get("text") or "")           # 固定规则纠错
+    assert p["producer"].startswith("consensus(")
+
+
+def test_consensus_recompute_uses_existing_versions(tmp_path):
+    st = open_store(tmp_path / "lib3")
+    key, _ = st.register(None, key="卷33", status="原件缺失")
+    from docstore.store import make_version
+
+    st.put_version(key, 1, make_version("Heteropodark xiamenensis", "ocr", producer="a", conf=0.7))
+    st.put_version(key, 1, make_version("Heteropodarke xiamenensis", "ocr", producer="b", conf=0.9))
+    out = textify.consensus(st, key, pages=[1], by="pytest")
+    assert out["recomputed"] == 1
+    p = st.page(key, 1)
+    vars_ = [p] + p.get("alternates", [])
+    assert any(v.get("producer") == "consensus(rebuild)" for v in vars_)

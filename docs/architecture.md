@@ -50,7 +50,8 @@ _资料库/
 | 命令 | 作用 |
 |---|---|
 | `docstore add <文件或目录>…` | 登记 PDF（按 sha256 去重；改名只更新 path；同路径内容变即新 key），初判 kind/lang/domain，note 标「初判，待确认」。跳过 `_资料库 _本地知识库 知识库 参考库 _work` 等派生目录 |
-| `docstore text [<key>…\|--pending] [--workers N] [--dpi 300] [--limit N]` | 文本化：每页可抽字符 ≥30 直取文本层；否则 RapidOCR 300 dpi，多进程；已有记录的页跳过（断点续跑），`.part` 原子写 |
+| `docstore text [<key>…\|--pending] [--workers N] [--dpi 300] [--engines rapidocr,tesseract] [--vlm deepseek-flash] [--limit N]` | 文本化：每页可抽字符 ≥30 直取文本层；否则双引擎 OCR（RapidOCR + Tesseract）做行/字共识，再按 `docstore/rules/ocr_fix.toml` 做规则纠错；已有记录的页跳过（断点续跑） |
+| `docstore consensus <key> [--pages 1-50]` | 对已存在的 OCR 版本重算共识（不重跑 OCR），把重算结果写为新版本，旧版本保留在 alternates |
 | `docstore quality <key>` | 列低置信、少字、乱码（私用区/替换符）、缺字□ 页，生成 `quality/<key>.tsv` 抽查单 |
 | `docstore verify <key> <页> --fix <file> [--level ocr_verified\|ocr_sampled]` | 写入校正：file 为全文 txt，或 json `{"text": …}` / `{"replace": {"误": "正"}}`；旧版本进 alternates，改动进 history |
 | `docstore search "<词>" [--key K] [--kind 志书] [--domain D] [--level L]` | 全文检索（≥3 字走 FTS5 trigram，1–2 字走 LIKE），返回 key、PDF 页、印刷页、核对等级、producer、片段 |

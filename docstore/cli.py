@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus"}
 
 
 def _by(args) -> str:
@@ -47,9 +47,43 @@ def cmd_text(st: Store, a) -> None:
                 and len(st.page_numbers(d["key"])) < (int(d["pages"] or 0))]
         keys.sort(key=lambda k: int(st.doc(k)["pages"] or 0) * (os.path.getsize(st.doc(k)["path"]) or 1))
     for k in keys:
-        r = textify.textify(st, k, by=_by(a), workers=a.workers, dpi=a.dpi, limit=a.limit,
-                            log=lambda m: print(m, flush=True))
+        engines = [x.strip() for x in a.engines.split(",") if x.strip()]
+        r = textify.textify(
+            st,
+            k,
+            by=_by(a),
+            workers=a.workers,
+            dpi=a.dpi,
+            limit=a.limit,
+            engines=engines,
+            vlm=a.vlm,
+            log=lambda m: print(m, flush=True),
+        )
         print(json.dumps(r, ensure_ascii=False), flush=True)
+
+
+def _parse_pages(spec: str | None) -> list[int] | None:
+    if not spec:
+        return None
+    out: set[int] = set()
+    for chunk in spec.split(","):
+        s = chunk.strip()
+        if not s:
+            continue
+        if "-" in s:
+            a, b = s.split("-", 1)
+            x, y = int(a), int(b)
+            for n in range(min(x, y), max(x, y) + 1):
+                out.add(n)
+        else:
+            out.add(int(s))
+    return sorted(out)
+
+
+def cmd_consensus(st: Store, a) -> None:
+    pages = _parse_pages(a.pages)
+    r = textify.consensus(st, a.key, pages=pages, by=_by(a), dpi=a.dpi)
+    print(json.dumps(r, ensure_ascii=False), flush=True)
 
 
 def cmd_quality(st: Store, a) -> None:
@@ -253,7 +287,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--workers", type=int, default=4)
     s.add_argument("--dpi", type=int, default=300)
     s.add_argument("--limit", type=int, help="每本最多处理多少页（估时用）")
+    s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
+    s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
     s.set_defaults(fn=cmd_text)
+
+    s = sub.add_parser("consensus", help="对已有 OCR 版本重算共识，不重复 OCR")
+    s.add_argument("key")
+    s.add_argument("--pages", help="页码范围，如 1-30,35,40-42")
+    s.add_argument("--dpi", type=int, default=300)
+    s.set_defaults(fn=cmd_consensus)
 
     s = sub.add_parser("quality", help="列低质量页，生成抽查单")
     s.add_argument("key")
