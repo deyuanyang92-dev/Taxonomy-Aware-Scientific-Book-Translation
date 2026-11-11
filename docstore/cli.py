@@ -8,12 +8,12 @@ import os
 import sys
 from pathlib import Path
 
-from . import adapters, textify
+from . import adapters, qc, textify
 from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc"}
 
 
 def _by(args) -> str:
@@ -112,6 +112,32 @@ def cmd_quality(st: Store, a) -> None:
     for r in rows[: a.show]:
         print("\t".join(map(str, r)))
     print(f"{len(rows)} 页待抽查，抽查单 {out}")
+
+
+def cmd_qc(st: Store, a) -> None:
+    if a.calibrate:
+        r = qc.calibrate(st)
+        out = Path(__file__).resolve().parents[1] / "docs" / "ocr_qc_calibration.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(r, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        print(f"标定写入 {out}", flush=True)
+        return
+    if not a.key:
+        print("qc 需要 <key>，或使用 --calibrate", file=sys.stderr)
+        sys.exit(2)
+    pages = _parse_pages(a.pages)
+    r = qc.run_qc(
+        st,
+        a.key,
+        by=_by(a),
+        pages=pages,
+        apply=a.apply,
+        redo=a.redo,
+        limit=a.limit,
+        log=lambda m: print(m, flush=True),
+    )
+    print(json.dumps(r, ensure_ascii=False), flush=True)
 
 
 def cmd_verify(st: Store, a) -> None:
@@ -302,6 +328,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--min-conf", type=float, default=0.85)
     s.add_argument("--show", type=int, default=30)
     s.set_defaults(fn=cmd_quality)
+
+    s = sub.add_parser("qc", help="自动质控：风险分分流（通过/重做/人工），断点续跑")
+    s.add_argument("key", nargs="?", help="资料 key；与 --calibrate 互斥时用")
+    s.add_argument("--pages", help="页码范围，如 1-30,35")
+    s.add_argument("--limit", type=int, help="最多处理页数")
+    s.add_argument("--apply", action="store_true", help="执行自动通过（ocr_raw→ocr_sampled）")
+    s.add_argument("--redo", action="store_true", help="与 --apply 联用：对 redo 页追加高 dpi OCR")
+    s.add_argument("--calibrate", action="store_true", help="在金标准上标定查全率/误报率")
+    s.set_defaults(fn=cmd_qc)
 
     s = sub.add_parser("verify", help="写入对原页的校正（全文 txt，或 json: {text} / {replace:{误:正}}）")
     s.add_argument("key")

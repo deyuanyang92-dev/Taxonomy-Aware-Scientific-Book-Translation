@@ -53,6 +53,7 @@ _资料库/
 | `docstore text [<key>…\|--pending] [--workers N] [--dpi 300] [--engines rapidocr,tesseract] [--vlm deepseek-flash] [--limit N]` | 文本化：每页可抽字符 ≥30 直取文本层；否则双引擎 OCR（RapidOCR + Tesseract）做行/字共识，再按 `docstore/rules/ocr_fix.toml` 做规则纠错；已有记录的页跳过（断点续跑） |
 | `docstore consensus <key> [--pages 1-50]` | 对已存在的 OCR 版本重算共识（不重跑 OCR），把重算结果写为新版本，旧版本保留在 alternates |
 | `docstore quality <key>` | 列低置信、少字、乱码（私用区/替换符）、缺字□ 页，生成 `quality/<key>.tsv` 抽查单 |
+| `docstore qc <key> [--apply] [--redo] [--pages] [--limit]` / `docstore qc --calibrate` | 自动质控：风险分分流（pass/redo/human），jsonl 断点续跑；`--apply` 可将 ocr_raw 升为 ocr_sampled；`--redo` 追加高 dpi OCR；阈值 `docstore/rules/qc.toml`，标定 `docs/ocr_qc_calibration.json` |
 | `docstore verify <key> <页> --fix <file> [--level ocr_verified\|ocr_sampled]` | 写入校正：file 为全文 txt，或 json `{"text": …}` / `{"replace": {"误": "正"}}`；旧版本进 alternates，改动进 history |
 | `docstore search "<词>" [--key K] [--kind 志书] [--domain D] [--level L]` | 全文检索（≥3 字走 FTS5 trigram，1–2 字走 LIKE），返回 key、PDF 页、印刷页、核对等级、producer、片段 |
 | `docstore page <key> <页> [--image] [--json]` | 取一页文本（显示 producer、引擎、其他版本、校正记录），或渲染页图 |

@@ -1,0 +1,38 @@
+# docstore qc 阈值。2026-11-11 用 278 页 ocr_verified 金标准标定（见 docs/ocr_accuracy_baseline.md）。
+# 标定定义：对同页 RapidOCR 假设文本打风险分；正例 = 该假设相对金标准 CER >= cer_bad。
+
+[calibration]
+cer_bad = 0.05
+# 见 docs/ocr_qc_calibration.json：dpi_ge_prefer 为 CER 检测指标；low_dpi_policy 为提 DPI 策略覆盖率
+note = "dpi<prefer → redo 是策略；CER 查全/误报看 dpi>=prefer 子集"
+
+[thresholds]
+# 综合风险分 < pass_max → 自动通过；>= human_min → 人工；中间带 → 自动重做
+pass_max = 2.5
+human_min = 6.0
+min_ocr_conf = 0.85
+min_chars = 30
+max_garble = 0  # pua + replacement + missing_glyph
+max_unknown_latin = 25
+max_unknown_zh_taxon = 40
+prefer_dpi = 300
+
+[weights]
+low_conf = 2.0
+low_chars = 2.0
+garble = 3.0
+low_dpi = 2.5
+unknown_latin = 0.25  # per name above max, capped in code
+unknown_zh = 0.15
+no_consensus = 0.5
+digit_dense_anomaly = 1.0
+
+[yiku]
+db = "~/.yiku/yiku.db"
+
+[actions]
+# 自动通过时：仅当当前为 ocr_raw 才升为 ocr_sampled（不碰 verified / text_layer）
+promote_on_pass = true
+# 自动重做：用下列引擎在 prefer_dpi 下追加新版本（旧版进 alternates）
+redo_engines = ["rapidocr"]
+redo_dpi = 300
