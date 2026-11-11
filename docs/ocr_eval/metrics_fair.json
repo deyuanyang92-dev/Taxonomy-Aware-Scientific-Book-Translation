@@ -1,0 +1,35 @@
+{
+  "rapidocr": {
+    "cer_all": 0.06341385567433602,
+    "cer_excl_rapid_self_gold": 0.07729257828431443,
+    "cer_glm_gold_only": 0.08953851831952331,
+    "cer_excl_rapid_self_and_textlayer": 0.0845440803893876,
+    "n_all": 20,
+    "n_excl_rapid_self": 14,
+    "n_glm": 11,
+    "n_excl_both": 12,
+    "yi": "0/5"
+  },
+  "paddleocr_v5_mobile": {
+    "cer_all": 0.09440995845106083,
+    "cer_excl_rapid_self_gold": 0.0890382246245786,
+    "cer_glm_gold_only": 0.10456026279958598,
+    "cer_excl_rapid_self_and_textlayer": 0.10379646896979593,
+    "n_all": 20,
+    "n_excl_rapid_self": 14,
+    "n_glm": 11,
+    "n_excl_both": 12,
+    "yi": "4/5"
+  },
+  "tesseract": {
+    "cer_all": 0.4771214742828609,
+    "cer_excl_rapid_self_gold": 0.4799746530721723,
+    "cer_glm_gold_only": 0.4627172176060343,
+    "cer_excl_rapid_self_and_textlayer": 0.5598482389458823,
+    "n_all": 20,
+    "n_excl_rapid_self": 14,
+    "n_glm": 11,
+    "n_excl_both": 12,
+    "yi": "0/5"
+  }
+}

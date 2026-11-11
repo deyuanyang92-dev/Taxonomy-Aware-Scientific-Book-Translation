@@ -1,0 +1,41 @@
+{
+  "tesseract": {
+    "n_pages": 20,
+    "cer_mean": 0.4771214742828609,
+    "latin_cer_mean": 3.1384001024584567,
+    "digit_cer_mean": 0.44307773925074256,
+    "rare_cer_mean": 1.0,
+    "seconds_mean": 3.1159,
+    "seconds_sum": 62.318,
+    "yi_recall_pages": 0,
+    "yi_gold_pages": 5,
+    "vram_note": "CPU/ONNX unless noted; see metrics"
+  },
+  "rapidocr": {
+    "n_pages": 20,
+    "cer_mean": 0.06341385567433602,
+    "latin_cer_mean": 0.16322412097122704,
+    "digit_cer_mean": 0.08619079522827891,
+    "rare_cer_mean": 1.0,
+    "seconds_mean": 5.4809,
+    "seconds_sum": 109.618,
+    "yi_recall_pages": 0,
+    "yi_gold_pages": 5,
+    "vram_note": "CPU/ONNX unless noted; see metrics"
+  },
+  "paddleocr_v5_mobile": {
+    "n_pages": 20,
+    "cer_mean": 0.09440995845106083,
+    "latin_cer_mean": 0.8854963093968121,
+    "digit_cer_mean": 0.10937629460483629,
+    "rare_cer_mean": 0.26666666666666666,
+    "seconds_mean": 4.560650000000001,
+    "seconds_sum": 91.21300000000001,
+    "yi_recall_pages": 4,
+    "yi_gold_pages": 5,
+    "vram_peak_mb": 2049,
+    "paddle_backend": "cpu_paddlepaddle_3.0.0",
+    "model": "PP-OCRv5_mobile_det+rec",
+    "note": "CER vs library primary text (mostly glm verified / rapidocr raw / text_layer); not human gold"
+  }
+}

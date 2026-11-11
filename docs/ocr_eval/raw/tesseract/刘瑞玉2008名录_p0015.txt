@@ -1,0 +1,44 @@
+18 接合菌门  Phylum ZFZYGOMYCOTA 2
+19子囊苗门 Phylum ASCOMY COTA +ssssssseesesterssteesneeetnsserssseessseesnseenssanseernseersnceasscensseressseres DAD
+20 担子菌门 Phylum BASIDIOMYCOTA 7
+21 半知菌门 Phylum DEUTEROMYCOTIN丰8
+22 红藻门 Phylum RHODOPHYTA 本
+23 SRR] Phylum CHLOROPHY TA ocessesereeseseseesesteeeesetereneesssersnearecnsessassessenaenesssessestsesetnenssnaranaersnseentnensns 277
+24 BGM] Phylum PTERIDOPHYT和84
+25 被子植物门 Phylum MAGNOLIOPHYT和84
+6. 动物界 Kingdom ANIMALIA 本
+1 多孔动物门  Phylum PORIFERA seesssontaanasersecersenseacnacensesenenetecanseenscnetsenneenasnsastassaseeetsestesnscsaressssorensenereat 89
+2刺胞动物门  Phylum CNIDARIA 3
+水母亚门 Subphylum MEDUSOZ加D记 .3
+7k a8 A A] Superclass HY DROZOD -0-:eeeeeeeeseeseeeenererenereeeecesereneseugnananansesesestsesrstonnsnssenesessssssorererseensens BUD]
+$k7k 3.348) Superclass SCYPHOZOA ee
+FARA Superclass CUBOZO入3331]
+珊瑚亚门 Subphylum ANTHOZOA ee 332
+fA WEN Class CERIANTIPATHARI和3
+八放再瑚网 Class OCTOCORALLI风3
+六区珊瑚网 Class HEXACORALLI记4
+FLBBHI EL Order SCLERACTINT和ee 346
+3 模板动物门 Phylum CTENOPHORA 163
+4粘体门 Phylum MYXOZOA 和364
+5 扁形动物门  Phylum PLATYHELMINTHES snrooassaeaeeetreneneoronaeeonaooonoooonooonesosoeoooeoeonionooooooaoseoeocectotee本个疝
+吸虫网 Class TREM和AT名品记06
+6组形动物门 Phylum NEMERTEA ee388
+7 肉肛动愧门 Phylum ENTOPROCT和让 394
+8 线虫动物门  Phylum NEMATODD和395
+9 环节动物门 Phylum ANNELID和Ad405
+#2 Class POLYCH太ET记性
+10 星虫动物门 Phylum SIPUNCULA eq452
+11 Bb YE] Phylum ECHITU有良和5
+12 软体动物门 Phylum MOLLUSC和6
+EB TA Class CHAETODERMOMORPH记和ro
+新月贝纲 Class NEGOGMENIOGMODRPH岂5
+#4] Class POLY PLACOPHORA ss rrerereereretrerrnteresseranennecnereresneneanttsrtnermnerennnisterteserseneretnaseneareereneeneserne A 56
+PEEL 4) Class SCAPHOPODA vrrrsetsseseetsecssetsceneetseeteceneesnneneneseesseesactettsaenecceceetaeetsasscerentesteetnestertser eres ASQ
+腹足网 Class GASTROPODA ooeeeooooooooooooooooooorooooooovosaoooaooocoooeasisooeooooooeetteoiooiicisativdccicooiittisiio AyD
+WM Class BIVALVIA, «crceseeseseeenseeeesnteecnenseeensesnsesseseusvanseussenseceesesuransesesacsesansensesesceseersecrseseseserseresserers SAR
+224) Class CEPHALOPODA 站人、
+13 节肢动物门 Phylum ARTHROPOD和re606
+甲壳动物亚门 Subphylum CRUSTACEA 606
+#22) Class BRANCHIOPODA + ++------:stetessteesescsereeasssseessenensnsnsnreseortenssssseseeseananseaenesssserersrssesesscreresenenens GONG
+
+* XI

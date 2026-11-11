@@ -1,0 +1,49 @@
+CHAPTER 6
+APHRODITIDAE
+MALMGREN, 1867
+
+Described by Linnaeus (1758), Aphrodita is among the oldest cells and without the involvement of the chaetoblast. The felt-
+introduced generic annelid names. One characteristic feature age chaetae that make-up the dorsal covering of most Aphrodita
+of Aphrodita is the presence of fine capillary notochaetae that _ taxa are simple capillary notochaetae and seem not to be homol-
+form a felt over the dorsum. The name Aphrodita was applied ogous with the feltage chaetae of Sthenelanella or Acoetidae (Tilic
+by Linnaeus for this group that was previously known in north- et al., 2021a; c). Pygidial cirri are absent (Barnich and Fiege,
+ern Europe as ‘sea mice’. Mouse is slang term in Scandinavia 2003).
+for human female genitalia and some imaginative fishermen      Jaws can be present or absent. A gular membrane is absent,
+had applied this name to the furry-looking worm. Linnaeus, and the gut is a straight tube with side branches, the circu-
+no doubt aware of the slang, continued the tradition ina more lation is closed, and a heart body is absent (Darboux, 1899;
+refined way by naming the sea mouse Aphrodita after the Greek Fordham, 1926; Hanson, 1949b). Segmental metanephridia are
+goddess of love.                                                                         present in most segments (Bartolomaeus and Quast, 2005; Ford-
+
+Aphroditidae tend to be large animals, dorso-ventrally flat- ham, 1926; Goodrich, 1945). Akesson (1963) and Orrhage (1991)
+tened and often with an elliptical outline (Plate 1g; Fig. 6.1h)). provide descriptions of morphology, embryology, and inner-
+They are striking because of the amazing iridescence along the vation of the anterior ends. Corpora pedunculata are present
+sides of their bodies that is a result of light hitting the fine feltage (e.g. Hanstrém, 1927). Larval development is lecithotrophic
+chaetae which act as ‘photonic crystals’ (McPhedran et al., 2001) | (Drasche, 1885a) but only known in Laetmonice hystrix.
+(Fig. 6.1i).
+
+Natural history
+Morphology and physiology                                 Despite being commonly mentioned in the literature, the natu-
+ral history of aphroditids is poorly known and many references
+
+The prostomium is rounded with a median antenna, though @PPears to rely on a few observations only by Blegvad (1915),
+lateral antennae are absent (Fig. 6.1b). Antero-ventrally to the Hunt (1925), and Day (1967a). Jumars et al. (2015) considered
+median antenna, there is often a small papilliform or antenna-    them to be slow-moving carnivores and observations by Mettam
+like frontal tubercle. Eyes can be positioned directly on the   (1980) on Aphrodita aculeata indicate active predation on infaunal
+prostomium or on ocular peduncles. A pair of palps is present.    large species of Nereis, Nephtys, Macoma, and Corophium. Para-
+Information is lacking regarding nuchal organs. The peristomi- Pat ¢ al. (2013) describe the morphology and some aspects of
+um is limited to lips. Segment 1 curves around the prostomium;    the biology (such as gut contents, defensive behaviour, etc.) of
+it may be with or without noto- or neurochaetae. Elytra are   Laetmonice producta from Antarctica. See Jumars et al. (2015) for
+present on segments 2, 4, and 5, and thereafter alternating;   further references on feeding of Aphroditidae. They occur both
+parapodia without elytra have dorsal cirri; elytra are lacking ©" soft and hard substrata as epi- or infauna, from the intertidal
+in Palmyra (Watson Russell, 1989). Ventral cirri are present on   to bathyal depths.
+all segments and are of digitiform shape. Aphroditidae have
+biramous parapodia with a series of different noto- and neu-   Systematics
+rochaetae (Figs. 6.1. a, c-g), including pilose chaetae, bipinnate
+chaetae, capillary chaetae and aciculae (Glasby et al., 2000; Petti- Aphroditidae contains about 75 species considered valid, referred
+bone, 1966b; Tilic et al., 20210). Compound chaetae are lacking. to the seven genera Aphrodita, Aphrogenia, Hermionopsis, Heter-
+The ultrastructure and formation of chaetae are described in aphrodita, Laetmonice, Palmyra, and Pontogenia.
+Tilic et al. (2021c). The chaetogenesis of pilose chaetae is par-      Systematic revisions of Aphroditidae are lacking. Watson Rus-
+ticular since the hairy ornamentation that covers the tips of _ sell (1989) transferred Palmyra to Aphroditidae, a taxon which
+these chaetae is solely formed by the secretions of the follicle had previously been part or closely related to Chrysopetalidae.
+Annelida. Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic, Oxford University Press.
+© Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic (2022). DOI: 10.1093/os0/9780199692309.003.0006

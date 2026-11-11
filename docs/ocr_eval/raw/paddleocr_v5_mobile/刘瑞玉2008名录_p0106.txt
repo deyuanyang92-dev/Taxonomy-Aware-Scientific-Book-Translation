@@ -1,0 +1,69 @@
+1411.四棱萎形藻 Nitzschia quadrangula(Kutz.)Lange-Bertalot, 1980福建(FJN)：挪威(NO)，海水(MAR)，挂板
+1412.劳氏菱形藻Nitzschiarosenstocki Lange-Bertalot，1980福建(FJN)：台湾(TWD)，海水(MAR)
+1413.短角菱形藻NitzschiasificulaHustedt,1955福建(FJN)：美国(USA)，海水(MAR)，近岸（COST)
+1414.交际菱形藻NitzschiasocoabilisHustedt，1957台湾(TWD)，广东(GDN)：德国，海水(MAR)，淡水(FRE)
+135)伪菱形藻属 Genus Pseudo-nitzschia H.Peragallo,1897
+1415.细弱拟菱形藻Pseudo-nitzschiacuspidata(Hasle)Hasle,1993广东(GDN)：美国(USA)，海水(MAR)
+1416. 柔弱伪菱形藻 Pseudo-nitzschia delicatissima(Cleve)Heiden, 1928 【Nitzschia delicatissima Cleve,1897】 东海
+(ECS)，山东(SDN）：欧洲(EU)，美国(USA），北极(ARCT），海水(MAR)
+1417.多列拟菱形藻 Pseudo-nitzschia multiseries (Hasle) Hasle, 1995 【Nitzschia pungens f. multiseries Hasle, 1974】广
+东(GDN)：欧洲(EU），日本(JP），美国（USA），新西兰(NZ），海水(MAR)
+1418.多纹拟菱形藻Pseudo-nitzschia multistriata(Takano)Takano， 1995【Nitzschia multistriata Takano 1993】广东
+（GDN）：日本(JP），海水(MAR）
+1419. 尖刺伪菱形藻 Pseudo-nitzschia pungens(Grunow ex P.T. Cleve) Hasle, 1993【Nitzschia pungens Grunow, 1882】
+东海(ECS)，广西(GX)，香港(HK）：美国(USA），欧洲(EU)，海水(MAR)
+1420. 拟柔弱拟菱形藻 Pseudo-nitzschia pseudodelicatissima (Hasle) Hasle emend, 2003 【Nitzschia pseudodelicatissina
+Hasle，1976;NitzschiadelicatulaHasle，1965】东海(ECS)，福建(FJN)：波罗的海，海水(MAR)，河口(EST)
+1421.中华拟菱形藻Pseudo-nitzschiasinicaQietWang，1996中国地方种（CN），广东（GDN)，海水(MAR）
+黄海
+1422. 成列伪菱形藻 Pseudo-nitzschia seriata(Cleve) Peragallo et Peragallo, 1897 【Nitzschia seriata Cleve, 1883】
+(YS)，东海(ECS)：大西洋(ATL)，北美(NAM)，海水(MAR)
+(25）双菱藻科Family Surirellaceae Kützing，1844
+136)马鞍藻属 Genus Campylodiscus Ehrenberg.1844
+1423.装饰马鞍藻 CampylodiscusadomatusA.Schmidt,1877 南海(SCS)，海水(MAR)
+1424.亚德里亚海马鞍藻CarmpylodiscusadriaticusGrunow，1862东海(ECS)，西沙群岛(XSHA)：太平洋(PAC)，大西
+洋(ATL)，海水(MAR)，化石(FOS)，挂板，沉积物(SED)
+1425.有棱马鞍藻 Campylodiscus angularisGregory，1857台湾(TWD)：苏格兰，北冰洋，海水(MAR)
+1426. 紧密具肋马鞍藻 Campylodiscus crebrecostatus Greville, 1863 【Campylodiscus australis Grunow, 1877;
+Campylodiscus singularis A. Schmidt, 1875; Campylodiscus intermedius Grunow, A. Schmidt, 1875】福建(FJN)：新南
+威尔士，海水(MAR)
+1427.双角马鞍藻CampylodiscusbiangulatusGreville，1862东，南海(ECS&SCS)：太平洋（PAC)，大西洋(ATL），海
+水(MAR)
+1428.
+双喙马鞍藻CampylodiscsusbirostratusDeby，1891福建(FJN)，西沙群岛(XSHA)：地中海(MEDIT），意大利(IT)，
+墨西哥(MX），海水(MAR），海藻上(EPIB）
+1429.布氏马鞍藻CampylodiscusbrightwelliGrunow，1862东海(ECS)，海南岛(HND)：太平洋(PAC)，印度洋(IO)，
+海水(MAR)，暖水(WAW)，沉积物(SED)
+1430.地美马鞍藻CampylodiscusdaemllanusGrunow，1874东海(ECS)：太平洋(PAC)，印度洋(IO)，大西洋(ATL)，
+海水(MAR)，潮间带(INT)，沉积物(SED)
+1431.地美马鞍藻细分变种Campylodiscusdaemelianus var.comminutaA.Schmidt，1875东海(ECS)：孟加拉湾(BD)，
+海水(MAR)，沉积物(SED)
+1432.
+优美马鞍藻CarmpylodiscusdecorusBrebisson，1854东海(ECS），海南岛(HND)，西沙群岛（XSHA）：大西洋(ATL），
+海水(MAR），海藻上(EPIB），沉积物(SED）
+尖顶马鞍藻Campylodiscus ecclesianusGreville，1857福建(FJN）：印度尼西亚(ID)，
+斯里兰卡(LK），大西洋
+1433.
+(ATL)，海水(MAR），化石(FOS)
+1434.
+埃克马鞍藻CampylodiscusecheneisEhrenberg，1840东海(ECS）：大西洋(ATL），海水(MAR），半咸水(BRA）.
+淡水（FRE），沉积物(SED）
+圆叶马鞍藻 Campylodiscus fastuosus Ehrenebrg,1845【Campylodiscsu simulans Huang, 1979】台湾(TwD)，
+海
+1435.
+水(MAR)
+休氏马鞍藻CampylodiscusheuferiGrunow，1862东海(ECS）：印度尼西亚(ID），红海(RS），海水(MAR），
+沉积
+1436.
+物(SED)
+1437.霍氏马鞍藻 CampylodiscsushodgsoniiA.Smith，1853福建(FJN)：大西洋(ATL），海水(MAR）
+1438.时钟座马鞍藻CampylodiscushorologiumWilliamson，1848东海(ECS)：日本(JP)，大西洋(ATL），海水(MAR）
+沉积物（SED）
+PDG
+1439.不定马鞍藻Campylodiscsus incertus A.Schmidt, 1865 【Campylodiscsu samoensis Grunow,1875】辽宁(LN)，福
+建(FJN)，西沙群岛(XSHA）：大西洋(ATL），海水(MAR），潮间带(INT），海藻上(EPIB）
+1440.
+中间马鞍藻 Campylodiscsus intermediusGrunow，1875渤海(BOS)，黄海(YS)，南海(SCS)，海水(MAR)
+1441.基托马鞍藻 CampylodiscsuskittonianusGreville,1862东海(ECS)：太平洋(PAC），海水(MAR)，化石(FOS)，沉
+积物(SED)
+. 89.
