@@ -122,7 +122,7 @@ _资料库/
 
 | 脚本 | 作用 |
 |---|---|
-| `llm_engines.py` | 直接调模型的统一入口 `call(engine, system, user) -> (正文, usage)`。engine：`deepseek-flash`、`deepseek-v4-pro`（anthropic SDK 流式，base_url 指向 DeepSeek 的 Anthropic 兼容端点，`max_tokens=64000`，调用前 `wait_offpeak()`，连接错误重试 3 次，正文为空且输出达上限报「推理耗尽」）、`claude-sonnet`、`claude-opus`（`claude -p --tools ""`，stdin 送入）、`codex`（`codex exec -s read-only -o`）。凭证取 `DEEPSEEK_API_KEY` 或 `DEEPSEEK_ENV_FILE`，不入库。每次调用向 usage.tsv（`LLM_USAGE_TSV`）追加时间、engine、token、耗时 |
+| `llm_engines.py` | 直接调模型的统一入口 `call(engine, system, user) -> (正文, usage)`。engine：`deepseek-flash`、`deepseek-v4-pro`（anthropic SDK 流式，base_url 指向 DeepSeek 的 Anthropic 兼容端点，`max_tokens=64000`，调用前 `wait_offpeak()`，连接错误重试 3 次，正文为空且输出达上限报「推理耗尽」，stop_reason=max_tokens 一律报「输出被截断」）、`claude-sonnet`、`claude-opus`（`claude -p --tools ""`，stdin 送入）、`codex`（`codex exec -s read-only -o`）。凭证取 `DEEPSEEK_API_KEY` 或 `DEEPSEEK_ENV_FILE`，不入库。每次调用向 usage.tsv（`LLM_USAGE_TSV`）追加时间、engine、token、耗时 |
 | `deepseek_offpeak.py` | DeepSeek 忙时守卫：忙时不发请求，等到闲时 |
 | `run_batches.py` | 批次调度。智能体模式（`--engine codex\|claude`，模型自己读写文件）；直调模式（`--engine deepseek-flash\|deepseek-v4-pro\|claude-sonnet\|claude-opus`，由 `direct_mode.py` 切块约 9000 字符、每块注入 `yiku table` 术语表、经 `llm_engines` 调用，产物按块写盘、断点续跑，合并时去掉每块「### 待定术语」并汇总，核译输出 JSONL 问题单交 `apply_issues.py` 闸口）。推荐分配：初译 `claude-sonnet`，核译 `deepseek-flash` |
 | `split_figures.py` | 从按章抽出的英文原文分离图注/表注，输出 `正文.txt`（接回被图注打断的句子、去连字符断行）与 `图注.txt`，分块翻译前先跑 |

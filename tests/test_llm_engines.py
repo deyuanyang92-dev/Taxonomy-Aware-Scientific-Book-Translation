@@ -107,10 +107,18 @@ def test_deepseek_reasoning_exhausted(monkeypatch):
     monkeypatch.setattr(le, "_make_client", lambda: client)
     with pytest.raises(le.EngineError, match="推理耗尽"):
         le.call("deepseek-v4-pro", "s", "u")
-    # 有正文时即使达上限也不报错（截断由调用方自行处理）
-    client, _ = make_client(make_msg("有正文", out_tokens=64000, stop="max_tokens"))
+    # 有正文但 stop_reason=max_tokens：同样报错（被截断的输出不能当成功），且不写用量之外的任何产物
+    client, _ = make_client(make_msg("有正文但被截断", out_tokens=64000, stop="max_tokens"))
     monkeypatch.setattr(le, "_make_client", lambda: client)
-    assert le.call("deepseek-v4-pro", "s", "u")[0] == "有正文"
+    with pytest.raises(le.EngineError, match="输出被截断"):
+        le.call("deepseek-v4-pro", "s", "u")
+    client, _ = make_client(make_msg("未达上限的短输出", out_tokens=500, stop="max_tokens"))
+    monkeypatch.setattr(le, "_make_client", lambda: client)
+    with pytest.raises(le.EngineError, match="输出被截断"):  # 只要 stop_reason 是 max_tokens 就报，不看 token 数
+        le.call("deepseek-v4-pro", "s", "u")
+    client, _ = make_client(make_msg("正常结束", out_tokens=64000, stop="end_turn"))
+    monkeypatch.setattr(le, "_make_client", lambda: client)
+    assert le.call("deepseek-v4-pro", "s", "u")[0] == "正常结束"
 
 
 def test_token_from_env_then_script(monkeypatch, tmp_path):

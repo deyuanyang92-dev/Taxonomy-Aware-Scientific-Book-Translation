@@ -105,8 +105,11 @@ def _deepseek(engine: str, system: str, user: str, max_tokens: int) -> tuple[str
         "output_tokens": out_tokens,
         "cache_read_tokens": int(getattr(u, "cache_read_input_tokens", 0) or 0),
     }
-    if not text.strip() and (out_tokens >= max_tokens or getattr(msg, "stop_reason", "") == "max_tokens"):
+    truncated = getattr(msg, "stop_reason", "") == "max_tokens"
+    if not text.strip() and (truncated or out_tokens >= max_tokens):
         raise EngineError(f"{engine} 推理耗尽：输出 {out_tokens} token 达上限 {max_tokens}，正文为空（调大 max_tokens 或换模型）")
+    if truncated:  # 有正文也不放行：被截断的译文或问题单会悄悄丢掉后半
+        raise EngineError(f"{engine} 输出被截断：stop_reason=max_tokens，输出 {out_tokens} token 达上限 {max_tokens}（调大 max_tokens，或缩小输入块）")
     return text, usage
 
 
