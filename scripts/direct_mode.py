@@ -4,7 +4,7 @@
   chunks/cNN.txt   原文块（约 9000 字符，在句末断开）
   terms/cNN.md     该块的 yiku 术语表（yiku table <块> --domain D [--scope 科名]）
   out/cNN.md       初译输出（含末尾「### 待定术语」节）
-  review/cNN.jsonl 核译问题单（空文件也表示已核过）
+  review/cNN.jsonl 核译问题单（解析通过才写；空文件 = 模型显式输出了 NO_ISSUES）
 合并：<书>/译文/<章>_直译初译.md（已存在则不覆盖）、待定术语汇总 pending_terms.tsv、
       问题单 <书>/核译/issues/<章>_direct.jsonl（old 在合并译文中恰好出现 1 次才收，其余进 rejected.jsonl）。
 问题单交给 apply_issues.py --dry 过闸口，本模块不改译文。
@@ -78,9 +78,12 @@ TRANSLATE_OUTPUT = """## 本次输出要求
 - 术语表「已核」必用；义项不同或不明的，按本书语境译，不硬套。拿不准的译名或词源上另有更贴切译法时，正文用通行名并加〔译注：…〕。
 - 不写文件、不调用工具。末尾另起「### 待定术语」逐行列：English｜所用译法｜理由。没有则省略。"""
 
-REVIEW_OUTPUT = """## 本次输出
-只输出 JSONL，每行一个问题对象，不要任何其他文字（不要代码围栏）。file 字段填给定的文件名。\
-old 必须逐字复制自译文，且在给出的译文块中只出现 1 次。没有问题就输出空。"""
+NO_ISSUES = "NO_ISSUES"
+
+REVIEW_OUTPUT = f"""## 本次输出
+只输出 JSONL，每行一个问题对象（必须含 old、new 字段），不要任何其他文字（不要代码围栏）。file 字段填给定的文件名。\
+old 必须逐字复制自译文，且在给出的译文块中只出现 1 次。
+核完确实没有问题时，整个输出只写一行 {NO_ISSUES}（不要输出空内容：空输出会被当作失败重跑）。"""
 
 
 def user_translate(table: str, chunk: str) -> str:
@@ -172,19 +175,53 @@ def strip_pending(zh: str) -> tuple[str, list[str]]:
     return zh[:i].strip(), [ln for ln in lines if ln]
 
 
+class ReviewParseError(ValueError):
+    """核译输出不是合法的 JSONL 问题单（也不是 NO_ISSUES）。"""
+
+
+_FENCE = re.compile(r"^```[A-Za-z]*$")
+
+
+def parse_review(text: str) -> list[dict[str, Any]]:
+    """严格解析核译输出。合法形态只有两种：
+      1. 每个非空行都是 JSON 对象，且 old、new 都是字符串、old 非空（围栏标记行 ``` 忽略，围栏里的内容照常解析）
+      2. 只有一行 NO_ISSUES（显式声明没有问题，返回空列表）
+    其余一律抛 ReviewParseError：空输出、说明文字、坏 JSON、缺 old/new、JSON 数组、NO_ISSUES 与问题混写。
+    不再静默丢弃任何行：丢掉的行可能就是漏报的问题。"""
+    lines = [(n, ln.strip()) for n, ln in enumerate(text.splitlines(), 1) if ln.strip()]
+    lines = [(n, ln) for n, ln in lines if not _FENCE.match(ln)]
+    if not lines:
+        raise ReviewParseError(f"输出为空；没有问题时应输出 {NO_ISSUES}")
+    if any(ln == NO_ISSUES for _n, ln in lines):
+        if len(lines) > 1:
+            raise ReviewParseError(f"{NO_ISSUES} 与其他内容混写（第 {lines[0][0]} 行起）")
+        return []
+    items: list[dict[str, Any]] = []
+    for n, ln in lines:
+        try:
+            obj = json.loads(ln)
+        except json.JSONDecodeError as exc:
+            raise ReviewParseError(f"第 {n} 行不是合法 JSON：{ln[:60]!r}（{exc.msg}）") from exc
+        if not isinstance(obj, dict):
+            raise ReviewParseError(f"第 {n} 行不是 JSON 对象：{ln[:60]!r}")
+        if not isinstance(obj.get("old"), str) or not obj["old"] or not isinstance(obj.get("new"), str):
+            raise ReviewParseError(f"第 {n} 行缺 old/new（或 old 为空）：{ln[:60]!r}")
+        items.append(obj)
+    return items
+
+
 def parse_jsonl(text: str) -> list[dict[str, Any]]:
-    """只取以 { 开头且能解析的行；代码围栏、说明文字一律忽略。"""
+    """宽松读取已落盘的问题单（run_review 只写过 parse_review 验证过的行）；模型的原始输出一律用 parse_review。"""
     out = []
     for ln in text.splitlines():
         ln = ln.strip()
-        if not ln.startswith("{"):
-            continue
-        try:
-            obj = json.loads(ln)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and "old" in obj and "new" in obj:
-            out.append(obj)
+        if ln.startswith("{"):
+            try:
+                obj = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and "old" in obj and "new" in obj:
+                out.append(obj)
     return out
 
 
@@ -293,7 +330,7 @@ def run_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Ca
         zh = strip_pending(ch.text("out", cid, "md"))[0]
         user = user_review(fname, ch.text("terms", cid, "md"), ch.text("chunks", cid, "txt"), zh)
         text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/review", usage_file=usage_file)
-        items = parse_jsonl(text)
+        items = parse_review(text)  # 解析失败抛错：该块记为失败，不写完成文件，下次续跑会重核
         _write(ch.path("review", cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
         return None
 

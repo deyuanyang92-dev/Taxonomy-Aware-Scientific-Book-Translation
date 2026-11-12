@@ -198,12 +198,12 @@ def test_review_and_merge_issues(book):
         cid_has_first = "Nereididae Blainville" in user
         if cid_has_first:
             return '```\n{"file":"c00.md","old":"沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕","new":"X","type":"术语"}\n{"old":"不存在的句子","new":"Y","type":"误译"}\n```'
-        return ""
+        return "NO_ISSUES"
 
     n, skipped, fails = dm.run_review(ch, ids, "deepseek-flash", "SYS", Fake(review_reply))
     assert n == len(ids) and fails == []
     assert (ch.dir / "review" / "c01.jsonl").read_text() == ""  # 空文件也表示已核过
-    assert dm.run_review(ch, ids, "deepseek-flash", "SYS", Fake("")) == (0, len(ids), [])
+    assert dm.run_review(ch, ids, "deepseek-flash", "SYS", Fake("NO_ISSUES")) == (0, len(ids), [])
     ok, bad = dm.merge_review(ch, ids)
     # 「沙蚕」重复多次：old 在合并译文中不是恰好 1 次，进拒绝；不存在的句子同理
     assert merged.count("沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕沙蚕") > 1
@@ -226,6 +226,55 @@ def test_merge_review_accepts_unique_old(book):
     assert (ok, bad) == (1, 0)
     it = json.loads(ch.issues.read_text(encoding="utf8"))
     assert it["file"] == "ch05_直译初译.md" and it["chunk"] == "c00"
+
+
+# ---------- 核译输出的严格解析 ----------
+
+def test_parse_review_accepts_jsonl_fenced_jsonl_and_no_issues():
+    one = '{"old":"甲","new":"乙","type":"误译"}'
+    assert dm.parse_review(one + "\n\n" + '{"old":"丙","new":"丁"}') == [
+        {"old": "甲", "new": "乙", "type": "误译"}, {"old": "丙", "new": "丁"}]
+    assert dm.parse_review(f"```jsonl\n{one}\n```") == [{"old": "甲", "new": "乙", "type": "误译"}]  # 围栏里的内容照常解析
+    assert dm.parse_review("NO_ISSUES") == [] and dm.parse_review("  NO_ISSUES \n") == []
+    assert dm.parse_review("```\nNO_ISSUES\n```") == []
+    assert dm.parse_review('{"old":"甲","new":""}') == [{"old": "甲", "new": ""}]  # 删去某字：new 可为空串
+
+
+@pytest.mark.parametrize("bad, why", [
+    ("", "输出为空"), ("   \n\n", "输出为空"), ("```\n```", "输出为空"),
+    ("没有发现问题。", "不是合法 JSON"),
+    ('{"old":"甲","new":"乙"}\n以上是全部问题。', "第 2 行不是合法 JSON"),
+    ('{"old":"甲","new":"乙"}\n{坏json', "第 2 行不是合法 JSON"),
+    ('{"old":"甲"}', "缺 old/new"),
+    ('{"new":"乙"}', "缺 old/new"),
+    ('{"old":"","new":"乙"}', "缺 old/new"),
+    ('{"old":1,"new":"乙"}', "缺 old/new"),
+    ('[{"old":"甲","new":"乙"}]', "不是 JSON 对象"),
+    ('{"old":"甲","new":"乙"}\nNO_ISSUES', "混写"),
+])
+def test_parse_review_rejects_everything_else(bad, why):
+    with pytest.raises(dm.ReviewParseError, match=why):
+        dm.parse_review(bad)
+
+
+def test_review_failure_writes_no_file_and_is_retried(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))
+    for reply in ("", "我没发现问题", '{"old":"甲"}', "```json\n[{\"old\":\"甲\",\"new\":\"乙\"}]\n```"):
+        n, skipped, fails = dm.run_review(ch, ids, "deepseek-flash", "SYS", Fake(reply))
+        assert n == 0 and len(fails) == len(ids), reply
+        assert not list((ch.dir / "review").glob("*.jsonl"))  # 失败不写完成文件
+    # 修好之后同一批块会被重核，而不是被当成已完成跳过
+    f = Fake("NO_ISSUES")
+    n, skipped, fails = dm.run_review(ch, ids, "deepseek-flash", "SYS", f)
+    assert (n, skipped, fails) == (len(ids), 0, []) and len(f.calls) == len(ids)
+    assert all(p.read_text() == "" for p in (ch.dir / "review").glob("*.jsonl"))  # NO_ISSUES -> 空文件，表示已核无问题
+
+
+def test_review_prompt_tells_model_to_write_no_issues():
+    s = dm.build_system("review", "分类学")
+    assert "NO_ISSUES" in s and "空输出会被当作失败" in s
 
 
 # ---------- 命令行 ----------
