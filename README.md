@@ -41,11 +41,13 @@ skill/       模型技能（流程、规则、提示词、领域包）
 docstore/    本地资料库（资料登记、逐页文本与核对等级、FTS5 检索、引页、detect/import 收编）
 tests/       docstore 测试
 yiku/        术语库模块（原独立仓库 yiku，含历史迁入）
-scripts/     流水线脚本：术语查询、验证、闸口、批量翻译与核译、排版
+scripts/     流水线脚本：术语查询、验证、闸口、批量翻译与核译（llm_engines 直调模型）、图注分离、排版与成品修订、模型比测（bench/）
 yiku/tests/ 术语库测试
 ```
 
 数据（原书、译文、OCR、术语数据库、分类数据库）不进仓库，路径由各工程目录配置。
+
+**技能目录以本仓库为准**：`~/.claude/skills/yzz-translate/` 只是副本。改完 `skill/`、`scripts/` 后运行 `scripts/sync_skill.sh`（先比对并打印差异再复制，`--dry` 只看差异）。详见 [AGENTS.md](AGENTS.md)。
 
 ### docstore 快速上手
 

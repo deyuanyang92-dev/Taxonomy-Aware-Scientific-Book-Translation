@@ -21,6 +21,13 @@
 - 找原件 PDF 要同时搜 `/mnt/n` 和 `/mnt/p` 两个盘（不少原件在 `/mnt/n/Sandisk/`、OneDrive、微信/QQ 目录）；找到后先比 sha256，再用 `docstore attach <key> <pdf> --check` 绑定到已登记资料（不复制、不移动原件），不要另登记一份。
 - 库根默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可用 `--root` 或 `DOCSTORE_ROOT` 覆盖。
 
+## 技能目录与仓库的关系（以仓库为准）
+
+- `skill/*.md`、`skill/domains/`、`scripts/` 以**本仓库为准**；`~/.claude/skills/yzz-translate/`（Codex 端 `~/.codex/skills/yzz-translate` 指向同一目录）只是副本，不是软链接。
+- 改规则、提示词、脚本：先改仓库，提交，再运行 `scripts/sync_skill.sh` 同步到技能目录（复制前逐文件比对并打印差异；`--dry` 只看差异不复制；`SKILL_DIR=` 可指定别的目标）。
+- 技能目录里有、仓库里没有的文件（如 `terms/` 导出视图）不动；同步脚本末尾会列出，确认该并入仓库就并入。
+- 不要直接在技能目录里改文件：下次同步会被仓库版本覆盖。急用已改了的，先把改动搬回仓库再同步。
+
 ## 单一主库
 
 | 数据 | 唯一主库 |
