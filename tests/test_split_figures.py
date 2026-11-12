@@ -55,12 +55,50 @@ def test_narrow_caption_continues_until_period_not_abbreviation():
     assert body.strip() == "Body text resumes here."
 
 
-def test_wide_column_caption_continues_on_long_next_line():
-    wide = "x " * 60 + "end."  # > 100 字符，以句号收尾
-    text = f"Fig. 1: first sentence ends here.\n{wide}\nshort body\n"
+def test_wide_column_caption_continues_across_mid_caption_period():
+    """双栏书的宽栏长图注：中间行常恰好以句号收尾（如「…(Horst, 1924).」），后面还有宽行，不能在那里断开。"""
+    narrow = "\n".join(f"narrow body column line number {i} of ordinary text here" for i in range(10))
+    w1 = "Fig. 1: " + "wide caption words " * 6 + "Shield-shaped bars in Pseudonereis trimaculata (Horst, 1924)."
+    w2 = "H, " + "more wide words " * 8 + "end of second wide line"
+    text = f"{narrow}\n{w1}\n{w2}\nPhotos from A. Rose.\nbody resumes with a narrow line\n"
+    assert len(w1) > 100 and len(w2) > 100 and w1.endswith("1924).")
     body, caps = sf.split_figures(text)
-    assert len(caps) == 1 and "first sentence ends here." in caps[0] and "x x" in caps[0]
-    assert body.strip() == "short body"
+    assert len(caps) == 1 and caps[0].endswith("Photos from A. Rose.") and "(Horst, 1924). H, more wide" in caps[0]
+    assert body.splitlines()[-1] == "body resumes with a narrow line" and "Fig." not in body
+
+
+def test_wide_continuation_requires_wide_first_line():
+    """首行是窄行且已句末结束：后面碰到长行也不续（长行是正文）。"""
+    wide = "x " * 60 + "end."
+    body, caps = sf.split_figures(f"Fig. 1: first sentence ends here.\n{wide}\nshort body\n")
+    assert caps == ["Fig. 1: first sentence ends here."]
+    assert body.splitlines() == [wide, "short body"]
+
+
+def body_line(i):  # 单栏书的正文行：本身就有 130+ 字符
+    return f"Sentence {i} of the running text in a single wide column, which is long enough that every body line exceeds one hundred characters."
+
+
+def test_single_column_book_body_is_not_swallowed_after_caption():
+    """单栏书正文行也 >100 字符。图注句末结束后，下一行再长也不能并入图注。"""
+    assert len(body_line(0)) > 120
+    short_cap = "Fig. 3: A short one-line caption."
+    wide_cap = "Fig. 4: " + "A caption line in the single column that is even wider than the running text around it, " * 2 + "ends here."
+    two_line_first = ("Table 2 " + "A caption whose first line is wide and has no final period so that it must continue " * 2).rstrip()
+    lines = [body_line(i) for i in range(4)] + [short_cap] + [body_line(i) for i in range(4, 8)] \
+        + [wide_cap] + [body_line(i) for i in range(8, 12)] \
+        + [two_line_first, "and ends on a second line."] + [body_line(i) for i in range(12, 16)]
+    body, caps = sf.split_figures("\n".join(lines) + "\n")
+    assert caps == [short_cap, wide_cap, two_line_first + " and ends on a second line."]
+    assert body.splitlines() == [body_line(i) for i in range(16)]  # 16 行正文原样保留，没有被吞，也没有丢
+
+
+def test_wide_cutoff_adapts_to_body_line_length():
+    narrow_doc = ["a" * 57] * 50
+    wide_doc = ["a" * 130] * 50
+    assert sf.wide_cutoff(narrow_doc) == 100
+    assert sf.wide_cutoff(wide_doc) == pytest.approx(169)
+    assert sf.wide_cutoff([]) == 100
 
 
 def test_next_caption_start_stops_block_and_block_length_capped():

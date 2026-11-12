@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import statistics
 import sys
 from pathlib import Path
 
@@ -33,12 +34,28 @@ def ends_sentence(line: str) -> bool:
     return s.endswith(".") and not _ABBREV_END.search(s)
 
 
-def _continues(block: list[str], nxt: str) -> bool:
+def wide_cutoff(lines: list[str]) -> float:
+    """「宽行」的长度门槛：不低于 100，且要明显长于本章正文行（取非空行长度中位数的 1.3 倍）。
+    双栏书正文行约 57 字符，宽栏图注 > 100，门槛就是 100；单栏书正文行本身就有 110 以上，门槛随之抬高，
+    正文行不会被当成宽栏图注。"""
+    sizes = [len(ln) for ln in lines if ln.strip()]
+    return max(WIDE_LINE, 1.3 * statistics.median(sizes)) if sizes else float(WIDE_LINE)
+
+
+def _continues(block: list[str], nxt: str, wide: float = WIDE_LINE) -> bool:
+    """是否把 nxt 并入当前图注块。末行是句末结束的就停（单栏书的正文行很长，不能因为下一行长就吞进图注）；
+    下一行本身是新图注首行也停。其余两种情况续行：
+      窄栏：末行未句末结束，且块长不到 14 行；
+      宽栏：该图注首行本身是宽行，下一行也是宽行，且末行未句末结束，或末行本身是宽行
+            （宽栏长图注的中间行常常恰好以句号收尾，如「…(Horst, 1924).」，不能在那里断开）。"""
     if CAPTION_START.match(nxt):
         return False
-    narrow = not ends_sentence(block[-1]) and len(block) < MAX_BLOCK_LINES
-    wide = len(nxt) > WIDE_LINE
-    return narrow or wide
+    last = block[-1]
+    if not ends_sentence(last):
+        if len(block) < MAX_BLOCK_LINES:
+            return True
+        return len(block[0]) > wide and len(nxt) > wide
+    return len(block[0]) > wide and len(last) > wide and len(nxt) > wide
 
 
 def dehyphenate(lines: list[str]) -> list[str]:
@@ -72,6 +89,7 @@ def split_figures(text: str) -> tuple[str, list[str]]:
     lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
     body: list[str] = []
     captions: list[str] = []
+    wide = wide_cutoff(lines)
     i = 0
     while i < len(lines):
         if not CAPTION_START.match(lines[i]):
@@ -80,7 +98,7 @@ def split_figures(text: str) -> tuple[str, list[str]]:
             continue
         block = [lines[i]]
         i += 1
-        while i < len(lines) and _continues(block, lines[i]):
+        while i < len(lines) and _continues(block, lines[i], wide):
             block.append(lines[i])
             i += 1
         captions.append(_join_caption(block))
