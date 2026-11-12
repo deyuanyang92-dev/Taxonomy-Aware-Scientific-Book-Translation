@@ -153,3 +153,28 @@ def test_consensus_skips_model_ocr_and_replaces_old_consensus(scan_lib):
     assert any(v.get("producer") == "consensus(rebuild)" for v in p1["alternates"])
     p2 = st.page(key, 2)
     assert p2["producer"] == "consensus(rebuild)" and "假基因" in p2["text"]
+
+
+def test_single_engine_not_marked_sampled_and_limit_total(scan_lib):
+    st, key = scan_lib
+    r = textify.textify(st, key, workers=1, engines=["rapidocr"], limit=2, log=lambda m: None)
+    assert r["ocr"] + r["text_layer"] <= 2
+    for n in st.page_numbers(key):
+        assert st.page(key, n)["verify_level"] == "ocr_raw"  # 单引擎无比对，不算 ocr_sampled
+
+
+def test_promote_existing_alternate():
+    import tempfile
+
+    from docstore.store import make_version
+    from docstore.store import open_store as _open
+    st = _open(tempfile.mkdtemp())
+    key, _ = st.register(None, key="k", status="原件缺失")
+    a = make_version("甲", "ocr", producer="a", dpi=300, level="ocr_sampled")
+    b = make_version("乙", "ocr", producer="b", dpi=100, level="ocr_raw")
+    st.put_version(key, 1, a)
+    st.put_version(key, 1, b)
+    assert st.page(key, 1)["producer"] == "a"
+    st.put_version(key, 1, b, promote=True)
+    p = st.page(key, 1)
+    assert p["producer"] == "b" and [v["producer"] for v in p["alternates"]] == ["a"]

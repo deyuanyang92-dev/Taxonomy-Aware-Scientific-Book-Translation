@@ -155,3 +155,11 @@ def test_rows_to_text_orders_columns_and_averages_conf():
 def test_rows_to_text_empty():
     assert rows_to_text(None) == ("", None)
     assert rows_to_text([]) == ("", None)
+
+
+def test_column_pushed_down_by_figure_keeps_body_in_column():
+    """右栏被图推后：左栏顶部多行是正文，不得当页眉摘出（Codex 2026-11-13 P2）。"""
+    left = [row(100, 200 + 40 * i, 700, 230 + 40 * i, f"L{i}") for i in range(12)]
+    right = [row(800, 400 + 40 * i, 1400, 430 + 40 * i, f"R{i}") for i in range(7)]
+    out = texts(order_rows(left + right))
+    assert out == [f"L{i}" for i in range(12)] + [f"R{i}" for i in range(7)]

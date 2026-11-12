@@ -322,8 +322,11 @@ class Store:
                         page.setdefault("extra", {})[k] = v
             else:
                 allv = [_primary(page)] + page.get("alternates", [])
-                if any(_same(v, version) for v in allv):
+                dup = next((v for v in allv if _same(v, version)), None)
+                if dup is not None and not (promote is True and not _same(_primary(page), version)):
                     return page
+                if dup is not None:  # promote=True 且同一版本已在 alternates：提为主版本
+                    page["alternates"] = [v for v in page.get("alternates", []) if not _same(v, version)]
                 if promote is True or (promote is None and version_rank(version) > version_rank(_primary(page))):
                     page["alternates"] = [_primary(page)] + page.get("alternates", [])
                     for k in VERSION_KEYS:

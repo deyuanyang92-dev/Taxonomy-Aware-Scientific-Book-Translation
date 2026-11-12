@@ -123,9 +123,9 @@ def textify(
             want = {p for p in pages if 1 <= p <= npages}
             todo = [n for n in todo if n in want]
             need_ocr = [n for n in need_ocr if n in want]
-        if limit is not None:
+        if limit is not None:  # 两类页合计不超过 limit
             todo = todo[:limit]
-            need_ocr = need_ocr[:limit]
+            need_ocr = need_ocr[:max(0, limit - len(todo))]
         n_text = 0
         for n in todo:
             txt = pdf[n - 1].get_text()
@@ -184,8 +184,9 @@ def textify(
                     )
                 )
         text, conf, disagreements, unresolved = vote(readings)
+        single = len({r.source for r in readings}) < 2  # 只有一个引擎读数：无从比对，不算抽检
         fixed, changes = _FIXER.apply(text) if fix else (text, [])
-        lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
+        lv = "ocr_sampled" if unresolved == 0 and not single else "ocr_raw"
         if vlm and unresolved > 0:
             # VLM 接口保留，未能确定时继续保留 [?]
             lv = "ocr_raw"
@@ -206,7 +207,8 @@ def textify(
                 "lexicon_changes": changes,
             },
         )
-        store.put_version(key, n, v)
+        cur = str((store.read_page(key, n) or {}).get("producer") or "")
+        store.put_version(key, n, v, promote=True if (cur in ENGINE_NAMES or cur.startswith("consensus(")) else None)
         done += 1
         if done % 10 == 0 or done == len(need_ocr):
             el = time.perf_counter() - t0
@@ -280,12 +282,13 @@ def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str
         if not readings:
             continue
         txt, conf, disagreements, unresolved = vote(readings)
+        single = len({r.source for r in readings}) < 2
         if _FIXER is None:
             fixer = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
         else:
             fixer = _FIXER
         fixed, changes = fixer.apply(txt)
-        lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
+        lv = "ocr_sampled" if unresolved == 0 and not single else "ocr_raw"
         ver = make_version(
             fixed,
             "ocr",

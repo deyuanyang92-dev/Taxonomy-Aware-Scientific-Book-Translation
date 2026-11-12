@@ -14,6 +14,7 @@ from __future__ import annotations
 import bisect
 from typing import Any, Sequence
 
+MAX_HEADER_ROWS = 2
 MIN_SIDE = 3          # 每栏至少要有这么多框，才算分栏
 MID_BAND = (0.30, 0.70)  # 中缝必须落在内容宽度的这一段内
 GUTTER_MIN_FRAC = 0.01   # 中缝最小宽度 / 内容宽度
@@ -140,8 +141,9 @@ def order_rows(rows: Sequence[Any]) -> list[Any]:
         """把栏内的页眉（整体在另一栏首行之上）、孤立页脚（整体在另一栏末行之下、与上一行相隔甚远）摘出去。"""
         keep: list[_Box] = []
         srt = sorted(col, key=lambda t: t.yc)
+        n_above = sum(1 for t in srt if t.y1 < o_top)
         for k, b in enumerate(srt):
-            if b.y1 < o_top:
+            if b.y1 < o_top and n_above <= MAX_HEADER_ROWS:  # 多于两行就是正文（另一栏被图推后），不摘
                 neutral.append(b)
             elif b.y0 > o_bot and (k == 0 or b.y0 - srt[k - 1].y1 >= ISOLATION_LINES * medh):
                 neutral.append(b)
