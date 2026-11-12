@@ -1,10 +1,17 @@
 # -*- coding: utf-8 -*-
 """用 Word 量出每个章标题所在的真实页码（正文页码，自 1 起），写入 _toc_pages.json。
 
-用法: C:/Python314/python.exe collect_pages.py 文件.docx
+用法: C:/Python314/python.exe -X utf8 collect_pages.py 文件.docx
 """
-import json, os, sys
+import json
+import os
+import sys
 import win32com.client as win32
+
+# Windows 控制台默认 GBK，打印生僻字（如 𧍒）会崩；用法里要加 -X utf8，这里再兜底一层
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 
 WD_ADJUSTED_PAGE = 1   # wdActiveEndAdjustedPageNumber：反映 pgNumType 重设后的显示页码
 

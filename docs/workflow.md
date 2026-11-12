@@ -163,10 +163,11 @@
 在书目录下（详见 `<书>/README.md`）：
 1. `python3 脚本/build_docx.py 发布/v0.01/书名.docx`
 2. 插图浮动（2–3 轮）：Word 渲染 → `python3 脚本/fig_defer.py 渲染.pdf` → 再 build（图放在首次引用处附近，放不下时让正文先排满，图落下一页页首）。
-3. 目录量页：`collect_pages.py`（Word COM）→ 再 build。
-4. `word_render.py` 导出 PDF/A（**不加 --toc**，曾卡死）。
-5. 传播版：Ghostscript + 插图缩至 1000 px（约 20 MB）。
+3. 目录量页：`C:/Python314/python.exe -X utf8 collect_pages.py 书.docx`（Word COM）→ 再 build。
+4. `C:/Python314/python.exe -X utf8 word_render.py 书.docx` 导出 PDF/A（**不加 --toc**，曾卡死）。Windows 的 Python 一律加 `-X utf8`，否则打印生僻字（如 𧍒）会因 GBK 崩溃。
+5. 传播版：`scripts/publish/share_pdf.sh 正式版.pdf`（Ghostscript，图像降到 120 dpi、JPEG 质量 72，字体仍全嵌入；Rouse 55 MB → 12 MB，图文清晰）。
 6. `zh check` docx 与两个 PDF；脚本核目录页码、空白页、图注位置、插图数。
+7. 成品发现个别错字时不必整本重排：`python3 -X utf8 scripts/publish/patch_release.py 书.docx 替换表.tsv`（旧→新定点替换，跨 run 拆开的也能改，逐条报告次数与未命中）；PDF 仅在新旧字数相同且新字字形已在嵌入字体子集里时原地改，否则按提示由改后 docx 用 word_render 重渲染。
 
 版式约定：章首「中文章名 原书标题」一行；目录「章号 中文名 原文名」；不印 DOI 与原书页码；参考文献照录英文列附录；只保留一个发布版本，修订直接覆盖。
 

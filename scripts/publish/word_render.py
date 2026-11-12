@@ -2,10 +2,16 @@
 """用 Word COM 把 docx 转 PDF（供视觉检查），并可选更新目录域。
 
 用法:
-    C:/Python314/python.exe word_render.py 输入.docx [输出.pdf] [--toc]
+    C:/Python314/python.exe -X utf8 word_render.py 输入.docx [输出.pdf] [--toc]
 """
-import os, sys
+import os
+import sys
 import win32com.client as win32
+
+# Windows 控制台默认 GBK，打印生僻字（如 𧍒）会崩；用法里要加 -X utf8，这里再兜底一层
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
 
 WD_FORMAT_PDF = 17
 
