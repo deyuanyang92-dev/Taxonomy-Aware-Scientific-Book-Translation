@@ -28,7 +28,7 @@ DOMAINS = ("分类学", "进化生物学", "科学史", "分子系统学")  # �
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
   key TEXT PRIMARY KEY, title TEXT NOT NULL, kind TEXT NOT NULL, tier INTEGER NOT NULL,
-  domain TEXT NOT NULL DEFAULT '*', path TEXT, note TEXT);
+  domain TEXT NOT NULL DEFAULT '*', path TEXT, note TEXT, year INTEGER);
 CREATE TABLE IF NOT EXISTS terms(
   id INTEGER PRIMARY KEY, en TEXT NOT NULL, en_norm TEXT NOT NULL, zh TEXT NOT NULL,
   domain TEXT NOT NULL DEFAULT '*', scope TEXT NOT NULL DEFAULT '*',
@@ -50,6 +50,10 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
     con = sqlite3.connect(p)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(sources)")}
+    if "year" not in cols:  # 旧库迁移：来源出版年，同层级时新版优先
+        con.execute("ALTER TABLE sources ADD COLUMN year INTEGER")
+        con.commit()
     return con
 
 
@@ -58,14 +62,26 @@ def norm(en: str) -> str:
     return re.sub(r"\s+", " ", en.strip().strip(".,;:()[]\"'")).lower()
 
 
-def add_source(con, key, title, kind, tier=None, domain="*", path=None, note=None):
+def add_source(con, key, title, kind, tier=None, domain="*", path=None, note=None, year=None):
+    """登记来源。year 为出版年：同层级来源译名不一致时，新版优先（未给 year 时保留库中已有值）。"""
     if kind not in KIND_TIER:
         raise ValueError(f"kind 必须是 {sorted(KIND_TIER)} 之一")
     con.execute(
-        "INSERT INTO sources(key,title,kind,tier,domain,path,note) VALUES(?,?,?,?,?,?,?) "
+        "INSERT INTO sources(key,title,kind,tier,domain,path,note,year) VALUES(?,?,?,?,?,?,?,?) "
         "ON CONFLICT(key) DO UPDATE SET title=excluded.title, kind=excluded.kind, tier=excluded.tier, "
-        "domain=excluded.domain, path=excluded.path, note=excluded.note",
-        (key, title, kind, KIND_TIER[kind] if tier is None else tier, domain, path, note))
+        "domain=excluded.domain, path=excluded.path, note=excluded.note, "
+        "year=coalesce(excluded.year, sources.year)",
+        (key, title, kind, KIND_TIER[kind] if tier is None else tier, domain, path, note, year))
+    con.commit()
+
+
+def set_source(con, key, *, tier=None, year=None, note=None):
+    """只改给出的字段（层级、出版年、备注），其余不动。"""
+    if con.execute("SELECT 1 FROM sources WHERE key=?", (key,)).fetchone() is None:
+        raise KeyError(f"来源 {key} 未登记")
+    for col, val in (("tier", tier), ("year", year), ("note", note)):
+        if val is not None:
+            con.execute(f"UPDATE sources SET {col}=? WHERE key=?", (val, key))
     con.commit()
 
 
@@ -100,17 +116,20 @@ class Hit:
     status: str
     page: str | None
     note: str | None
+    context: str | None = None
+    year: int | None = None
 
     def cite(self) -> str:
         return f"{self.source}" + (f" p.{self.page}" if self.page else "")
 
 
 def candidates(con, en: str, domain: str = "*", scope: set[str] | None = None) -> list[Hit]:
-    """某英文术语的全部译名，按可信度排序：已核 > 候选；领域吻合 > 通用；类群吻合 > 通用；来源层级。
+    """某英文术语的全部译名，按可信度排序：已核 > 候选；领域吻合 > 通用；类群吻合 > 通用；来源层级；
+    同层级出版年新者优先（用户 2026-11-12：同一作者新旧版不一致，以新的为准）。
     否决的不返回；其他领域的专用译名不返回（避免把植物学用字带进动物学）。"""
     scope = scope or set()
     rows = con.execute(
-        "SELECT t.*, s.tier FROM terms t JOIN sources s ON s.key=t.source "
+        "SELECT t.*, s.tier, s.year FROM terms t JOIN sources s ON s.key=t.source "
         "WHERE t.en_norm=? AND t.status!='否决' AND (t.domain='*' OR t.domain=?)",
         (norm(en), domain)).fetchall()
     out = []
@@ -122,11 +141,11 @@ def candidates(con, en: str, domain: str = "*", scope: set[str] | None = None) -
 
     def key(item):
         r, sc = item
-        return (r["status"] != "已核", r["domain"] == "*", "*" in sc, r["tier"])
+        return (r["status"] != "已核", r["domain"] == "*", "*" in sc, r["tier"], -(r["year"] or 0))
 
     out.sort(key=key)
     return [Hit(r["en"], r["zh"], r["domain"], r["scope"], r["source"], r["tier"], r["status"],
-                r["page"], r["note"]) for r, _ in out]
+                r["page"], r["note"], r["context"], r["year"]) for r, _ in out]
 
 
 def best(con, en, domain="*", scope=None) -> Hit | None:

@@ -39,12 +39,15 @@ def _text(path, ocr="auto"):
 
 def cmd_source(a, con):
     if a.action == "add":
-        D.add_source(con, a.key, a.title or a.key, a.kind, a.tier, a.domain, a.path, a.note)
+        D.add_source(con, a.key, a.title or a.key, a.kind, a.tier, a.domain, a.path, a.note, a.year)
         print(f"已登记来源 {a.key}")
+    elif a.action == "set":
+        D.set_source(con, a.key, tier=a.tier, year=a.year, note=a.note)
+        print(f"已更新来源 {a.key}")
     else:
         for r in con.execute("SELECT s.*, (SELECT count(*) FROM terms t WHERE t.source=s.key) n "
-                             "FROM sources s ORDER BY tier, key"):
-            print(f"{r['tier']}\t{r['key']}\t{r['kind']}\t{r['domain']}\t{r['n']}条\t{r['title']}")
+                             "FROM sources s ORDER BY tier, year DESC, key"):
+            print(f"{r['tier']}\t{r['key']}\t{r['year'] or '-'}\t{r['kind']}\t{r['domain']}\t{r['n']}条\t{r['title']}")
 
 
 def cmd_import(a, con):
@@ -110,7 +113,8 @@ def cmd_lookup(a, con):
     if not cs:
         print("库中无此术语")
     for h in cs:
-        print(f"{h.zh}\t{h.status}\t领域={h.domain}\t范围={h.scope}\t{h.cite()}\t层级{h.tier}\t{h.note or ''}")
+        print(f"{h.zh}\t{h.status}\t领域={h.domain}\t范围={h.scope}\t{h.cite()}\t层级{h.tier}"
+              f"\t{h.year or '-'}\t{h.note or ''}")
 
 
 def cmd_table(a, con):
@@ -133,7 +137,7 @@ def cmd_review(a, con):
         if a.domain:
             q += " AND t.domain=?"
             args.append(a.domain)
-        rows = con.execute(q + " ORDER BY t.en_norm, s.tier", args).fetchall()
+        rows = con.execute(q + " ORDER BY t.en_norm, s.tier, s.year DESC", args).fetchall()
         _write_tsv(a.tsv, ["id", "en", "zh", "domain", "scope", "source", "page", "context", "决定", "改为", "备注"],
                    [[r["id"], r["en"], r["zh"], r["domain"], r["scope"], r["source"], r["page"] or "",
                      (r["context"] or "").replace("\t", " ").replace("\n", " "), "", "", r["note"] or ""]
@@ -178,16 +182,23 @@ def cmd_wikidata(a, con):
 def cmd_stats(a, con):
     for r in con.execute("SELECT domain, status, count(*) n FROM terms GROUP BY domain, status ORDER BY domain"):
         print(f"{r['domain']}\t{r['status']}\t{r['n']}")
-    # 未解决冲突：排第一、第二的译名都已核、领域范围相同、来源层级也相同 —— 排序无法裁决，须人工定
-    unresolved = []
+    # 未解决冲突：排第一、第二的译名都已核、领域范围相同、来源层级也相同、出版年也相同（或缺年份）
+    # —— 排序无法裁决，须人工定。同层级但年份不同的，按新版优先自动定，单列「新版取代旧版」备查。
+    unresolved, superseded = [], []
     for r in con.execute("SELECT DISTINCT en_norm, domain, scope FROM terms WHERE status='已核'"):
         sc = {x for x in r["scope"].split(";")} - {"*"}
         c = [h for h in D.candidates(con, r["en_norm"], r["domain"], sc)
              if h.status == "已核" and h.domain == r["domain"] and h.scope == r["scope"]]
         if len(c) > 1 and c[0].zh != c[1].zh and c[0].tier == c[1].tier:
-            unresolved.append(f"  {c[0].en}\t{r['domain']}\t" + "、".join(f"{h.zh}({h.cite()})" for h in c[:3]))
-    print(f"\n未解决冲突 {len(unresolved)} 条（同层级来源给出不同已核译名，须裁定）：")
+            line = f"  {c[0].en}\t{r['domain']}\t" + "、".join(f"{h.zh}({h.cite()})" for h in c[:3])
+            if c[0].year and c[1].year and c[0].year != c[1].year:
+                superseded.append(line)
+            else:
+                unresolved.append(line)
+    print(f"\n未解决冲突 {len(unresolved)} 条（同层级同年份来源给出不同已核译名，须裁定）：")
     print("\n".join(unresolved[:50]))
+    print(f"\n新版取代旧版 {len(superseded)} 条（同层级、年份不同，取新版；首列为采用的译名）：")
+    print("\n".join(superseded[:50]))
 
 
 def build_parser():
@@ -196,11 +207,12 @@ def build_parser():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("source", help="登记/列出来源")
-    s.add_argument("action", choices=["add", "list"])
+    s.add_argument("action", choices=["add", "set", "list"])
     s.add_argument("key", nargs="?")
     s.add_argument("--title")
     s.add_argument("--kind", default="authority", choices=sorted(D.KIND_TIER))
     s.add_argument("--tier", type=int)
+    s.add_argument("--year", type=int, help="出版年；同层级来源不一致时新版优先")
     s.add_argument("--domain", default="*")
     s.add_argument("--path")
     s.add_argument("--note")

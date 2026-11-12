@@ -64,7 +64,26 @@ def test_check_reports_rejected_variant(con):
 def test_table_flags_candidates(con):
     D.add_term(con, "chaetiger", "刚节", "wiki")
     t = M.term_table(con, "first chaetiger")
-    assert "⚠候选" in t and "刚节" in t
+    assert "| 候选 |" in t and "刚节" in t
+
+
+def test_table_shows_source_context(con):
+    """译名要连同出处语境给出：洪德元的「突变体(variant)」出自概念列举，不能套到 Ray 的 variants 上。"""
+    D.add_term(con, "variant", "突变体", "hong2016", domain="进化生物学",
+               context="饰变(modification)、基因型(genotype)、突变体(variant)、多态现象")
+    t = M.term_table(con, "an assemblage of all variants", "进化生物学")
+    assert "突变体" in t and "基因型(genotype)" in t and "出处语境" in t
+
+
+def test_table_flags_same_rank_conflict(con):
+    D.add_source(con, "classicA", "经典译作甲", "authority", domain="进化生物学")
+    D.add_source(con, "classicB", "经典译作乙", "authority", domain="进化生物学")
+    D.add_term(con, "population", "种群", "classicA", domain="进化生物学", status="已核")
+    D.add_term(con, "population", "居群", "classicB", domain="进化生物学", status="已核")
+    t = M.term_table(con, "two populations", "进化生物学")
+    assert "⚠冲突" in t
+    D.add_term(con, "population", "居群", "user", domain="进化生物学", status="已核")
+    assert "⚠冲突" not in M.term_table(con, "two populations", "进化生物学")  # 用户核定层级更高，不算冲突
 
 
 def test_paren_pairs():
@@ -141,3 +160,51 @@ def test_variants():
     assert "补充" in M.variants("补充（加入）")
     assert "环纹" in M.variants("具环纹的")
     assert "吻" in M.variants("吻")
+
+
+def test_find_terms_ignores_figure_letters(con):
+    D.add_term(con, "f.", "变型", "hong2016", domain="进化生物学")
+    assert M.find_terms(con, "radioles (Figs. 38.1c, 38.2f).", "进化生物学") == {}
+    assert M.find_terms(con, "Carex f. alba", "进化生物学") == {"f": 1}
+
+
+def test_same_tier_newer_source_wins(con):
+    """同层级来源用名不一致时，以出版年新者为准（用户 2026-11-12：杨孙 1988 vs 2004/2014）。"""
+    D.add_source(con, "jinhai1988", "近海1988", "authority", domain="分类学", year=1988)
+    D.add_source(con, "dzz33", "动物志33", "authority", domain="分类学", year=2004)
+    D.add_term(con, "Namalycastis", "单叶沙蚕属", "jinhai1988", domain="分类学", status="已核")
+    D.add_term(con, "Namalycastis", "溪沙蚕属", "dzz33", domain="分类学", status="已核")
+    cs = D.candidates(con, "Namalycastis", "分类学")
+    assert [h.zh for h in cs] == ["溪沙蚕属", "单叶沙蚕属"]
+    assert cs[0].year == 2004
+
+
+def test_source_set_keeps_other_fields(con):
+    D.set_source(con, "dzz54", year=2014, tier=1)
+    r = con.execute("SELECT * FROM sources WHERE key='dzz54'").fetchone()
+    assert (r["year"], r["tier"], r["title"]) == (2014, 1, "中国动物志54 缨鳃虫目")
+    D.add_source(con, "dzz54", "中国动物志54 缨鳃虫目", "authority", tier=1, domain="分类学")
+    assert con.execute("SELECT year FROM sources WHERE key='dzz54'").fetchone()[0] == 2014
+
+
+def test_stats_newer_edition_not_conflict(con, capsys):
+    D.add_source(con, "a1988", "旧版", "authority", domain="分类学", year=1988)
+    D.add_source(con, "b2004", "新版", "authority", domain="分类学", year=2004)
+    D.add_source(con, "c2004", "同年另一本", "authority", domain="分类学", year=2004)
+    D.add_term(con, "Leocrates", "结海虫属", "a1988", domain="分类学", status="已核")
+    D.add_term(con, "Leocrates", "海结虫属", "b2004", domain="分类学", status="已核")
+    D.add_term(con, "Synelmis", "刺毛虫属", "b2004", domain="分类学", status="已核")
+    D.add_term(con, "Synelmis", "甲毛虫属", "c2004", domain="分类学", status="已核")
+    cli.cmd_stats(None, con)
+    out = capsys.readouterr().out
+    assert "未解决冲突 1 条" in out and "Synelmis" in out
+    assert "新版取代旧版 1 条" in out and "Leocrates" in out
+
+
+def test_table_newer_edition_not_flagged(con):
+    D.add_source(con, "old", "旧版", "authority", domain="分类学", year=1988)
+    D.add_source(con, "new", "新版", "authority", domain="分类学", year=2004)
+    D.add_term(con, "Leocrates", "结海虫属", "old", domain="分类学", status="已核")
+    D.add_term(con, "Leocrates", "海结虫属", "new", domain="分类学", status="已核")
+    t = M.term_table(con, "Leocrates chinensis", "分类学")
+    assert "海结虫属" in t and "⚠冲突" not in t

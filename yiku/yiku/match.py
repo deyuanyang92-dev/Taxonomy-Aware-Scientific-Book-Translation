@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .db import candidates
+from .db import Hit, candidates
 
 _LATIN_PLURAL = (("us", "i"), ("um", "a"), ("on", "a"), ("a", "ae"), ("is", "es"), ("y", "ies"))
 
@@ -21,7 +21,8 @@ def forms(en: str) -> set[str]:
 
 def _pattern(en: str) -> re.Pattern:
     alts = sorted((re.escape(x).replace(r"\ ", r"[\s-]+") for x in forms(en)), key=len, reverse=True)
-    return re.compile(r"(?<![A-Za-z])(?:" + "|".join(alts) + r")(?![A-Za-z])", re.I)
+    # 前后不能紧挨字母或数字：图号 38.2f 里的 f 不是缩写 f.（变型）
+    return re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(alts) + r")(?![A-Za-z0-9])", re.I)
 
 
 def find_terms(con, text: str, domain: str = "*") -> dict[str, int]:
@@ -40,20 +41,37 @@ def find_terms(con, text: str, domain: str = "*") -> dict[str, int]:
     return found
 
 
+def _ctx(h: Hit, n: int = 60) -> str:
+    c = (h.context or "").replace("|", "｜").replace("\n", " ").strip()
+    return c[:n] + "…" if len(c) > n else c
+
+
+def _rank(h: Hit) -> tuple:
+    return (h.status, h.domain, h.scope, h.tier, h.year)  # 同层级不同年份：新版优先，不算冲突
+
+
 def term_table(con, text: str, domain: str = "*", scope: set[str] | None = None) -> str:
-    """Markdown 术语表，供任何模型的提示词使用。"""
+    """Markdown 术语表，供任何模型的提示词使用。
+
+    术语按「英文 + 义项」理解：表中给出出处语境，译者先判断本书此处的义项是否与出处相同，再决定是否采用。
+    同级（状态、领域、类群、来源层级都相同）的已核译名不一致时标「冲突」，不替译者默认选第一个。"""
     rows = []
     for en, n in sorted(find_terms(con, text, domain).items()):
         c = candidates(con, en, domain, scope)
         if not c:
             continue
         b = c[0]
+        rivals = [h for h in c[1:] if h.zh != b.zh and h.status == "已核" and _rank(h) == _rank(b)]
+        if rivals:
+            flag = "⚠冲突：另有 " + "、".join(sorted({h.zh for h in rivals}))
+        else:
+            flag = b.status
         others = "；".join(sorted({f"{h.zh}（{h.cite()}）" for h in c[1:] if h.zh != b.zh}))
-        flag = "" if b.status == "已核" else "⚠候选：保留英文并登记待核"
-        rows.append(f"| {b.en} | {b.zh} | {b.cite()} | {b.status}{flag} | {others or ''} |")
-    head = (f"领域：{domain}；类群：{'、'.join(sorted(scope)) if scope else '通用'}\n\n"
-            "| 英文 | 采用中文 | 依据 | 状态 | 落选译名 |\n|---|---|---|---|---|")
-    return head + ("\n" + "\n".join(rows) if rows else "\n| （原文未命中术语库） | | | | |")
+        rows.append(f"| {b.en} | {b.zh} | {b.cite()} | {flag} | {_ctx(b)} | {others} |")
+    head = (f"领域：{domain}；类群：{'、'.join(sorted(scope)) if scope else '通用'}\n"
+            "用法：义项与出处语境相同才用（已核必用，候选可用）；否则按本书语境译并登记。\n\n"
+            "| 英文 | 译名 | 依据 | 状态 | 出处语境 | 其他译名 |\n|---|---|---|---|---|---|")
+    return head + ("\n" + "\n".join(rows) if rows else "\n| （原文未命中术语库） | | | | | |")
 
 
 @dataclass
