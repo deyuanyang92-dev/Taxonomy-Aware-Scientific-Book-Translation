@@ -309,8 +309,9 @@ class Store:
             return []
         return sorted(int(f.name[1:5]) for f in d.glob("p[0-9][0-9][0-9][0-9].json"))
 
-    def put_version(self, key: str, n: int, version: dict, *, index: bool = True) -> dict:
-        """加入一个页面版本；同一来源同一文本重复导入时不重复记录。"""
+    def put_version(self, key: str, n: int, version: dict, *, index: bool = True, promote: bool | None = None) -> dict:
+        """加入一个页面版本；同一来源同一文本重复导入时不重复记录。
+        promote=None 按 version_rank 决定主版本；True 强制成为主版本；False 只进 alternates。"""
         with _flock(self.root / "pages" / key / ".lock"):
             page = self.read_page(key, n)
             if page is None:
@@ -323,7 +324,7 @@ class Store:
                 allv = [_primary(page)] + page.get("alternates", [])
                 if any(_same(v, version) for v in allv):
                     return page
-                if version_rank(version) > version_rank(_primary(page)):
+                if promote is True or (promote is None and version_rank(version) > version_rank(_primary(page))):
                     page["alternates"] = [_primary(page)] + page.get("alternates", [])
                     for k in VERSION_KEYS:
                         page[k] = version.get(k)

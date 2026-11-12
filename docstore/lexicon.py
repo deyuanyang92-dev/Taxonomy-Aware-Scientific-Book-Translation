@@ -202,7 +202,9 @@ class Fixer:
             if best and best != m:
                 fixed = fixed.replace(m, best)
                 changes.append({"rule": "latin_edit_distance", "before": m, "after": best})
-        max_cn = int(self.cfg.get("chinese", {}).get("max_distance", 1))
+        max_cn = int(self.cfg.get("chinese", {}).get("max_distance", 0))
+        if max_cn <= 0:
+            return fixed, changes
         cn_idx = self._index("chinese", self.chinese, max_cn, CN_TOKEN_MAX)
         for token in sorted(set(CN_TOKEN_RE.findall(fixed)), key=len, reverse=True):
             best = cn_idx.best(token)

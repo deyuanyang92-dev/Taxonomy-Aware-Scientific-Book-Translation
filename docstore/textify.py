@@ -14,6 +14,7 @@ from .engines.rapidocr import rapidocr_run
 from .lexicon import Fixer
 from .store import Store, agent, make_version
 
+ENGINE_NAMES = {"rapidocr", "tesseract", *ENGINE_MAP}
 MIN_CHARS = 30
 # 这些 producer 生成的「文本层」本身是机器 OCR，不当原生文本层
 OCR_LAYER_PRODUCERS = ("paper capture", "abbyy", "finereader", "clearscan", "ocr")
@@ -260,6 +261,10 @@ def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str
         pg = store.read_page(key, n)
         if not pg:
             continue
+        prod = str(pg.get("producer") or "")
+        # 主版本是旧共识或引擎原文：新共识替换它；主版本是模型/人工 OCR 或校正稿：新共识只进 alternates，
+        # 不覆盖（2026-11-13 杨德渐2006 cursor 页因无 dpi 被共识按 version_rank 误覆盖 190 页）
+        replace = prod.startswith("consensus(") or prod in ENGINE_NAMES
         vars_ = [pg] + pg.get("alternates", [])
         readings = []
         for v in vars_:
@@ -271,7 +276,8 @@ def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str
                         conf=float((v.get("quality") or {}).get("ocr_conf") or 0.5),
                     )
                 )
-        if len(readings) < 2:
+        readings = [r for r in readings if not r.source.startswith("consensus(")]
+        if not readings:
             continue
         txt, conf, disagreements, unresolved = vote(readings)
         if _FIXER is None:
@@ -291,7 +297,7 @@ def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str
             source=(store.doc(key).get("path") or "") + "#consensus",
             extra={"run_by": by, "disagreements": disagreements, "lexicon_changes": changes},
         )
-        store.put_version(key, n, ver)
+        store.put_version(key, n, ver, promote=replace)
         touched += 1
     return {"key": key, "recomputed": touched}
 

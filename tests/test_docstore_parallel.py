@@ -123,3 +123,33 @@ def test_unknown_engine_rejected_before_pool(scan_lib):
     st, key = scan_lib
     with pytest.raises(ValueError, match="未知 OCR 引擎"):
         textify.textify(st, key, workers=3, engines=["nope"], log=lambda m: None)
+
+
+def test_chinese_fuzzy_fix_off_by_default():
+    """默认规则不做中文编辑距离纠错：正确词不被改成词表里的近似词（假基因→基因 实例）。"""
+    from pathlib import Path
+
+    from docstore.lexicon import Fixer
+    fx = Fixer(Path(textify.__file__).parent / "rules" / "ocr_fix.toml")
+    fx.chinese = ["基因", "结构"]
+    out, changes = fx.apply("假基因（pseudogene）：结构域")
+    assert out == "假基因（pseudogene）：结构域"
+    assert not [c for c in changes if c["rule"] == "chinese_edit_distance"]
+
+
+def test_consensus_skips_model_ocr_and_replaces_old_consensus(scan_lib):
+    """consensus 重算：主版本是模型 OCR（如 cursor）的页不动；旧共识页按引擎原文重算并替换（2026-11-13 事故回归）。"""
+    from docstore.store import make_version
+    st, key = scan_lib
+    st.put_version(key, 1, make_version("模型识别正文", "ocr", producer="cursor", level="ocr_sampled"))
+    st.put_version(key, 1, make_version("引擎正文", "ocr", producer="rapidocr", dpi=300, level="ocr_raw"))
+    st.put_version(key, 2, make_version("假基因 原文", "ocr", producer="rapidocr", dpi=300, level="ocr_raw"))
+    st.put_version(key, 2, make_version("基因 被改坏", "ocr", producer="consensus(rapidocr)", dpi=300,
+                                        level="ocr_sampled"))
+    assert st.page(key, 2)["producer"] == "consensus(rapidocr)"
+    textify.consensus(st, key, pages=[1, 2])
+    p1 = st.page(key, 1)
+    assert p1["producer"] == "cursor"
+    assert any(v.get("producer") == "consensus(rebuild)" for v in p1["alternates"])
+    p2 = st.page(key, 2)
+    assert p2["producer"] == "consensus(rebuild)" and "假基因" in p2["text"]
