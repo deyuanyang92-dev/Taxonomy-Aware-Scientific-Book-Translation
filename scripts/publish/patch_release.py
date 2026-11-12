@@ -13,16 +13,18 @@ PDF：只在「新旧字数相同，且新字的字形已在同一个嵌入字�
   一律不改，提示「请用 word_render 由改后 docx 重渲染」。
 
 用法:
-    python3 -X utf8 patch_release.py <书.docx|书.pdf> <替换表.tsv> [-o 输出文件] [--dry]
+    python3 -X utf8 patch_release.py <书.docx|书.pdf> <替换表.tsv> [-o 输出文件] [--dry] [--pages 5-8,613]
   缺省输出 <原名>_patched.<扩展名>；--dry 只报告次数不写文件。
   Windows 上的 Python 务必加 -X utf8（否则打印生僻字会因 GBK 崩溃）。
-退出码: 0 全部命中；1 有未命中或被拒绝的条目；2 参数错误。
+一条都没替换时不写输出文件。原件只读，输出一律写到 -o 指定的副本。
+退出码: 0 全部命中；1 有未命中或被拒绝的条目（或一条都没替换）；2 参数错误。
 """
 from __future__ import annotations
 
 import argparse
 import html
 import re
+import shutil
 import struct
 import sys
 import unicodedata
@@ -149,13 +151,15 @@ def patch_docx(src: Path, dst: Path | None, pairs: list[tuple[str, str]]) -> lis
                 if patched != xml:
                     data = patched.encode("utf8")
             parts[info.filename] = data
-        if dst is not None:
-            with zipfile.ZipFile(dst, "w") as zout:
+        if dst is not None and any(r.count for r in results):  # 一条都没替换就不写文件
+            tmp = dst.with_name(dst.name + ".part")
+            with zipfile.ZipFile(tmp, "w") as zout:
                 for info in zin.infolist():
                     zi = zipfile.ZipInfo(info.filename, info.date_time)
                     zi.compress_type = info.compress_type
                     zi.external_attr = info.external_attr
                     zout.writestr(zi, parts[info.filename])
+            tmp.replace(dst)
     for r in results:
         if r.count == 0:
             r.note = "未命中"
@@ -209,7 +213,7 @@ def _is_wide(ch: str) -> bool:
 
 
 def truetype_glyph_checker(font: bytes) -> Callable[[int], bool]:
-    """TrueType 字体程序里某个 GID 是否有轮廓（子集化后被删的字形在 loca 里长度为 0）。
+    """TrueType 字体程序里某个 GID 是否有轮廓（子集化后被删的字形在 loca 里长度为 0；GID 0 即 .notdef，拒绝）。
     解析不了（CFF、损坏）时一律返回 False，宁可拒绝也不替换成空白字形。"""
     try:
         n_tables = struct.unpack(">H", font[4:6])[0]
@@ -221,7 +225,7 @@ def truetype_glyph_checker(font: bytes) -> Callable[[int], bool]:
         offs = struct.unpack(f">{n_glyphs + 1}{'I' if long_loca else 'H'}", font[loca:loca + size * (n_glyphs + 1)])
     except (KeyError, struct.error):
         return lambda gid: False
-    return lambda gid: 0 <= gid < n_glyphs and offs[gid + 1] > offs[gid]
+    return lambda gid: 1 <= gid < n_glyphs and offs[gid + 1] > offs[gid]  # GID 0 是 .notdef，不算
 
 
 @dataclass
@@ -231,29 +235,47 @@ class FontMap:
     glyph_ok: Callable[[int], bool]
 
 
-def _font_maps(doc, page) -> dict[str, FontMap]:
+def _font_maps(doc, page, cache: dict[int, FontMap | None] | None = None) -> dict[str, FontMap]:
+    """页面资源名 -> 字体映射。同一字体对象全书共用，按 xref 缓存，避免每页重复解析字体程序。"""
+    cache = {} if cache is None else cache
     maps: dict[str, FontMap] = {}
     for xref, _ext, ftype, _base, name, enc, _ref in page.get_fonts(full=True):
         if ftype != "Type0" or "Identity" not in str(enc):
             continue
-        k, v = doc.xref_get_key(xref, "ToUnicode")
-        if k != "xref":
-            continue
-        tu = doc.xref_stream(int(v.split()[0]))
-        c2u = parse_tounicode(tu or b"")
-        u2c: dict[str, int] = {}
-        for c, ch in sorted(c2u.items()):
-            u2c.setdefault(ch, c)
-        maps[name] = FontMap(c2u, u2c, _glyph_checker(doc, xref))
+        if xref not in cache:
+            cache[xref] = None
+            k, v = doc.xref_get_key(xref, "ToUnicode")
+            if k == "xref":
+                c2u = parse_tounicode(doc.xref_stream(int(v.split()[0])) or b"")
+                u2c: dict[str, int] = {}
+                for c, ch in sorted(c2u.items()):
+                    u2c.setdefault(ch, c)
+                cache[xref] = FontMap(c2u, u2c, _glyph_checker(doc, xref))
+        fm = cache[xref]
+        if fm is not None:
+            maps[name] = fm
     return maps
 
 
+def _first_descendant(doc, type0_xref: int) -> int:
+    """Type0 字体的后代 CIDFont 的 xref。DescendantFonts 可能是内联数组，也可能是指向数组对象的间接引用
+    （Word 导出的 PDF 就是后者：/DescendantFonts 17 0 R，17 号对象是 [ 18 0 R ]）。"""
+    kind, val = doc.xref_get_key(type0_xref, "DescendantFonts")
+    if kind == "xref":
+        val = doc.xref_object(int(val.split()[0]), compressed=True)
+    m = re.search(r"(\d+)\s+0\s+R", val) if kind in ("xref", "array") else None
+    if not m:
+        raise ValueError("DescendantFonts 解析不了")
+    return int(m.group(1))
+
+
 def _glyph_checker(doc, type0_xref: int) -> Callable[[int], bool]:
-    """Type0 字体 -> 后代 CIDFontType2 -> FontFile2 的字形检查器。编码经 CIDToGIDMap 转 GID（Identity 时相等）。
+    """字符编码 -> CID -> GID -> 字形有轮廓，整条链都过才算「子集里有这个字」。
+    Type0 -> CIDFontType2 -> FontDescriptor -> FontFile2；CID 经 CIDToGIDMap 转 GID（/Identity 时相等，
+    也可能是一个流：每个 CID 对应 2 字节 GID）；GID 0 是 .notdef，一律不要。
     ToUnicode 常按整个字体生成，不能当作「子集里有这个字」的证据，所以必须看字体程序本身。"""
     try:
-        m = re.search(r"(\d+)\s+0\s+R", doc.xref_get_key(type0_xref, "DescendantFonts")[1])
-        desc = int(m.group(1)) if m else 0
+        desc = _first_descendant(doc, type0_xref)
         k, v = doc.xref_get_key(desc, "FontDescriptor")
         fd = int(v.split()[0]) if k == "xref" else 0
         k, v = doc.xref_get_key(fd, "FontFile2")
@@ -264,6 +286,8 @@ def _glyph_checker(doc, type0_xref: int) -> Callable[[int], bool]:
         if k == "xref":
             table = doc.xref_stream(int(v.split()[0])) or b""
             return lambda code: 2 * code + 2 <= len(table) and check(int.from_bytes(table[2 * code:2 * code + 2], "big"))
+        if k == "name" and v != "/Identity":
+            return lambda code: False
         return check
     except (ValueError, IndexError, RuntimeError):
         return lambda code: False
@@ -329,8 +353,8 @@ def _hex(codes: list[int]) -> bytes:
     return b"<" + "".join(f"{c:04x}" for c in codes).encode() + b">"
 
 
-def _patch_pdf_page(doc, page, pairs, results, dry: bool) -> int:
-    maps = _font_maps(doc, page)
+def _patch_pdf_page(doc, page, pairs, results, dry: bool, cache: dict[int, FontMap | None] | None = None) -> int:
+    maps = _font_maps(doc, page, cache)
     if not maps:
         return 0
     state: dict = {"font": "", "stack": []}
@@ -351,11 +375,12 @@ def _patch_pdf_page(doc, page, pairs, results, dry: bool) -> int:
                 i = text.find(old)
                 while i >= 0:
                     chars = list(zip(old, new))
-                    if any(n not in fm.uni2code or not fm.glyph_ok(fm.uni2code[n]) for _o, n in chars if _o != n):
-                        res.note = f"新字字形不在嵌入字体子集中，{REDO_HINT}"
+                    lack = [n for _o, n in chars if _o != n and (n not in fm.uni2code or not fm.glyph_ok(fm.uni2code[n]))]
+                    if lack:
+                        res.note = f"第 {page.number + 1} 页：新字「{lack[0]}」字形不在嵌入字体子集中，{REDO_HINT}"
                         break
                     if any(not (_is_wide(o) and _is_wide(n)) for o, n in chars if o != n):
-                        res.note = f"含非全角字，替换后字宽不同会错位，{REDO_HINT}"
+                        res.note = f"第 {page.number + 1} 页：含非全角字，替换后字宽不同会错位，{REDO_HINT}"
                         break
                     for k, (o, n) in enumerate(chars):
                         if o != n:
@@ -375,25 +400,64 @@ def _patch_pdf_page(doc, page, pairs, results, dry: bool) -> int:
     return changed
 
 
-def patch_pdf(src: Path, dst: Path | None, pairs: list[tuple[str, str]]) -> list[Result]:
-    import fitz  # PyMuPDF
-
+def _scan(doc, pairs: list[tuple[str, str]], pages: set[int] | None, dry: bool,
+          cache: dict[int, FontMap | None]) -> list[Result]:
     results = [Result(o, n) for o, n in pairs]
     for r in results:
         if len(r.old) != len(r.new):
             r.note = f"新旧字数不同，{REDO_HINT}"
-    doc = fitz.open(src)
-    try:
-        for page in doc:
-            _patch_pdf_page(doc, page, pairs, results, dry=dst is None)
-        for r in results:
-            if not r.note and r.count == 0:
-                r.note = f"未在单个文本串内命中（可能跨行、跨字体或不在内容流中），{REDO_HINT}"
-        if dst is not None:
-            doc.save(dst, garbage=0, deflate=True)
-    finally:
-        doc.close()
+    first_chars = {o[0] for o, n in pairs if o and len(o) == len(n)}
+    for page in doc:
+        if pages is not None and page.number + 1 not in pages:
+            continue
+        if not first_chars or not any(c in page.get_text() for c in first_chars):
+            continue  # 页面文本里连旧字的首字都没有，不可能命中
+        _patch_pdf_page(doc, page, pairs, results, dry=dry, cache=cache)
     return results
+
+
+def patch_pdf(src: Path, dst: Path | None, pairs: list[tuple[str, str]], pages: set[int] | None = None) -> list[Result]:
+    """pages：只处理这些页（1 起）。dst 为 None 只统计。
+
+    每一条替换要么全书（所选页内）都改，要么都不改：先只读扫描一遍，任何一处新字字形不在嵌入字体里的条目整条拒绝，
+    避免成品里新旧写法混杂；再对通过的条目改写。原件只读：改写在临时副本上增量保存，至少替换了一处才改名为 dst，
+    一处都没替换则不产生输出文件。"""
+    import fitz  # PyMuPDF
+
+    cache: dict[int, FontMap | None] = {}
+    with fitz.open(src) as probe:
+        plan = _scan(probe, pairs, pages, True, cache)
+    for r in plan:
+        if r.note:
+            r.count = r.cross = 0
+        elif r.count == 0:
+            r.note = f"未在单个文本串内命中（可能跨行、跨字体或不在内容流中），{REDO_HINT}"
+    if dst is None or not any(r.count for r in plan):
+        return plan
+    accepted = [(r.old, r.new) for r in plan if r.count]
+    tmp = dst.with_name(dst.name + ".part")
+    shutil.copyfile(src, tmp)
+    doc = fitz.open(tmp)
+    try:
+        done = {(r.old, r.new): r for r in _scan(doc, accepted, pages, False, cache)}
+        for r in plan:
+            if (r.old, r.new) in done:
+                r.count, r.cross = done[(r.old, r.new)].count, done[(r.old, r.new)].cross
+        try:
+            doc.saveIncr()
+        except (ValueError, RuntimeError):  # 不能增量保存（如加密）时整体重写
+            full = tmp.with_name(tmp.name + "2")
+            doc.save(full, garbage=0, deflate=True)
+            doc.close()
+            full.replace(tmp)
+        else:
+            doc.close()
+        tmp.replace(dst)
+    finally:
+        if not doc.is_closed:
+            doc.close()
+        tmp.unlink(missing_ok=True)
+    return plan
 
 
 # ---------------------------------------------------------------- 命令行
@@ -410,12 +474,21 @@ def report(results: list[Result]) -> bool:
     return all_ok
 
 
+def parse_pages(spec: str) -> set[int]:
+    pages: set[int] = set()
+    for part in spec.split(","):
+        lo, _, hi = part.strip().partition("-")
+        pages.update(range(int(lo), int(hi or lo) + 1))
+    return pages
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="对 docx/PDF 成品做定点替换（替换表 旧<TAB>新）")
     ap.add_argument("file", help=".docx 或 .pdf")
     ap.add_argument("table", help="替换表 TSV")
     ap.add_argument("-o", "--output", default=None)
     ap.add_argument("--dry", action="store_true", help="只报告次数，不写文件")
+    ap.add_argument("--pages", default=None, help="PDF：只处理这些页，如 613 或 5-8,613（1 起）")
     a = ap.parse_args(argv)
     src = Path(a.file)
     ext = src.suffix.lower()
@@ -431,13 +504,19 @@ def main(argv: list[str] | None = None) -> int:
     if dst is not None and dst.resolve() == src.resolve():
         print("输出不能覆盖原文件", file=sys.stderr)
         return 2
-    results = patch_docx(src, dst, pairs) if ext == ".docx" else patch_pdf(src, dst, pairs)
+    if ext == ".docx":
+        results = patch_docx(src, dst, pairs)
+    else:
+        results = patch_pdf(src, dst, pairs, parse_pages(a.pages) if a.pages else None)
     ok = report(results)
-    if dst is not None:
+    replaced = any(r.count for r in results)
+    if dst is not None and replaced:
         print(f"已写 {dst}")
+    elif dst is not None:
+        print("没有任何条目被替换，未写出输出文件", file=sys.stderr)
     if ext == ".pdf" and not ok:
         print(f"提示：未改的条目{REDO_HINT}")
-    return 0 if ok else 1
+    return 0 if ok and (replaced or a.dry or not results) else 1
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
 """patch_release（docx / PDF 定点替换）与 share_pdf.sh。PDF 字形替换需要本机有 CJK 字体，没有则 skip。"""
+import hashlib
+import re
 import shutil
 import subprocess
 import zipfile
@@ -10,8 +12,13 @@ import pytest
 import patch_release as pr
 
 REPO = Path(__file__).resolve().parent.parent
-FONTS = ["/mnt/c/Windows/Fonts/simkai.ttf", "/mnt/c/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simkai.ttf"]
+FONTS = ["/mnt/c/Windows/Fonts/simkai.ttf", "C:/Windows/Fonts/simkai.ttf"]
+FONTS2 = ["/mnt/c/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simhei.ttf"]
 FONT = next((f for f in FONTS if Path(f).exists()), None)
+FONT2 = next((f for f in FONTS2 if Path(f).exists()), None)
+# 真实 Word 导出的成书 PDF（第 613 页 SimSun 的「燐虫科（又作磷虫科）」）与改前备份；文件不在本机则 skip
+REAL_NEW = Path("/mnt/p/翻译-译作/Rouse2022_Annelida/发布/v0.01/Rouse2022_Annelida_中文译本_v0.01.pdf")
+REAL_OLD = Path("/tmp/claude-0/-mnt-p------/19e84b8e-4715-4c67-9c16-bba2bd1b4e2c/scratchpad/v0.01_备份/Rouse2022_Annelida_中文译本_v0.01.pdf")
 
 W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
 
@@ -94,6 +101,7 @@ def test_docx_cli_dry_exit_codes_and_no_overwrite(tmp_path, capsys):
     assert "燐虫科" in doc_xml(tmp_path / "a_patched.docx")
     tsv.write_text("没有\t有\n", encoding="utf8")
     assert pr.main([str(src), str(tsv), "-o", str(tmp_path / "z.docx")]) == 1
+    assert not (tmp_path / "z.docx").exists()  # 一条都没替换：不写输出文件
     assert pr.main([str(src), str(tsv), "-o", str(src)]) == 2
     assert pr.main([str(tmp_path / "x.txt"), str(tsv)]) == 2
     assert "未命中" in capsys.readouterr().out
@@ -175,7 +183,7 @@ def test_pdf_refuses_length_change_missing_glyph_and_non_wide(tmp_path):
     assert "字宽不同" in res[2].note
     assert "未在单个文本串内命中" in res[3].note
     assert not any(r.ok for r in res)
-    assert page_text(out) == "磷虫科 燐虫科 ABC"
+    assert not out.exists()  # 一条都没替换：不写输出文件
 
 
 @needs_font
@@ -213,3 +221,166 @@ def test_share_pdf_shrinks_images_and_keeps_text(tmp_path):
     assert subprocess.run(["bash", str(REPO / "scripts/publish/share_pdf.sh"), str(src), str(src)],
                           capture_output=True, text=True).returncode == 2
     assert subprocess.run(["bash", str(REPO / "scripts/publish/share_pdf.sh")], capture_output=True, text=True).returncode == 2
+
+
+# ---------------- 修复回归：Word 导出 PDF 的字体结构、GID 0、整条拒绝、不写空输出 ----------------
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def descendant_xref(doc):
+    d = doc[0]
+    type0 = d.get_fonts(full=True)[0][0]
+    return type0, int(re.search(r"(\d+) 0 R", doc.xref_get_key(type0, "DescendantFonts")[1]).group(1))
+
+
+def word_style_pdf(tmp_path, text, cid_to_gid_stream=None):
+    """改成 Word 导出的结构：DescendantFonts 是指向数组对象的间接引用；CIDToGIDMap 可换成流。"""
+    src = make_pdf(tmp_path / "plain.pdf", text)
+    out = tmp_path / "word.pdf"
+    with fitz.open(src) as doc:
+        type0, desc = descendant_xref(doc)
+        arr = doc.get_new_xref()
+        doc.update_object(arr, f"[ {desc} 0 R ]")
+        doc.xref_set_key(type0, "DescendantFonts", f"{arr} 0 R")
+        if cid_to_gid_stream is not None:
+            x = doc.get_new_xref()
+            doc.update_object(x, "<<>>")
+            doc.update_stream(x, cid_to_gid_stream(doc))
+            doc.xref_set_key(desc, "CIDToGIDMap", f"{x} 0 R")
+        doc.save(out)
+    return out
+
+
+def identity_map(doc, zero_for=()):
+    page = doc[0]
+    fm = next(iter(pr._font_maps(doc, page).values()))
+    buf = bytearray()
+    for cid in range(65536):
+        gid = 0 if cid in {fm.uni2code[ch] for ch in zero_for if ch in fm.uni2code} else cid
+        buf += gid.to_bytes(2, "big")
+    return bytes(buf)
+
+
+@needs_font
+def test_pdf_descendant_fonts_as_indirect_array_and_identity(tmp_path):
+    src = word_style_pdf(tmp_path, "磷虫科 燐虫科")
+    res = pr.patch_pdf(src, tmp_path / "o.pdf", [("磷虫科", "燐虫科")])
+    assert res[0].ok and page_text(tmp_path / "o.pdf") == "燐虫科 燐虫科"
+
+
+@needs_font
+def test_pdf_cidtogidmap_stream_is_followed(tmp_path):
+    src = word_style_pdf(tmp_path, "磷虫科 燐虫科", cid_to_gid_stream=identity_map)
+    res = pr.patch_pdf(src, tmp_path / "o.pdf", [("磷虫科", "燐虫科")])
+    assert res[0].ok and page_text(tmp_path / "o.pdf") == "燐虫科 燐虫科"
+
+
+@needs_font
+def test_pdf_gid_zero_is_rejected(tmp_path):
+    src = word_style_pdf(tmp_path, "磷虫科 燐虫科", cid_to_gid_stream=lambda doc: identity_map(doc, zero_for="燐"))
+    out = tmp_path / "o.pdf"
+    res = pr.patch_pdf(src, out, [("磷虫科", "燐虫科")])
+    assert not res[0].ok and "不在嵌入字体子集" in res[0].note
+    assert not out.exists()
+
+
+def test_truetype_checker_unparseable_font_rejects_everything():
+    assert pr.truetype_glyph_checker(b"")(5) is False  # 解析不了：一律拒绝
+    assert pr.truetype_glyph_checker(b"\x00\x01\x00\x00" + b"\x00" * 8)(1) is False
+
+
+@needs_font
+def test_truetype_checker_on_subset_font(tmp_path):
+    src = make_pdf(tmp_path / "a.pdf", "磷虫科")
+    with fitz.open(src) as doc:
+        fm = next(iter(pr._font_maps(doc, doc[0]).values()))
+        used = fm.uni2code["磷"]
+        assert fm.glyph_ok(used)
+        assert not fm.glyph_ok(0)
+        assert fm.uni2code.get("磺") is None or not fm.glyph_ok(fm.uni2code["磺"])
+
+
+@needs_font
+@pytest.mark.skipif(FONT2 is None, reason="没有第二个 CJK 字体")
+def test_pdf_entry_is_all_or_nothing_across_fonts(tmp_path):
+    """同一条替换在字体 A 能改、字体 B 的子集里没有新字：整条拒绝，不能出现新旧写法混杂。"""
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_font(fontname="kai", fontfile=FONT)
+    page.insert_font(fontname="hei", fontfile=FONT2)
+    page.insert_text((72, 100), "磷虫科 燐虫科", fontname="kai", fontsize=20)
+    page.insert_text((72, 140), "磷虫科", fontname="hei", fontsize=20)
+    doc.subset_fonts()
+    src = tmp_path / "a.pdf"
+    doc.save(src)
+    doc.close()
+    out = tmp_path / "o.pdf"
+    res = pr.patch_pdf(src, out, [("磷虫科", "燐虫科")])
+    assert not res[0].ok and res[0].count == 0 and "不在嵌入字体子集" in res[0].note and "第 1 页" in res[0].note
+    assert not out.exists() and page_text(src).count("磷虫科") == 2
+
+
+@needs_font
+def test_pdf_cli_writes_nothing_and_exits_nonzero_when_nothing_replaced(tmp_path, capsys):
+    src = make_pdf(tmp_path / "a.pdf", "磷虫科 燐虫科")
+    tsv = tmp_path / "t.tsv"
+    tsv.write_text("磷\t磺\n没有\t没得\n", encoding="utf8")
+    out = tmp_path / "o.pdf"
+    assert pr.main([str(src), str(tsv), "-o", str(out)]) == 1
+    assert not out.exists() and not list(tmp_path.glob("*.part*"))
+    assert "没有任何条目被替换" in capsys.readouterr().err
+
+
+@needs_font
+def test_pdf_original_untouched_and_pages_option(tmp_path):
+    src = make_pdf(tmp_path / "a.pdf", "磷虫科 燐虫科")
+    before = sha(src)
+    tsv = tmp_path / "t.tsv"
+    tsv.write_text("磷虫科\t燐虫科\n", encoding="utf8")
+    assert pr.main([str(src), str(tsv), "-o", str(tmp_path / "o.pdf"), "--pages", "2"]) == 1  # 第 2 页不存在
+    assert not (tmp_path / "o.pdf").exists()
+    assert pr.main([str(src), str(tsv), "-o", str(tmp_path / "o.pdf"), "--pages", "1"]) == 0
+    assert sha(src) == before and page_text(tmp_path / "o.pdf") == "燐虫科 燐虫科"
+    assert pr.parse_pages("5-8,613") == {5, 6, 7, 8, 613}
+
+
+# ---------------- 真实 Word 导出的成书 PDF ----------------
+
+def glyph_clip(page, rect):
+    return page.get_pixmap(dpi=360, clip=fitz.Rect(rect.x0, rect.y0, rect.x0 + rect.width, rect.y1), colorspace=fitz.csGRAY)
+
+
+@pytest.mark.skipif(not REAL_NEW.exists(), reason="真实成书 PDF 不在本机")
+def test_real_word_pdf_replaces_glyph_in_simsun(tmp_path):
+    """第 613 页 SimSun「燐虫科（又作磷虫科）」：同页同字体已有「燐」，应成功；原件不得被改。"""
+    before = sha(REAL_NEW)
+    out = tmp_path / "patched.pdf"
+    tsv = tmp_path / "t.tsv"
+    tsv.write_text("磷虫科\t燐虫科\n", encoding="utf8")
+    assert pr.main([str(REAL_NEW), str(tsv), "--pages", "613", "-o", str(out)]) == 0
+    assert out.exists() and sha(REAL_NEW) == before
+    with fitz.open(out) as d:
+        page = d[612]
+        assert "燐虫科（又作燐虫科）" in page.get_text() and "又作磷虫科" not in page.get_text()
+        line = page.search_for("燐虫科（又作燐虫科）")[0]
+        glyphs = [r for r in page.search_for("燐") if abs(r.y0 - line.y0) < 2 and line.x0 - 1 <= r.x0 <= line.x1 + 1]
+        assert len(glyphs) == 2
+        a, b = glyph_clip(page, glyphs[0]), glyph_clip(page, glyphs[1])
+        assert min(a.samples) < 100  # 不是空白
+        mad = sum(abs(x - y) for x, y in zip(a.samples, b.samples)) / len(a.samples)
+        assert mad < 5  # 替换出来的「燐」与原有的「燐」同一字形（不是方框，也不是「磷」）
+    if shutil.which("pdftotext"):
+        txt = subprocess.run(["pdftotext", "-f", "613", "-l", "613", str(out), "-"], capture_output=True, text=True).stdout
+        assert "燐虫科（又作燐虫科）" in txt
+
+
+@pytest.mark.skipif(not REAL_OLD.exists(), reason="旧版成书 PDF 备份不在本机")
+def test_real_old_pdf_is_refused_because_simhei_subset_lacks_glyph(tmp_path):
+    """旧版全书用「磷」，第 422 页章标题用的 SimHei 子集里没有「燐」：整条拒绝，不写输出。"""
+    out = tmp_path / "patched.pdf"
+    res = pr.patch_pdf(REAL_OLD, out, [("磷虫科", "燐虫科")])
+    assert not res[0].ok and res[0].count == 0
+    assert "第 422 页" in res[0].note and "不在嵌入字体子集" in res[0].note
+    assert not out.exists()
