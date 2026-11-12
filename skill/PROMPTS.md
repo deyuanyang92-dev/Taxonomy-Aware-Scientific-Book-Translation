@@ -1,6 +1,6 @@
 # 子代理提示词模板
 
-模板与模型无关。用 `scripts/run_batches.py --engine codex|claude --domain <D>` 自动渲染 A、B 两个模板；手工派发时（例如 Claude Code 子代理或 DeepSeek），内容相同。初译和核译要交给不同的模型。`<书>` 为工程目录绝对路径，`S`/`T` 见 SKILL.md。
+模板与模型无关。用 `scripts/run_batches.py --engine codex|claude --domain <D>` 自动渲染 A、B 两个模板（智能体模式）；`--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus` 为直调模式，系统提示词由 RULES + 领域包 + STYLE（核译用「核译输出要求」）拼成；手工派发时（例如 Claude Code 子代理或 DeepSeek），内容相同。初译和核译要交给不同的模型。`<书>` 为工程目录绝对路径，`S`/`T` 见 SKILL.md。
 
 ## A. 初译（每章一个）
 

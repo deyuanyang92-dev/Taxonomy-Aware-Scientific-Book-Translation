@@ -54,6 +54,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
    3. 仍然查不到的：如果是分类阶元名，按第 5 节拟「暂定」译名；其他术语直接标「暂定」，并保留英文。
 3. **初译**：运行 `python3 $S/run_batches.py <书> --mode translate --chapters chNN --engine <模型A> --domain <D>`。脚本会把 RULES、领域包、STYLE 和本章术语表注入提示词。
 4. **核译**：先运行 `python3 $S/plan_batches.py <书>`，再运行 `run_batches.py <书> --mode review --engine <模型B> --domain <D>`。
+   **直调模式**（不经智能体，按块直接调模型，产物按块写盘、断点续跑）：`--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus`，要 `--chapters`。推荐分配：初译 `claude-sonnet`，核译 `deepseek-flash`。初译输出在 `核译/direct/<章>/out/`，合并为 `译文/<章>_直译初译.md`；核译问题单合并为 `核译/issues/<章>_direct.jsonl`，再过 `apply_issues.py --dry`。引擎封装见 `scripts/llm_engines.py`，用量记在 `核译/usage.tsv`。
    - 核译者只出 JSONL 问题清单，不改译文。
    - 先试点 1 批，裁定者抽查合格后再全面铺开，并发 3–4 个。
 4a. **覆盖核对**（可选，长章或重点章）：借用工作区技能 translation-quality-codex 的分块脚本，为本章原文编段号，核译时逐段对照，保证不漏段：
