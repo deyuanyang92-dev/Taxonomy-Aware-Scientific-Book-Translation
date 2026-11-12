@@ -2,29 +2,30 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryDirectory
 
-import fitz
+from .pageimg import page_png
 
 
 def tesseract_run(pdf_path: str, page_no: int, dpi: int) -> tuple[str, float | None]:
-    """Run tesseract(chi_sim+eng) on one PDF page."""
-    with fitz.open(pdf_path) as doc:
-        img = doc[page_no - 1].get_pixmap(dpi=dpi).tobytes("png")
-    with NamedTemporaryFile(suffix=".png") as fp:
-        fp.write(img)
-        fp.flush()
-        txt = subprocess.check_output(
-            ["tesseract", fp.name, "stdout", "-l", "chi_sim+eng", "--dpi", str(dpi)],
-            text=True,
+    """Run tesseract(chi_sim+eng) on one PDF page：一次识别同时输出 txt 与 tsv（原先识别两遍）。"""
+    img = page_png(pdf_path, page_no, dpi)
+    with TemporaryDirectory(prefix="docstore_tess_") as tmp:
+        src, out = os.path.join(tmp, "page.png"), os.path.join(tmp, "out")
+        with open(src, "wb") as fp:
+            fp.write(img)
+        subprocess.run(
+            ["tesseract", src, out, "-l", "chi_sim+eng", "--dpi", str(dpi), "txt", "tsv"],
+            check=True,
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        tsv = subprocess.check_output(
-            ["tesseract", fp.name, "stdout", "-l", "chi_sim+eng", "--dpi", str(dpi), "tsv"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        )
+        with open(out + ".txt", encoding="utf-8") as f:
+            txt = f.read()
+        with open(out + ".tsv", encoding="utf-8") as f:
+            tsv = f.read()
     confs = []
     for line in tsv.splitlines()[1:]:
         cols = line.split("\t")
@@ -37,4 +38,3 @@ def tesseract_run(pdf_path: str, page_no: int, dpi: int) -> tuple[str, float | N
                 confs.append(c / 100.0)
     conf = (sum(confs) / len(confs)) if confs else None
     return txt.strip(), conf
-
