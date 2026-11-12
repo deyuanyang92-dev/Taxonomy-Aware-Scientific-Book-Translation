@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""从按章抽出的英文原文里分离图注/表注，输出 正文.txt 与 图注.txt。
+
+PDF 双栏抽取时，图注常夹在正文句子中间（甚至一句话的前后两半被图注隔开）。图注要单独另译，
+正文要接上被打断的句子，所以先分离、再切块翻译。
+
+规则（2026-11-12 在 Handbook 第4卷 沙蚕科上调通）：
+  1. 图注首行匹配 ^(◂ )?(Fig\\.|Table)\\s*\\d+(\\.\\d+)*
+  2. 续行条件 =（当前块末行未以句号结束，且不是缩写结尾如「O.F.」「e.g.」「sp.」「fig.」，且块长 < 14 行）
+              或（下一行长度 > 100，即宽栏图注）。下一行本身是新图注首行时一律停止。
+  3. 正文去连字符断行：行末 - 或软连字符且下一行以小写字母开头，去掉连字符并把词的后半段并回上一行
+     （等价于 -\\n(?=[a-z]) 删除，但保留换行，所以正文不会出现被拼成超长的行）。
+  4. 图注各行以空格连成一行（行末的 - 多半是真连字符，保留；软连字符去掉）；图注之间空一行；开头的「◂ 」标记去掉。
+用法: python3 split_figures.py <章.txt> [-o 输出目录]   缺省输出到 <章>_split/
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+CAPTION_START = re.compile(r"^(◂ )?(Fig\.|Table)\s*\d+(\.\d+)*")
+WIDE_LINE = 100        # 下一行超过此长度，视为宽栏图注的续行
+MAX_BLOCK_LINES = 14   # 未收句号的图注，最多连续吸收到 14 行
+_ABBREV_END = re.compile(r"(?:\b[A-Za-z]|\be\.g|\bi\.e|\bsp|\bspp|\bfig|\bfigs|\bcf|\bvs|\bal|\bpl)\.$", re.I)
+_HYPHEN_END = re.compile(r"[-­]$")
+
+
+def ends_sentence(line: str) -> bool:
+    """行末是句号且不是缩写（O.F. / e.g. / sp. / fig. / 单字母缩写）。"""
+    s = line.rstrip()
+    return s.endswith(".") and not _ABBREV_END.search(s)
+
+
+def _continues(block: list[str], nxt: str) -> bool:
+    if CAPTION_START.match(nxt):
+        return False
+    narrow = not ends_sentence(block[-1]) and len(block) < MAX_BLOCK_LINES
+    wide = len(nxt) > WIDE_LINE
+    return narrow or wide
+
+
+def dehyphenate(lines: list[str]) -> list[str]:
+    """行末连字符 + 下一行小写开头：去掉连字符，下一行的首个词片段并回上一行，其余留在原行。"""
+    out: list[str] = []
+    for ln in lines:
+        if out and _HYPHEN_END.search(out[-1]) and ln[:1].islower():
+            m = re.match(r"\S+", ln)
+            assert m
+            out[-1] = out[-1][:-1] + m.group()
+            ln = ln[m.end():].lstrip()
+            if not ln:
+                continue
+        out.append(ln)
+    return out
+
+
+def _join_caption(block: list[str]) -> str:
+    """各行以空格连成一行。图注里行末的 - 多半是真连字符（如 Crescent-shaped），不去；只去软连字符。"""
+    text = ""
+    for ln in (x.strip() for x in block):
+        if text.endswith("\u00ad"):
+            text = text[:-1] + ln
+        else:
+            text = f"{text} {ln}" if text else ln
+    return re.sub(r"^◂ ", "", text).replace("\u00ad", "")
+
+
+def split_figures(text: str) -> tuple[str, list[str]]:
+    """返回 (正文, 图注列表)。"""
+    lines = [ln.rstrip() for ln in text.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    body: list[str] = []
+    captions: list[str] = []
+    i = 0
+    while i < len(lines):
+        if not CAPTION_START.match(lines[i]):
+            body.append(lines[i])
+            i += 1
+            continue
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and _continues(block, lines[i]):
+            block.append(lines[i])
+            i += 1
+        captions.append(_join_caption(block))
+    body = [ln.replace("\u00ad", "") for ln in dehyphenate(body)]  # 行末软连字符已并词；其余零散的不可见软连字符删掉
+    # 删图注后留下的连续空行压成一个
+    squeezed: list[str] = []
+    for ln in body:
+        if not ln.strip() and squeezed and not squeezed[-1].strip():
+            continue
+        squeezed.append(ln)
+    return "\n".join(squeezed).strip("\n") + "\n", captions
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="分离英文原文中的图注/表注，输出 正文.txt 与 图注.txt")
+    ap.add_argument("src", help="按章抽出的英文原文 .txt")
+    ap.add_argument("-o", "--outdir", default=None, help="输出目录，缺省 <章>_split/")
+    a = ap.parse_args(argv)
+    src = Path(a.src)
+    out = Path(a.outdir) if a.outdir else src.with_name(src.stem + "_split")
+    out.mkdir(parents=True, exist_ok=True)
+    body, captions = split_figures(src.read_text(encoding="utf8", errors="replace"))
+    (out / "正文.txt").write_text(body, encoding="utf8")
+    (out / "图注.txt").write_text("\n\n".join(captions) + ("\n" if captions else ""), encoding="utf8")
+    print(f"图注 {len(captions)} 条，正文 {len(body.splitlines())} 行 -> {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
