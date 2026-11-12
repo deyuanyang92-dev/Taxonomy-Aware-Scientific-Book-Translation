@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import time
-from typing import Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Callable, Iterator
 
 from .consensus import Reading, vote
 from .engines import ENGINE_MAP
@@ -17,6 +19,9 @@ MIN_CHARS = 30
 OCR_LAYER_PRODUCERS = ("paper capture", "abbyy", "finereader", "clearscan", "ocr")
 
 _FIXER = None
+
+# 多进程 OCR 的启动方式。spawn 最稳（父进程里没有 onnxruntime/sqlite 状态要带过去）；测试里改成 fork 以继承桩函数。
+MP_START = "spawn"
 
 
 def rapid_ocr(pdf_path: str, n: int, dpi: int) -> tuple[str, float | None]:
@@ -41,6 +46,41 @@ def layer_is_ocr(meta: dict) -> bool:
     return any(w in prod for w in OCR_LAYER_PRODUCERS)
 
 
+def _iter_engines(path: str, n: int, dpi: int, engines: list[str]) -> Iterator[tuple[str, str, float | None, float]]:
+    """逐引擎识别一页，惰性产出 (引擎, 文本, 置信度, 本页已用秒数)。"""
+    t_page = time.perf_counter()  # 单调时钟：WSL 下 time.time() 会跳变
+    for eng in engines:
+        txt, conf = _run_engine(eng, path, n, dpi)
+        yield eng, txt, conf, round(time.perf_counter() - t_page, 2)
+
+
+def _pool_init(threads: int) -> None:
+    """OCR 工作进程初始化：限制每进程的 onnxruntime / OpenMP 线程数，使 进程数 x 线程数 约等于核数。"""
+    for var in ("OMP_THREAD_LIMIT", "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[var] = str(threads)
+    from .engines.rapidocr import set_ort_threads
+
+    set_ort_threads(threads)
+    try:  # OpenCV 默认开「核数」个线程，多进程时互相抢核
+        import cv2
+
+        cv2.setNumThreads(threads)
+    except ImportError:  # pragma: no cover
+        pass
+
+
+def _pool_task(path: str, n: int, dpi: int, engines: list[str]) -> list[tuple[str, str, float | None, float]]:
+    return list(_iter_engines(path, n, dpi, engines))
+
+
+def default_ocr_threads(workers: int) -> int:
+    try:
+        cores = len(os.sched_getaffinity(0))
+    except AttributeError:  # pragma: no cover
+        cores = os.cpu_count() or 1
+    return max(1, cores // max(1, workers))
+
+
 def textify(
     store: Store,
     key: str,
@@ -51,8 +91,13 @@ def textify(
     limit: int | None = None,
     engines: list[str] | None = None,
     vlm: str | None = None,
+    pages: list[int] | None = None,
+    fix: bool = True,
+    ocr_threads: int | None = None,
     log: Callable[[str], None] = print,
 ) -> dict:
+    """文本化。workers>1 时 OCR（渲染+引擎）在进程池里并行，所有写库仍在本进程；每页即时落盘并提交，可续跑。
+    pages：只处理这些页（1 起）；fix：对共识文本再跑 lexicon 纠错。"""
     import fitz
 
     d = store.doc(key)
@@ -73,6 +118,10 @@ def textify(
                 vs = [pg] + pg.get("alternates", [])
                 if not any(v.get("method") == "ocr" for v in vs):
                     need_ocr.append(n)
+        if pages is not None:
+            want = {p for p in pages if 1 <= p <= npages}
+            todo = [n for n in todo if n in want]
+            need_ocr = [n for n in need_ocr if n in want]
         if limit is not None:
             todo = todo[:limit]
             need_ocr = need_ocr[:limit]
@@ -97,19 +146,17 @@ def textify(
     if n_text:
         _reindex(store, key)
         log(f"[{key}] 文本层 {n_text} 页")
-    t0 = time.time()
+    t0 = time.perf_counter()
     done = 0
     engines = engines or ["rapidocr", "tesseract"]
     global _FIXER
     if _FIXER is None:
         _FIXER = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
 
-    def save(n: int):
+    def save(n: int, results):
         nonlocal done
-        t_page = time.time()
         readings: list[Reading] = []
-        for eng in engines:
-            txt, conf = _run_engine(eng, path, n, dpi)
+        for eng, txt, conf, secs in results:
             c = float(conf) if conf is not None else 0.5
             readings.append(Reading(source=eng, text=txt, conf=c))
             ev = make_version(
@@ -120,7 +167,7 @@ def textify(
                 dpi=dpi,
                 conf=conf,
                 source=path,
-                extra={"run_by": by, "seconds": round(time.time() - t_page, 2)},
+                extra={"run_by": by, "seconds": secs},
             )
             store.put_version(key, n, ev, index=False)
         pg = store.read_page(key, n) or {}
@@ -136,7 +183,7 @@ def textify(
                     )
                 )
         text, conf, disagreements, unresolved = vote(readings)
-        fixed, changes = _FIXER.apply(text)
+        fixed, changes = _FIXER.apply(text) if fix else (text, [])
         lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
         if vlm and unresolved > 0:
             # VLM 接口保留，未能确定时继续保留 [?]
@@ -161,25 +208,46 @@ def textify(
         store.put_version(key, n, v)
         done += 1
         if done % 10 == 0 or done == len(need_ocr):
-            el = time.time() - t0
+            el = time.perf_counter() - t0
             rate = el / done
             log(f"[{key}] OCR {done}/{len(need_ocr)}  {rate:.1f}s/页(墙钟)  预计剩余 {rate * (len(need_ocr) - done) / 60:.1f} 分钟")
 
     if need_ocr:
+        bad = [e for e in engines if e != "rapidocr" and e not in ENGINE_MAP]
+        if bad:
+            raise ValueError(f"未知 OCR 引擎: {','.join(bad)}")
         log(f"[{key}] 需 OCR {len(need_ocr)} 页，engines={','.join(engines)}")
-        for n in need_ocr:
-            save(n)
+        if workers <= 1 or len(need_ocr) == 1:
+            for n in need_ocr:
+                save(n, _iter_engines(path, n, dpi, engines))  # 惰性：每个引擎一出结果就写盘
+        else:
+            threads = ocr_threads or default_ocr_threads(workers)
+            pool = ProcessPoolExecutor(
+                max_workers=min(workers, len(need_ocr)),
+                mp_context=multiprocessing.get_context(MP_START),
+                initializer=_pool_init,
+                initargs=(threads,),
+            )
+            try:
+                futs = {pool.submit(_pool_task, path, n, dpi, engines): n for n in need_ocr}
+                for fut in as_completed(futs):
+                    save(futs[fut], fut.result())
+            except BaseException:
+                pool.shutdown(wait=False, cancel_futures=True)
+                raise
+            pool.shutdown()
     total = len(store.page_numbers(key))
     store.update_doc(key, status="text_done" if total >= npages else f"text_partial {total}/{npages}")
     return {
         "key": key,
         "text_layer": n_text,
         "ocr": len(need_ocr),
-        "seconds": round(time.time() - t0, 1),
+        "seconds": round(time.perf_counter() - t0, 1),
         "pages_done": total,
         "pages": npages,
         "engines": engines,
         "vlm": vlm or "",
+        "workers": workers,
     }
 
 

@@ -57,6 +57,9 @@ def cmd_text(st: Store, a) -> None:
             limit=a.limit,
             engines=engines,
             vlm=a.vlm,
+            pages=_parse_pages(a.pages),
+            fix=not a.no_fix,
+            ocr_threads=a.ocr_threads,
             log=lambda m: print(m, flush=True),
         )
         print(json.dumps(r, ensure_ascii=False), flush=True)
@@ -310,9 +313,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("text", help="文本化（文本层直取，扫描页 OCR，断点续跑）")
     s.add_argument("keys", nargs="*")
     s.add_argument("--pending", action="store_true")
-    s.add_argument("--workers", type=int, default=4)
+    s.add_argument("--workers", type=int, default=4, help="并行 OCR 进程数（1 = 串行）")
+    s.add_argument("--ocr-threads", type=int, help="每个 OCR 进程的 onnxruntime 线程数（默认 核数 // workers）")
     s.add_argument("--dpi", type=int, default=300)
     s.add_argument("--limit", type=int, help="每本最多处理多少页（估时用）")
+    s.add_argument("--pages", help="只处理这些页（PDF 页码，1 起），如 655-671,700")
+    s.add_argument("--no-fix", action="store_true", help="不对共识文本再跑 lexicon 编辑距离纠错（保留引擎原文）")
     s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
     s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
     s.set_defaults(fn=cmd_text)

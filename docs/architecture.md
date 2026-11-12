@@ -50,7 +50,7 @@ _资料库/
 | 命令 | 作用 |
 |---|---|
 | `docstore add <文件或目录>…` | 登记 PDF（按 sha256 去重；改名只更新 path；同路径内容变即新 key），初判 kind/lang/domain，note 标「初判，待确认」。跳过 `_资料库 _本地知识库 知识库 参考库 _work` 等派生目录 |
-| `docstore text [<key>…\|--pending] [--workers N] [--dpi 300] [--engines rapidocr,tesseract] [--vlm deepseek-flash] [--limit N]` | 文本化：每页可抽字符 ≥30 直取文本层；否则双引擎 OCR（RapidOCR + Tesseract）做行/字共识，再按 `docstore/rules/ocr_fix.toml` 做规则纠错；已有记录的页跳过（断点续跑） |
+| `docstore text [<key>…\|--pending] [--workers N] [--ocr-threads N] [--dpi 300] [--engines rapidocr,tesseract] [--vlm deepseek-flash] [--limit N] [--pages 655-671,700] [--no-fix]` | 文本化：每页可抽字符 ≥30 直取文本层；否则双引擎 OCR（RapidOCR + Tesseract）做行/字共识，再按 `docstore/rules/ocr_fix.toml` 做规则纠错；已有记录的页跳过（断点续跑）。`--workers N>1` 时渲染+OCR 在进程池并行（每进程 onnxruntime 线程数默认 核数//N），写库仍在主进程、逐页提交；RapidOCR 双栏页按列排序（左栏再右栏，`docstore/layout.py`）；`--pages` 只处理所选页；`--no-fix` 跳过 lexicon 编辑距离纠错 |
 | `docstore consensus <key> [--pages 1-50]` | 对已存在的 OCR 版本重算共识（不重跑 OCR），把重算结果写为新版本，旧版本保留在 alternates |
 | `docstore quality <key>` | 列低置信、少字、乱码（私用区/替换符）、缺字□ 页，生成 `quality/<key>.tsv` 抽查单 |
 | `docstore qc <key> [--apply] [--redo] [--pages] [--limit]` / `docstore qc --calibrate` | 自动质控：风险分分流（pass/redo/human），jsonl 断点续跑；`--apply` 可将 ocr_raw 升为 ocr_sampled；`--redo` 追加高 dpi OCR；阈值 `docstore/rules/qc.toml`，标定 `docs/ocr_qc_calibration.json` |
