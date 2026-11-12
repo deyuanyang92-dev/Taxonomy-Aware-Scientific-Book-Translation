@@ -118,6 +118,18 @@ _资料库/
 **依赖**：docstore（原书页、志书例句）、termbase（术语表）、taxadb（可选，取物种记述作参照）。
 **主库**：`<书>/核译/`（段对齐、问题单、裁定、变更日志）、`<书>/状态.json`。
 
+**已实现的脚本（`scripts/`，以仓库为准，`scripts/sync_skill.sh` 同步到技能目录）**：
+
+| 脚本 | 作用 |
+|---|---|
+| `llm_engines.py` | 直接调模型的统一入口 `call(engine, system, user) -> (正文, usage)`。engine：`deepseek-flash`、`deepseek-v4-pro`（anthropic SDK 流式，base_url 指向 DeepSeek 的 Anthropic 兼容端点，`max_tokens=64000`，调用前 `wait_offpeak()`，连接错误重试 3 次，正文为空且输出达上限报「推理耗尽」）、`claude-sonnet`、`claude-opus`（`claude -p --tools ""`，stdin 送入）、`codex`（`codex exec -s read-only -o`）。凭证取 `DEEPSEEK_API_KEY` 或 `DEEPSEEK_ENV_FILE`，不入库。每次调用向 usage.tsv（`LLM_USAGE_TSV`）追加时间、engine、token、耗时 |
+| `deepseek_offpeak.py` | DeepSeek 忙时守卫：忙时不发请求，等到闲时 |
+| `run_batches.py` | 批次调度。智能体模式（`--engine codex\|claude`，模型自己读写文件）；直调模式（`--engine deepseek-flash\|deepseek-v4-pro\|claude-sonnet\|claude-opus`，由 `direct_mode.py` 切块约 9000 字符、每块注入 `yiku table` 术语表、经 `llm_engines` 调用，产物按块写盘、断点续跑，合并时去掉每块「### 待定术语」并汇总，核译输出 JSONL 问题单交 `apply_issues.py` 闸口）。推荐分配：初译 `claude-sonnet`，核译 `deepseek-flash` |
+| `split_figures.py` | 从按章抽出的英文原文分离图注/表注，输出 `正文.txt`（接回被图注打断的句子、去连字符断行）与 `图注.txt`，分块翻译前先跑 |
+| `termonline_lookup.py` | 名词委（termonline.cn）逐词查询；缓存路径 `TERMONLINE_CACHE`，缺省 `~/.cache/termonline/cache.json` |
+| `bench/bench.py` | 模型比测：多 engine 翻译样段、自动评分（术语落实、数字、学名、汉字比）、盲评目录与汇总；结论见 `docs/model_bench.md` |
+| `sync_skill.sh` | 把 `skill/*.md`、`skill/domains/`、`scripts/` 复制到 `~/.claude/skills/yzz-translate/`，复制前比对并打印差异 |
+
 ## 5. qa 验证
 
 通用检查：数字、引文、图号、结构计数、残留英文、全角空格。
@@ -128,6 +140,11 @@ _资料库/
 输入：译文 md + `book.toml` + 图库。输出：docx / PDF / 传播版。
 步骤：标注（类群中文名、暂定名、英文括注，按规则与 termbase 生成）→ 排版 → 插图浮动 → 量页 → 目录、参考文献、索引 → 检查。
 渲染后端可选：Windows Word（默认，版式最好）或 LibreOffice（无 Word 时）。前言、联系方式等放 `book.toml` 指向的文件。
+
+**成品修订工具（`scripts/publish/`）**
+- `patch_release.py 书.docx|书.pdf 替换表.tsv`：按「旧→新」定点替换，不必重排整本。docx 遍历 `word/` 下全部 XML，按文本节点替换，跨 run 拆开的文字也能命中并单独计数，0 次报「未命中」。PDF 只在新旧字数相同、都是全角字、且新字字形确在同一嵌入字体程序里（核对 `loca`，不信 ToUnicode）时用 PyMuPDF 原地改字形编码；其余提示「请用 word_render 由改后 docx 重渲染」。
+- `share_pdf.sh 正式版.pdf`：Ghostscript 生成传播版（图像 120 dpi、JPEG 质量 72，字体全嵌入子集化；Rouse 55 MB → 12 MB）。
+- Windows 上调用 `collect_pages.py`、`word_render.py` 一律加 `-X utf8`，否则打印生僻字（如 𧍒）会因 GBK 崩溃。
 
 ---
 
