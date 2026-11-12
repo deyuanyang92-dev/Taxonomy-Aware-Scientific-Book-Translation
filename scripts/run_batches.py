@@ -114,7 +114,10 @@ def run_direct(a, B, notes):
         used[a.mode] = a.engine
         engines_f.write_text(json.dumps(used, ensure_ascii=False))
         fn = dm.run_translate if a.mode == 'translate' else dm.run_review
-        n, skipped, fails = fn(ch, ids, a.engine, system, llm_engines.call, a.j, usage)
+        try:
+            n, skipped, fails = fn(ch, ids, a.engine, system, llm_engines.call, a.j, usage, a.force)
+        except dm.StaleOutputError as exc:
+            sys.exit(str(exc))
         print(f'{chn}：完成 {n} 块，跳过 {skipped} 块（已有产物），失败 {len(fails)} 块')
         for f in fails:
             print('  ', f)
@@ -144,6 +147,8 @@ def main():
     ap.add_argument('--scope', default=None, help='直调模式：yiku --scope 类群（科名，分号分隔）；缺省从原文前 5 行自动取 -idae/-ida')
     ap.add_argument('--chunk-chars', type=int, default=9000, help='直调模式：每块约多少字符')
     ap.add_argument('--book-desc', default='', help='直调模式：写进系统提示词的书目说明，如「（Handbook of Zoology 第4卷 沙蚕科 一章的一部分）」')
+    ap.add_argument('--force', action='store_true',
+                    help='直调模式：已有产物与当前引擎/系统提示词/术语表不一致时，删掉不一致的块重做（默认报错停下）')
     ap.add_argument('--same-engine-ok', action='store_true', help='直调模式：允许初译与核译用同一模型（默认拒绝）')
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()

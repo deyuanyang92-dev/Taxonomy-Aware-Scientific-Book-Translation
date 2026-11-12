@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 import subprocess
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -287,24 +288,84 @@ class Chapter:
 
 # ---------------------------------------------------------------- 初译与核译
 
+class StaleOutputError(RuntimeError):
+    """已有产物不是用当前的引擎/系统提示词/术语表/译文生成的，续跑会混用不同来源的块。"""
+
+
+def _digest(*parts: str) -> str:
+    return hashlib.sha256("\x00".join(parts).encode("utf8")).hexdigest()
+
+
+def _write_meta(ch: Chapter, kind: str, cid: str, engine: str, system: str, terms: str, extra: str = "") -> None:
+    """每块产物旁写 cNN.meta.json：引擎，以及系统提示词 + 术语表（核译另加所核译文）的 sha256。"""
+    meta = {"engine": engine, "system_sha256": _digest(system), "terms_sha256": _digest(terms),
+            "input_sha256": _digest(extra), "sha256": _digest(system, terms, extra),
+            "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+    _write(ch.path(kind, cid, "meta.json"), json.dumps(meta, ensure_ascii=False, indent=1) + "\n")
+
+
+def _stale_reason(ch: Chapter, kind: str, cid: str, engine: str, system: str, terms: str, extra: str = "") -> str:
+    """已有产物与当前设置一致返回空串，否则返回原因。没有 meta 的老产物无法确认来源，也算不一致。"""
+    mp = ch.path(kind, cid, "meta.json")
+    if not mp.exists():
+        return "缺 meta.json，无法确认来源"
+    try:
+        meta = json.loads(_read(mp))
+    except json.JSONDecodeError:
+        return "meta.json 损坏"
+    why = []
+    if meta.get("engine") != engine:
+        why.append(f"引擎 {meta.get('engine')} -> {engine}")
+    if meta.get("system_sha256") != _digest(system):
+        why.append("系统提示词变了")
+    if meta.get("terms_sha256") != _digest(terms):
+        why.append("术语表变了")
+    if meta.get("input_sha256") != _digest(extra):
+        why.append("所核译文变了")
+    return "；".join(why)
+
+
+def _check_resume(ch: Chapter, kind: str, ext: str, ids: list[str], reasons: dict[str, str], force: bool) -> None:
+    """reasons：已有产物的块 -> 不一致原因（一致的不在其中）。无 force 就报错；有 force 就删掉这些块的产物（及下游核译产物）。"""
+    if not reasons:
+        return
+    if not force:
+        shown = "；".join(f"{c}：{r}" for c, r in list(reasons.items())[:5])
+        more = f" 等共 {len(reasons)} 块" if len(reasons) > 5 else ""
+        raise StaleOutputError(
+            f"{ch.name}：{kind} 已有产物与当前设置不一致（{shown}{more}）。续跑会混用不同来源的块；"
+            "确要重做这些块请加 --force（会删除它们的已有产物，初译重做时一并删除对应的核译产物）")
+    for c in reasons:
+        for k, e in ((kind, ext), (kind, "meta.json"), (kind, "suspect.md")) + ((("review", "jsonl"), ("review", "meta.json")) if kind == "out" else ()):
+            ch.path(k, c, e).unlink(missing_ok=True)
+
+
 def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
-                  usage_file: Path | None = None) -> tuple[int, int, list[str]]:
-    """返回 (新译块数, 跳过块数, 失败说明列表)。疑似拒译（汉字太少）的输出存为 .suspect.md，不算完成。"""
+                  usage_file: Path | None = None, force: bool = False) -> tuple[int, int, list[str]]:
+    """返回 (新译块数, 跳过块数, 失败说明列表)。疑似拒译（汉字太少）的输出存为 .suspect.md，不算完成。
+    已有产物须与当前引擎、系统提示词、术语表一致才跳过；不一致报 StaleOutputError，force=True 才重做。"""
     done = skipped = 0
     fails: list[str] = []
 
     def one(cid: str) -> str | None:
         src = ch.text("chunks", cid, "txt")
-        user = user_translate(ch.text("terms", cid, "md"), src)
-        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}", usage_file=usage_file)
+        terms = ch.text("terms", cid, "md")
+        text, _ = caller(engine, system, user_translate(terms, src), tag=f"{ch.name}/{cid}", usage_file=usage_file)
         body = strip_pending(text)[0]
         if len(src) > 500 and zh_ratio(body, src) < MIN_ZH_RATIO:
             _write(ch.path("out", cid, "suspect.md"), text)
             return f"{cid} 疑似拒译或截断（汉字/原文字符 {zh_ratio(body, src):.3f}），已存 {cid}.suspect.md"
         _write(ch.path("out", cid, "md"), text)
+        _write_meta(ch, "out", cid, engine, system, terms)
         return None
 
-    todo = [c for c in ids if not (ch.path("out", c, "md").exists() and ch.path("out", c, "md").stat().st_size > 0)]
+    def finished(c: str) -> bool:
+        p = ch.path("out", c, "md")
+        return p.exists() and p.stat().st_size > 0
+
+    reasons = {c: r for c in ids if finished(c) and (r := _stale_reason(ch, "out", c, engine, system, ch.text("terms", c, "md")))}
+    _check_resume(ch, "out", "md", ids, reasons, force)
+    todo = [c for c in ids if not finished(c)]
     skipped = len(ids) - len(todo)
     with ThreadPoolExecutor(max(jobs, 1)) as ex:
         futs = {c: ex.submit(one, c) for c in todo}
@@ -321,22 +382,31 @@ def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller:
 
 
 def run_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
-               usage_file: Path | None = None) -> tuple[int, int, list[str]]:
+               usage_file: Path | None = None, force: bool = False) -> tuple[int, int, list[str]]:
+    """核译。已有核译产物须与当前引擎、系统提示词、术语表、所核译文一致才跳过（译文重做后旧核译作废）。"""
     done = skipped = 0
     fails: list[str] = []
     fname = ch.merged.name
 
+    def zh_of(cid: str) -> str:
+        return strip_pending(ch.text("out", cid, "md"))[0]
+
     def one(cid: str) -> str | None:
-        zh = strip_pending(ch.text("out", cid, "md"))[0]
-        user = user_review(fname, ch.text("terms", cid, "md"), ch.text("chunks", cid, "txt"), zh)
+        zh, terms = zh_of(cid), ch.text("terms", cid, "md")
+        user = user_review(fname, terms, ch.text("chunks", cid, "txt"), zh)
         text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/review", usage_file=usage_file)
         items = parse_review(text)  # 解析失败抛错：该块记为失败，不写完成文件，下次续跑会重核
         _write(ch.path("review", cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
+        _write_meta(ch, "review", cid, engine, system, terms, zh)
         return None
 
+    have_out = [c for c in ids if ch.path("out", c, "md").exists()]
+    reasons = {c: r for c in have_out if ch.path("review", c, "jsonl").exists()
+               and (r := _stale_reason(ch, "review", c, engine, system, ch.text("terms", c, "md"), zh_of(c)))}
+    _check_resume(ch, "review", "jsonl", ids, reasons, force)
     todo = []
     for c in ids:
-        if not ch.path("out", c, "md").exists():
+        if c not in have_out:
             fails.append(f"{c} 没有初译输出，先跑 translate")
         elif ch.path("review", c, "jsonl").exists():
             skipped += 1

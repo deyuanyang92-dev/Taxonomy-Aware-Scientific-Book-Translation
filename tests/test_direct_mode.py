@@ -277,6 +277,103 @@ def test_review_prompt_tells_model_to_write_no_issues():
     assert "NO_ISSUES" in s and "空输出会被当作失败" in s
 
 
+# ---------- 续跑一致性（.meta.json） ----------
+
+def translated(book, limit=1000, system="SYS", engine="claude-sonnet"):
+    ch = dm.Chapter(book, "ch05", limit)
+    ids = ch.prepare("分类学", "Nereididae")
+    dm.run_translate(ch, ids, engine, system, Fake(zh_for))
+    return ch, ids
+
+
+def test_meta_records_engine_and_hashes(book):
+    ch, ids = translated(book)
+    meta = json.loads((ch.dir / "out" / "c00.meta.json").read_text(encoding="utf8"))
+    assert meta["engine"] == "claude-sonnet"
+    assert meta["system_sha256"] == dm._digest("SYS")
+    assert meta["terms_sha256"] == dm._digest((ch.dir / "terms" / "c00.md").read_text(encoding="utf8"))
+    assert meta["sha256"] == dm._digest("SYS", (ch.dir / "terms" / "c00.md").read_text(encoding="utf8"), "")
+    assert len(meta["sha256"]) == 64
+
+
+def test_resume_refuses_changed_system_prompt_and_force_redoes(book):
+    ch, ids = translated(book)
+    f = Fake(zh_for)
+    with pytest.raises(dm.StaleOutputError, match="系统提示词变了.*--force"):
+        dm.run_translate(ch, ids, "claude-sonnet", "SYS 改过了", f)
+    assert f.calls == []  # 报错在调用模型之前，不花钱
+    n, skipped, fails = dm.run_translate(ch, ids, "claude-sonnet", "SYS 改过了", f, force=True)
+    assert (n, skipped, fails) == (len(ids), 0, [])
+    assert json.loads((ch.dir / "out" / "c00.meta.json").read_text(encoding="utf8"))["system_sha256"] == dm._digest("SYS 改过了")
+    assert dm.run_translate(ch, ids, "claude-sonnet", "SYS 改过了", Fake(zh_for)) == (0, len(ids), [])  # 重做后再续跑一致
+
+
+def test_resume_refuses_other_engine(book):
+    ch, ids = translated(book)
+    with pytest.raises(dm.StaleOutputError, match="引擎 claude-sonnet -> claude-opus"):
+        dm.run_translate(ch, ids, "claude-opus", "SYS", Fake(zh_for))
+
+
+def test_resume_only_redoes_chunk_whose_terms_changed(book):
+    ch, ids = translated(book)
+    (ch.dir / "terms" / "c01.md").write_text("| 英文 | 译名 |\n新增术语\n", encoding="utf8")
+    with pytest.raises(dm.StaleOutputError, match=r"c01：术语表变了"):
+        dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))
+    f = Fake(zh_for)
+    n, skipped, fails = dm.run_translate(ch, ids, "claude-sonnet", "SYS", f, force=True)
+    assert (n, skipped) == (1, len(ids) - 1) and len(f.calls) == 1 and "新增术语" in f.calls[0][1]
+
+
+def test_legacy_output_without_meta_is_not_trusted(book):
+    ch, ids = translated(book)
+    (ch.dir / "out" / "c00.meta.json").unlink()
+    with pytest.raises(dm.StaleOutputError, match="缺 meta.json"):
+        dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))
+
+
+def test_review_resume_checks_engine_system_and_translation(book):
+    ch, ids = translated(book)
+    dm.run_review(ch, ids, "deepseek-flash", "RSYS", Fake("NO_ISSUES"))
+    assert dm.run_review(ch, ids, "deepseek-flash", "RSYS", Fake("NO_ISSUES")) == (0, len(ids), [])
+    with pytest.raises(dm.StaleOutputError, match="系统提示词变了"):
+        dm.run_review(ch, ids, "deepseek-flash", "RSYS2", Fake("NO_ISSUES"))
+    with pytest.raises(dm.StaleOutputError, match="引擎"):
+        dm.run_review(ch, ids, "deepseek-v4-pro", "RSYS", Fake("NO_ISSUES"))
+    # 译文被改动（例如重译）后，旧核译作废
+    out = ch.dir / "out" / "c00.md"
+    out.write_text(out.read_text(encoding="utf8").replace("沙蚕", "蚯蚓", 3), encoding="utf8")
+    with pytest.raises(dm.StaleOutputError, match="c00：所核译文变了"):
+        dm.run_review(ch, ids, "deepseek-flash", "RSYS", Fake("NO_ISSUES"))
+    f = Fake("NO_ISSUES")
+    assert dm.run_review(ch, ids, "deepseek-flash", "RSYS", f, force=True) == (1, len(ids) - 1, []) and len(f.calls) == 1
+
+
+def test_force_retranslate_also_drops_downstream_review_files(book):
+    ch, ids = translated(book)
+    dm.run_review(ch, ids, "deepseek-flash", "RSYS", Fake("NO_ISSUES"))
+    assert (ch.dir / "review" / "c00.jsonl").exists()
+    dm.run_translate(ch, ids, "claude-opus", "SYS", Fake(zh_for), force=True)
+    assert not list((ch.dir / "review").glob("c0*"))  # 初译重做，对应的核译产物与 meta 一并删除
+
+
+def test_run_direct_exits_with_hint_on_stale_output(book, monkeypatch):
+    import types
+
+    import llm_engines
+    ch, ids = translated(book, system="旧提示词")
+    monkeypatch.setattr(llm_engines, "call", lambda *a, **k: pytest.fail("不一致时不应调用模型"))
+    a = types.SimpleNamespace(chapters="ch05", mode="translate", domain="分类学", book_desc="", scope="Nereididae",
+                              chunk_chars=1000, dry=False, engine="claude-sonnet", same_engine_ok=False, j=1, force=False)
+    with pytest.raises(SystemExit) as e:
+        run_batches.run_direct(a, book, "")
+    assert "--force" in str(e.value) and "不一致" in str(e.value)
+
+
+def test_cli_help_mentions_force():
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "run_batches.py"), "--help"], capture_output=True, text=True)
+    assert "--force" in r.stdout
+
+
 # ---------- 命令行 ----------
 
 def run_cli(book, *args, env=None):
