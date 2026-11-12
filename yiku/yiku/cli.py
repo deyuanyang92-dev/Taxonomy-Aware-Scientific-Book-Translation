@@ -111,7 +111,13 @@ def cmd_pair(a, con):
 def cmd_lookup(a, con):
     cs = D.candidates(con, a.term, a.domain, _scope(a.scope))
     if not cs:
-        print("库中无此术语")
+        other = con.execute("SELECT DISTINCT domain FROM terms WHERE en_norm=? AND status!='否决' ORDER BY domain",
+                            (D.norm(a.term),)).fetchall()
+        if other:
+            names = "、".join(r[0] for r in other)
+            print(f"领域={a.domain} 下无此术语；其他领域有（{names}），加 --domain 查看")
+        else:
+            print("库中无此术语")
     for h in cs:
         print(f"{h.zh}\t{h.status}\t领域={h.domain}\t范围={h.scope}\t{h.cite()}\t层级{h.tier}"
               f"\t{h.year or '-'}\t{h.note or ''}")

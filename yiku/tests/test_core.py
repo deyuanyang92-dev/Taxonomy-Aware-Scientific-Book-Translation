@@ -1,3 +1,4 @@
+import argparse
 import zipfile
 
 import pytest
@@ -208,3 +209,13 @@ def test_table_newer_edition_not_flagged(con):
     D.add_term(con, "Leocrates", "海结虫属", "new", domain="分类学", status="已核")
     t = M.term_table(con, "Leocrates chinensis", "分类学")
     assert "海结虫属" in t and "⚠冲突" not in t
+
+
+def test_lookup_hints_other_domains(con, capsys):
+    """不带 --domain 查到空时，提示其他领域有译名，而不是说库中没有（2026-11-13 homoplasy 实例）。"""
+    D.add_source(con, "futu", "Futuyma 生物进化", "translation", domain="进化生物学")
+    D.add_term(con, "homoplasy", "同塑性", "futu", domain="进化生物学", status="已核")
+    cli.cmd_lookup(argparse.Namespace(term="homoplasy", domain="*", scope=None), con)
+    assert "其他领域有（进化生物学）" in capsys.readouterr().out
+    cli.cmd_lookup(argparse.Namespace(term="nonexistent", domain="*", scope=None), con)
+    assert "库中无此术语" in capsys.readouterr().out
