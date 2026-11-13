@@ -117,9 +117,9 @@ def _deepseek(engine: str, system: str, user: str, max_tokens: int) -> tuple[str
     return text, usage
 
 
-def _cli(cmd: list[str], prompt: str, name: str) -> subprocess.CompletedProcess[str]:
+def _cli(cmd: list[str], prompt: str, name: str, cwd: str = "/tmp") -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd="/tmp")
+        return subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=CLI_TIMEOUT, cwd=cwd)
     except FileNotFoundError as exc:
         raise EngineError(f"{name}：找不到命令 {cmd[0]}") from exc
     except subprocess.TimeoutExpired as exc:
@@ -149,8 +149,12 @@ def _codex(system: str, user: str, model: str | None = None) -> tuple[str, dict[
 
 
 def _cursor(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
-    cmd = ["cursor-agent", "-p", "--model", CURSOR_ENGINES[engine], "--output-format", "text", "--mode", "ask", "--trust"]
-    r = _cli(cmd, system + "\n\n---\n\n" + user, engine)
+    # 书稿文本不可信（可能含注入指令）：只在新建的空临时目录里运行，只读 ask 模式 + 沙箱；
+    # 非交互模式必须 --trust，信任的只是这个空目录。输出按不可信文本处理（只当译文/评分解析）。
+    cmd = ["cursor-agent", "-p", "--model", CURSOR_ENGINES[engine], "--output-format", "text",
+           "--mode", "ask", "--sandbox", "enabled", "--trust"]
+    with tempfile.TemporaryDirectory(prefix="cursor_") as td:
+        r = _cli(cmd, system + "\n\n---\n\n" + user, engine, cwd=td)
     if r.returncode != 0 or not r.stdout.strip() or "Error:" in r.stdout[:200]:
         raise EngineError(f"{engine} 退出码 {r.returncode}：{(r.stderr or r.stdout)[-300:].strip()}")
     return r.stdout, {"input_tokens": None, "output_tokens": None, "cache_read_tokens": None}

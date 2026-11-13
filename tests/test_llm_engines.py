@@ -181,11 +181,14 @@ def test_cursor_engine_command(monkeypatch):
 
     def fake_run(cmd, **kw):
         seen["cmd"] = cmd
+        seen["cwd"] = kw.get("cwd")
         return subprocess.CompletedProcess(cmd, 0, stdout="疣足具两束刚毛。", stderr="")
 
     monkeypatch.setattr(le.subprocess, "run", fake_run)
     text, _ = le.call("cursor-grok", "s", "u")
     assert text == "疣足具两束刚毛。" and seen["cmd"][seen["cmd"].index("--model") + 1] == "cursor-grok-4.5-high"
+    assert seen["cwd"] != "/tmp" and "cursor_" in seen["cwd"]          # 空临时目录，不在共享 /tmp
+    assert seen["cmd"][seen["cmd"].index("--sandbox") + 1] == "enabled"
 
 
 def test_deepseek_disabled_by_default(monkeypatch):
