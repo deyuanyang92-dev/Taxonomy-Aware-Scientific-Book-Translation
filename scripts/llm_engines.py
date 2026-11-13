@@ -193,8 +193,8 @@ def call(engine: str, system: str, user: str, *, max_tokens: int = MAX_TOKENS, t
     if engine not in ENGINES:
         raise EngineError(f"未知 engine {engine!r}，可选：{', '.join(ENGINES)}")
     t0 = time.time()
-    if engine in DEEPSEEK_ENGINES and not os.environ.get("YZZ_ALLOW_DEEPSEEK"):
-        raise EngineError("DeepSeek 已停用（用户 2026-11-13）；确需调用请设 YZZ_ALLOW_DEEPSEEK=1")
+    if engine in DEEPSEEK_ENGINES and os.environ.get("YZZ_DISABLE_DEEPSEEK"):
+        raise EngineError("DeepSeek 已被 YZZ_DISABLE_DEEPSEEK 禁用")
     if engine in DEEPSEEK_ENGINES:
         if offpeak and not os.environ.get("LLM_SKIP_OFFPEAK"):
             wait_offpeak()

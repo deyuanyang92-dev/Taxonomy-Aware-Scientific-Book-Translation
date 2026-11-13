@@ -47,7 +47,6 @@ def make_client(*outcomes):
 @pytest.fixture(autouse=True)
 def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_USAGE_TSV", str(tmp_path / "usage.tsv"))
-    monkeypatch.setenv("YZZ_ALLOW_DEEPSEEK", "1")  # 旧 DeepSeek 测试保留；默认停用另有测试
     monkeypatch.setattr(le, "wait_offpeak", lambda *a, **k: None)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.delenv("LLM_SKIP_OFFPEAK", raising=False)
@@ -194,9 +193,9 @@ def test_cursor_engine_command(monkeypatch):
     assert seen["cmd"][seen["cmd"].index("--sandbox") + 1] == "enabled"
 
 
-def test_deepseek_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("YZZ_ALLOW_DEEPSEEK", raising=False)
-    with pytest.raises(le.EngineError, match="DeepSeek 已停用"):
+def test_deepseek_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("YZZ_DISABLE_DEEPSEEK", "1")
+    with pytest.raises(le.EngineError, match="禁用"):
         le.call("deepseek-flash", "s", "u")
 
 
