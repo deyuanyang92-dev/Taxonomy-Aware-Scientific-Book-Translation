@@ -10,6 +10,13 @@
       术语决策 <章>/term_decisions.jsonl 与全书汇总 <书>/核译/term_decisions.jsonl（yiku decide validate/review/apply）、
       问题单 <书>/核译/issues/<章>_direct.jsonl（old 在合并译文中恰好出现 1 次才收，其余进 rejected.jsonl）。
 问题单交给 apply_issues.py --dry 过闸口，本模块不改译文。
+
+终稿核译（mode=final）：闸口改完译文后，对合并译文 <书>/译文/<章>_直译初译.md 再核一轮（初译与核译只看 out/ 里的原稿，
+看不到闸口的改动）。合并译文按初译各块的段落数切回对应原文块（段落数变了就按字数比例），产物在 final/cNN.jsonl，
+问题单 <书>/核译/issues/<章>_final.jsonl，同样交给 apply_issues.py --dry。
+页码标记：原文里单独成行的 `<!-- p.N -->`（原书页码，见 PAGE_MARK、with_page_markers）随块进入译文，译者须原样保留，
+丢失或不一致的块按疑似失败处理（存 cNN.suspect.md，不算完成）。species_format.py 靠它按原书页规范种名的拉丁名。
+术语检查：每次合并后自动对合并译文跑 yiku check（正文和图注各自一章，都跑），报告写 <章>/yiku_check.txt。
 """
 from __future__ import annotations
 
@@ -20,6 +27,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from itertools import accumulate
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +38,23 @@ MERGED_SUFFIX = "_直译初译.md"
 MIN_ZH_RATIO = 0.05  # 汉字数/原文字符数低于此值视为疑似拒译或截断
 
 Caller = Callable[..., tuple[str, dict[str, Any]]]
+
+# 原书页码标记：单独一行 <!-- p.13 -->，插在原文各页的起点。译者须原样保留在译文对应位置；
+# species_format.py 靠它按原书页判断种名的拉丁名首现。
+PAGE_MARK = re.compile(r"^[ \t]*<!--\s*p\.?\s*(\S+?)\s*-->[ \t]*$", re.M)
+
+
+def page_marker(label: object) -> str:
+    return f"<!-- p.{label} -->"
+
+
+def page_labels(text: str) -> list[str]:
+    return PAGE_MARK.findall(text)
+
+
+def with_page_markers(pages: list[tuple[object, str]]) -> str:
+    """[(页码标签, 该页文本), ...] -> 每页前加一行页码标记、页间空一行的原文。用于按原书页建 src_en。"""
+    return "\n\n".join(f"{page_marker(label)}\n{text.strip()}" for label, text in pages if str(text).strip()) + "\n"
 
 
 # ---------------------------------------------------------------- 技能文件
@@ -53,6 +78,7 @@ def output_requirements(prompts_md: str) -> str:
 
 def build_system(mode: str, domain: str, book_desc: str = "", notes: str = "", skill: Path | None = None) -> str:
     """初译：用途说明 + 角色 + RULES + 领域包 + STYLE + 输出要求。核译：用途说明 + 角色 + RULES + 领域包 + 核译输出要求。
+    final＝终稿核译：同核译，另加「所核的是闸口改过的合并终稿」说明。
 
     开头的「用途说明」必须保留：缺了它，部分模型会以版权为由拒译。"""
     sk = skill or skill_dir()
@@ -64,13 +90,15 @@ def build_system(mode: str, domain: str, book_desc: str = "", notes: str = "", s
                 "请完整逐句翻译，不要摘要或删节。\n\n"
                 f"你是专业科学翻译。把用户给出的英文原文{desc}译成中文学术译文，严格遵守以下规范。")
         parts = [head, rules, dom, _read(sk / "STYLE.md"), TRANSLATE_OUTPUT]
-    elif mode == "review":
+    elif mode in ("review", "final"):
         head = (f"用途说明：用户是{domain}研究者，拥有本书，此核译仅供其个人学习研究、不公开发布。\n\n"
                 f"你是{domain}专著的独立核译员（与初译者不同的模型）。逐句对照英文原文{desc}核对中文译文，"
                 "只报问题，不重写译文。")
         parts = [head, rules, dom, output_requirements(_read(sk / "PROMPTS.md")), REVIEW_OUTPUT]
+        if mode == "final":
+            parts.append(FINAL_NOTE)
     else:
-        raise ValueError(f"mode 只能是 translate 或 review：{mode}")
+        raise ValueError(f"mode 只能是 translate、review 或 final：{mode}")
     if notes.strip():
         parts.append("## 本书补充说明\n" + notes.strip())
     return "\n\n".join(p.strip() for p in parts) + "\n"
@@ -80,6 +108,8 @@ TRANSLATE_OUTPUT = """## 本次输出要求
 - 只输出译文（Markdown），不要说明、前言或结语。本块可能从某节中间开始或在某节中间结束，照原样接续，不要补写或总结。
 - 原文中独占一行的节标题用 ### 或 ####；段首的引导词（如 "Digestive system."）译为加粗引导词，如 **消化系统。**
 - 若正文中混入页眉页码或孤立碎片，删去不译。正文中对图、表的引用照常翻译。
+- 原文里独占一行的页码标记（如 `<!-- p.13 -->`，原书页码）原样保留：同样独占一行，放在译文中对应原文该处的位置，不翻译、不改写、不增删。
+- 原文来自 OCR。疑似排印或 OCR 问题（括号不配对、断词、乱码、字母或图号错位等）不得擅自注〔原书…〕〔原文作…〕，因为分不清是原书错还是 OCR 错：照上下文合理译出，并在该处标 [OCR?]，留给人工对照页图判断。
 - 术语表分 HARD 与 SOFT 两节。HARD 必用，不得改译。SOFT 先读「定义/出处语境」判断本块里的义项，再取舍或另译；「已核」不等于必用，〔回退〕译名只在义项吻合时参考。拿不准的译名或词源上另有更贴切译法时，正文用通行名并加〔译注：…〕。
 - 不写文件、不调用工具。译文之后依次另起两节，没有内容的节省略：
   1. 「### 待定术语」逐行列：English｜所用译法｜理由。
@@ -93,7 +123,15 @@ NO_ISSUES = "NO_ISSUES"
 REVIEW_OUTPUT = f"""## 本次输出
 只输出 JSONL，每行一个问题对象（必须含 old、new 字段），不要任何其他文字（不要代码围栏）。file 字段填给定的文件名。\
 old 必须逐字复制自译文，且在给出的译文块中只出现 1 次。
-核完确实没有问题时，整个输出只写一行 {NO_ISSUES}（不要输出空内容：空输出会被当作失败重跑）。"""
+核完确实没有问题时，整个输出只写一行 {NO_ISSUES}（不要输出空内容：空输出会被当作失败重跑）。
+原文和译文里独占一行的页码标记（如 `<!-- p.13 -->`）必须一一对应（页码相同、顺序相同、各占一行），缺失、多出或错位要报；标记不是译文内容，不要翻译或改写。
+译文里的 [OCR?] 是初译者留给人工的标记（原文来自 OCR，疑似排印问题），不算问题，不要删除，也不要建议加〔原书…〕注。"""
+
+FINAL_NOTE = """## 本次核译对象：终稿
+你核的不是初译原稿，而是初译经上一轮核译、闸口（apply_issues）逐条修改之后的合并终稿。上一轮的改动可能引入新错（改错了术语、改丢了限定、改出前后不一致），请重点核对被改过的句子，同时照常核全块。
+- 只依据本消息给出的英文原文、中文译文和术语表工作；不要读取、搜索或写入任何本地文件，不要调用工具。
+- 译文里的 *…* 是斜体标记，不算问题。学名照原书不改，双名里的属名保持拉丁；有志书中文种名的写成「中文名（*拉丁名*，科）」，没有的只写拉丁名，这不算问题。
+- 译文里的〔译注〕是译者或主会话所加，不算增译；但译注内容若与原文事实冲突，请报告。"""
 
 
 def user_translate(table: str, chunk: str, tag: str = "") -> str:
@@ -177,6 +215,39 @@ def yiku_table(chunk_file: Path, domain: str, scope: str = "", fallback: str | N
     if r.returncode != 0:
         raise RuntimeError(f"yiku table 失败（没有术语表不开跑）：{r.stderr.strip()[:200]}")
     return r.stdout
+
+
+def yiku_check(src: Path, zh: Path, domain: str, scope: str = "", fallback: str | None = None,
+               decisions: Path | None = None, env: dict[str, str] | None = None) -> tuple[int, int, str]:
+    """对译文跑 yiku check，返回 (错误数, 提示数, 报告全文)。yiku 以退出码 1 表示有错误；
+    退出码不是 0/1，或退出码 1 却没有任何输出（崩溃），抛 RuntimeError。"""
+    cmd = (["yiku", "check", str(src), str(zh), "--domain", domain] + (["--scope", scope] if scope else [])
+           + (["--fallback", fallback] if fallback else []) + (["--decisions", str(decisions)] if decisions else []))
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    if r.returncode not in (0, 1) or (r.returncode == 1 and not lines):
+        raise RuntimeError(f"yiku check 失败：{(r.stderr or r.stdout).strip()[:200]}")
+    hints = sum(1 for ln in lines if ln.startswith("提示："))
+    return len(lines) - hints, hints, "".join(ln + "\n" for ln in lines)
+
+
+def run_term_check(ch: "Chapter", domain: str, scope: str | None = None, fallback: str | None = None,
+                   check_fn: Callable[..., tuple[int, int, str]] | None = None) -> str:
+    """合并译文出来后自动跑 yiku check（原文 vs 合并译文），报告写 <章>/yiku_check.txt，返回给人看的摘要。
+    单模型核译会漏掉 HARD 术语（试译里图注核译 0 条，漏了 HARD 种名），所以正文和图注都要跑，不能指望核译模型。
+    scope 缺省取切块时记下的类群；<书>/核译/term_decisions.jsonl 存在且非空就一并带上。"""
+    if not ch.merged.exists():
+        return f"{ch.name}：术语检查跳过（尚未合并，没有 {ch.merged.name}）"
+    manifest = ch.dir / "chunks.json"
+    if scope is None:
+        scope = json.loads(_read(manifest)).get("scope", "") if manifest.exists() else ""
+    dec = ch.book / "核译" / DECISIONS_FILE
+    errors, hints, report = (check_fn or yiku_check)(ch.source, ch.merged, domain, scope, fallback, dec if dec.exists() and dec.stat().st_size > 0 else None)
+    rep = ch.dir / "yiku_check.txt"
+    _write(rep, f"# yiku check {ch.source.name} vs {ch.merged.name}：错误 {errors}，提示 {hints}\n" + report)
+    shown = [ln for ln in report.splitlines() if not ln.startswith("提示：")][:10]
+    tail = "".join(f"\n    {ln}" for ln in shown) + ("\n    ……" if errors > len(shown) else "")
+    return f"{ch.name}：yiku check 错误 {errors}，提示 {hints} -> {rep}" + tail
 
 
 # ---------------------------------------------------------------- 输出整理
@@ -289,6 +360,7 @@ class Chapter:
         self.dir = book / "核译" / "direct" / name
         self.merged = book / "译文" / f"{name}{MERGED_SUFFIX}"
         self.issues = book / "核译" / "issues" / f"{name}_direct.jsonl"
+        self.final_issues = book / "核译" / "issues" / f"{name}_final.jsonl"
 
     @property
     def source(self) -> Path:
@@ -382,7 +454,7 @@ def _check_resume(ch: Chapter, kind: str, ext: str, ids: list[str], reasons: dic
             f"{ch.name}：{kind} 已有产物与当前设置不一致（{shown}{more}）。续跑会混用不同来源的块；"
             "确要重做这些块请加 --force（会删除它们的已有产物，初译重做时一并删除对应的核译产物）")
     for c in reasons:
-        for k, e in ((kind, ext), (kind, "meta.json"), (kind, "suspect.md")) + ((("review", "jsonl"), ("review", "meta.json"), ("decisions", "jsonl"), ("decisions", "invalid.txt")) if kind == "out" else ()):
+        for k, e in ((kind, ext), (kind, "meta.json"), (kind, "suspect.md")) + ((("review", "jsonl"), ("review", "meta.json"), ("final", "jsonl"), ("final", "meta.json"), ("decisions", "jsonl"), ("decisions", "invalid.txt")) if kind == "out" else ()):
             ch.path(k, c, e).unlink(missing_ok=True)
 
 
@@ -414,6 +486,10 @@ def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller:
         if len(src) > 500 and zh_ratio(body, src) < MIN_ZH_RATIO:
             _write(ch.path("out", cid, "suspect.md"), text)
             return f"{cid} 疑似拒译或截断（汉字/原文字符 {zh_ratio(body, src):.3f}），已存 {cid}.suspect.md"
+        want, got = page_labels(src), page_labels(body)
+        if want != got:   # 种名「每页首现拉丁名」靠页码标记；丢了就无法按页处理，宁可重译
+            _write(ch.path("out", cid, "suspect.md"), text)
+            return f"{cid} 页码标记丢失或不一致（原文 {want}，译文 {got}），已存 {cid}.suspect.md"
         _write(ch.path("out", cid, "md"), text)
         _save_decisions(ch, cid, text)
         _write_meta(ch, "out", cid, engine, system, terms)
@@ -483,6 +559,89 @@ def run_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Ca
     return done, skipped, fails
 
 
+_PARA_SEP = re.compile(r"\n[ \t]*\n\s*")
+
+
+def _para_spans(text: str) -> list[tuple[int, int]]:
+    spans, pos = [], 0
+    for m in _PARA_SEP.finditer(text):
+        if m.start() > pos:
+            spans.append((pos, m.start()))
+        pos = m.end()
+    if text[pos:].strip():
+        spans.append((pos, len(text.rstrip())))
+    return spans
+
+
+def split_merged(ch: Chapter, ids: list[str]) -> list[str]:
+    """把合并译文（闸口改过）切回与 ids 一一对应的块。合并时各块译文用空行连接，闸口只做字符串替换，
+    所以按初译各块的段落数切最准；段落数对不上（闸口改动增删了空行）就按各块初译字数的比例，在最近的段落边界切。"""
+    merged = _read(ch.merged)
+    spans = _para_spans(merged)
+    drafts = [strip_pending(ch.text("out", c, "md"))[0] for c in ids]
+    if len(spans) < len(ids):
+        raise ValueError(f"{ch.name}：合并译文只有 {len(spans)} 段，少于 {len(ids)} 块，无法切回原文块")
+    counts = [len(_para_spans(d)) for d in drafts]
+    if sum(counts) != len(spans) or 0 in counts:
+        sizes = list(accumulate(e - b for b, e in spans))   # 前 k+1 段的累计字数
+        total, tot_draft = sizes[-1], max(sum(len(d) for d in drafts), 1)
+        counts, used, acc = [], 0, 0
+        for i, d in enumerate(drafts):
+            acc += len(d)
+            left_chunks = len(drafts) - i - 1
+            if left_chunks == 0:
+                k = len(spans)
+            else:   # 累计字数最接近目标比例的边界；每块至少 1 段，后面的块也要留够段落
+                target = acc / tot_draft * total
+                k = min(range(used + 1, len(spans) - left_chunks + 1), key=lambda j: abs(sizes[j - 1] - target))
+            counts.append(k - used)
+            used = k
+    parts, a = [], 0
+    for n in counts:
+        parts.append(merged[spans[a][0]:spans[a + n - 1][1]])
+        a += n
+    return parts
+
+
+def run_final_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
+                     usage_file: Path | None = None, force: bool = False) -> tuple[int, int, list[str]]:
+    """终稿核译：核的是闸口改完后的合并译文（不是 out/ 里的初译原稿）。产物 final/cNN.jsonl（空文件＝NO_ISSUES）。
+    续跑规则同 run_review：引擎、系统提示词、术语表、所核译文任一变了就报 StaleOutputError，force 才重做
+    （闸口又改了译文之后重跑终稿核译，会因「所核译文变了」要求 --force，只重核变了的块）。"""
+    done = skipped = 0
+    fails: list[str] = []
+    if not ch.merged.exists():
+        return 0, 0, [f"{ch.name} 尚未合并（缺 {ch.merged.name}）：先跑 translate 合并，闸口改完再跑 final"]
+    try:
+        zh_parts = dict(zip(ids, split_merged(ch, ids), strict=True))
+    except ValueError as exc:
+        return 0, 0, [str(exc)]
+    fname = ch.merged.name
+
+    def one(cid: str) -> None:
+        zh, terms = zh_parts[cid], ch.text("terms", cid, "md")
+        user = user_review(fname, terms, ch.text("chunks", cid, "txt"), zh)
+        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/final", usage_file=usage_file)
+        items = parse_review(text)
+        _write(ch.path("final", cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
+        _write_meta(ch, "final", cid, engine, system, terms, zh)
+
+    reasons = {c: r for c in ids if ch.path("final", c, "jsonl").exists()
+               and (r := _stale_reason(ch, "final", c, engine, system, ch.text("terms", c, "md"), zh_parts[c]))}
+    _check_resume(ch, "final", "jsonl", ids, reasons, force)
+    todo = [c for c in ids if not ch.path("final", c, "jsonl").exists()]
+    skipped = len(ids) - len(todo)
+    with ThreadPoolExecutor(max(jobs, 1)) as ex:
+        futs = {c: ex.submit(one, c) for c in todo}
+        for c, f in futs.items():
+            try:
+                f.result()
+                done += 1
+            except Exception as exc:  # noqa: BLE001
+                fails.append(f"{c} 失败：{exc}")
+    return done, skipped, fails
+
+
 # ---------------------------------------------------------------- 合并
 
 def merge_translation(ch: Chapter, ids: list[str]) -> str:
@@ -528,17 +687,22 @@ def merge_decisions(ch: Chapter, ids: list[str]) -> int:
     return len(rows)
 
 
-def merge_review(ch: Chapter, ids: list[str]) -> tuple[int, int]:
-    """合并各块问题单，写 核译/issues/<章>_direct.jsonl；old 在合并译文中不是恰好 1 次的进 rejected.jsonl。"""
+def merge_review(ch: Chapter, ids: list[str], kind: str = "review") -> tuple[int, int]:
+    """合并各块问题单，写 核译/issues/<章>_direct.jsonl；old 在合并译文中不是恰好 1 次的进 rejected.jsonl。
+    kind="final"：合并终稿核译的 final/cNN.jsonl，写 核译/issues/<章>_final.jsonl 与 rejected_final.jsonl
+    （只认合并译文，不回退到 out/ 原稿，也不覆盖 out 阶段的问题单）。"""
+    final = kind == "final"
     if ch.merged.exists():
         target = _read(ch.merged)
+    elif final:
+        return 0, 0
     else:
         target = "\n\n".join(strip_pending(ch.text("out", c, "md"))[0] for c in ids)
     ok: list[dict[str, Any]] = []
     bad: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for c in ids:
-        p = ch.path("review", c, "jsonl")
+        p = ch.path(kind, c, "jsonl")
         if not p.exists():
             continue
         for it in parse_jsonl(_read(p)):
@@ -554,6 +718,12 @@ def merge_review(ch: Chapter, ids: list[str]) -> tuple[int, int]:
                 bad.append({**it, "reject": f"old 在合并译文中出现 {n} 次"})
             else:
                 ok.append(it)
-    _write(ch.issues, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in ok))
-    _write(ch.dir / "rejected.jsonl", "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in bad))
+    _write(ch.final_issues if final else ch.issues, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in ok))
+    _write(ch.dir / ("rejected_final.jsonl" if final else "rejected.jsonl"),
+           "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in bad))
     return len(ok), len(bad)
+
+
+def merge_final(ch: Chapter, ids: list[str]) -> tuple[int, int]:
+    """合并终稿核译的问题单，见 merge_review(kind="final")。"""
+    return merge_review(ch, ids, "final")

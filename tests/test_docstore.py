@@ -261,3 +261,26 @@ def test_consensus_recompute_uses_existing_versions(tmp_path):
     p = st.page(key, 1)
     vars_ = [p] + p.get("alternates", [])
     assert any(v.get("producer") == "consensus(rebuild)" for v in vars_)
+
+
+def test_export_marked_pages_with_printed_page_markers(lib):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
+    marked = st.export(key, "marked", [1, 2])
+    assert marked.startswith("<!-- p.pdf1 -->\n") and "<!-- p.pdf2 -->\n" in marked and "pdf3" not in marked
+    st.update_doc(key, page_offset=-13)                       # PDF 第 n 页 = 印刷页 n-13
+    marked = st.export(key, "marked", [2, 3])
+    assert marked.startswith("<!-- p.-11 -->\n") and "<!-- p.-10 -->\n" in marked and "欧努菲虫科" not in marked
+    assert marked.count("<!-- p.") == 2 and marked.endswith("\n") and not marked.endswith("\n\n")
+    assert "==== p" in st.export(key, "txt", [2]) and "==== p0001" not in st.export(key, "txt", [2])
+
+
+def test_cli_export_marked_with_pages(lib, capsys):
+    st, pdf, tmp = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
+    st.update_doc(key, page_offset=10)
+    assert cli.main(["--root", str(st.root), "export", key, "--marked", "--pages", "1-2"]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("<!-- p.11 -->\n") and "<!-- p.12 -->" in out and "p.13" not in out

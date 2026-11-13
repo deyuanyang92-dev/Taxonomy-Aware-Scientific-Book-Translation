@@ -48,6 +48,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 ## 4. 流程（按顺序执行，每步都能断点续做）
 0. **定领域**：确认本书的 yiku 领域名，下文记作 `<D>`；确认 `domains/<D>.md` 已存在。
 1. **切章**：运行 `python3 $S/extract.py <pdf> <起页> <止页> > src_en/chNN.txt`。扫描本用 `python3 $S/ocr_rapid.py <pdf> <outdir>`，不要用 tesseract。
+   **原书页码标记**（分类学书必做，种名「每页首现拉丁名」规则依赖它）：原文里每个原书页的起点单独一行 `<!-- p.13 -->`（印刷页码）。从资料库取页用 `docstore export <key> --marked --pages <PDF页范围>`（页码偏移要先登记，没登记写 `pdfNN`）；自己清洗 OCR 拼接 src_en 时用 `direct_mode.with_page_markers`。初译提示词要求译者原样保留，直调模式下丢失或不一致的块不算完成。
 2. **术语先行**（在初译之前完成）：
    1. 运行 `yiku table src_en/chNN.txt --domain <D> [--scope <类群>] [--fallback <领域>]`，得到本章术语表。表分 **HARD**（必用：学名与本领域已核译名一致者）和 **SOFT**（多译名/多义项/候选/跨领域〔回退〕，附出处页码、层级、定义语境和中文用例，由译者按本书义项取舍）。`--fallback` 缺省：分类学书回退到进化生物学，其他领域不回退。
    2. 找出缺口：本章出现、但术语库里没有的术语。用提示词 C，按 TERMS.md 和领域包列出的权威资料逐个定向查，每条都要写书名和页码。
@@ -66,6 +67,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
    - `apply_issues.py <书> 核译/issues/bNN.jsonl`：只在恰好匹配 1 次时替换；丢失英文或数字的改动自动拒绝。
    - `yiku check src zh --domain <D> [--decisions 核译/term_decisions.jsonl]`：HARD 严格检查；SOFT 按术语决策日志检查（同英文+义项必须同译名，不同义项可不同但须登记），没有日志时只给「提示」。
    - 术语决策：直调初译在译文后输出「### 术语决策」JSONL，脚本按块存 `核译/direct/<章>/decisions/` 并合并为 `核译/term_decisions.jsonl`；`yiku decide validate`（格式）→ `yiku decide review`（列出须主会话裁定的：多译名、无出处、zh 不在候选）→ `yiku decide apply --book <书>`（写回：候选，来源 `决策_<书>`；只有 `--verified` 才记已核）。
+   - 种名格式（分类学书）：`run_batches.py <书> --mode species --chapters body,captions [--names 种名.tsv]`（不调模型，闸口之后、终稿核译之前跑；`--dry` 只报告）。有中文名的种按原书页规范：每页首现「中文名（*Genus species*）」，同页再现只写中文，换页再写拉丁名；图注每条算一个单元；没有中文名的种不动。名单取 yiku 的 HARD 种名，再叠加 `--names` TSV（拉丁名、中文名）。先备份 `*.bak-species` 再写回。单文件用 `species_format.py`。
    - `drift_check.py <书>`：检查科名漂移。
    - `qa.py <书>`：检查残留英文、标点、空格和 U+3000。
 6. **抽查**：每批随机抽 20 条，由裁定者判断对错。

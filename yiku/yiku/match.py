@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import db as D
-from .classify import HARD, classify
+from .classify import HARD, classify, is_taxon_name
 from .db import candidates
 from .table import DEFAULT_MAX_CHARS, render_table
 from .usage import default_finder
@@ -15,19 +15,45 @@ _LATIN_PLURAL = (("us", "i"), ("um", "a"), ("on", "a"), ("a", "ae"), ("is", "es"
 
 
 def forms(en: str) -> set[str]:
-    """英文词形：单复数、拉丁复数。只变化最后一个词。"""
+    """英文词形：单复数、拉丁复数。只变化最后一个词。
+    拉丁复数规则要求词干至少 2 个字母：否则 um->a、us->i、on->a 会把「um」「us」变出单字母「复数」，
+    冠词 a、代词 I 被当成术语（2026-11-13 试译里「um」被报出现 50 次，实为冠词 a）。"""
     t = en.lower()
     f = {t, t + "s", t + "es"}
+    last = re.split(r"[\s-]+", t)[-1]
     for a, b in _LATIN_PLURAL:
-        if t.endswith(a):
+        if t.endswith(a) and len(last) - len(a) >= 2:
             f.add(t[: -len(a)] + b)
     return f
 
 
-def _pattern(en: str) -> re.Pattern:
+def _pattern(en: str, tail: str = "") -> re.Pattern:
     alts = sorted((re.escape(x).replace(r"\ ", r"[\s-]+") for x in forms(en)), key=len, reverse=True)
     # 前后不能紧挨字母或数字：图号 38.2f 里的 f 不是缩写 f.（变型）
-    return re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(alts) + r")(?![A-Za-z0-9])", re.I)
+    return re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(alts) + r")(?![A-Za-z0-9])" + tail, re.I)
+
+
+# 属名后面跟的小写词若是这些英语词，就不是种加词（Glycera has ...、Gyptis and ...）。只含英语虚词/常见动词，不含学科词。
+_NOT_EPITHET = (
+    "and or the an of in on at to by for from with without as is are was were be been has have had can may might will "
+    "would also but that which who whose when where while not only both each other than then thus these those this such "
+    "see like also occurs lacks bears shows possesses lives live include includes appears found known called named "
+    "spp aff nov gen sensu indet species genus group complex"
+).split()
+# 双名法里的属名：后面紧跟（可带亚属）种加词；亚属名 (Glycera) 后面也跟种加词。(?-i:...) 让大小写敏感：Glycera Fig. 不是双名。
+_EPITHET = r"(?!(?:" + "|".join(_NOT_EPITHET) + r")\b)[a-z]{3,}\b"
+_BINOMIAL_TAIL = r"(?!(?-i:(?:\s+(?:\([A-Z][a-z]+\)\s+)?|\)\s+)" + _EPITHET + "))"
+
+
+def is_genus_word(en: str) -> bool:
+    """单个大写开头的拉丁词（属名，也含科名等），可能出现在双名里。"""
+    return " " not in en.strip() and is_taxon_name(en)
+
+
+def standalone_count(en: str, text: str) -> int:
+    """属名在原文里「独立出现」的次数：后面跟种加词的（双名法 *Gyptis vittata* 里的属名）不算。
+    用户裁定：学名照原书保持拉丁；双名里的属名不要求译成中文属名。*Genus* sp.、cf. 以及后面不是种加词的算独立出现。"""
+    return len(_pattern(en, _BINOMIAL_TAIL).findall(text.replace("-\n", "")))
 
 
 def find_terms(con, text: str, domain: str = "*", fallback_domains: list[str] | None = None) -> dict[str, int]:
@@ -81,15 +107,46 @@ class Issue:
         return f"{self.en}（原文 {self.count_en} 次）应译「{self.expected}」，译文中未出现{alt}"
 
 
+_BRACKET = re.compile(r"[（(][^）)]*[）)]")
+_ALT_SEPARATORS = "；;/／、，,"
+
+
+def _alternatives(zh: str) -> list[str]:
+    """复合译名在括号之外按 ；;/／、，, 拆成各备选名（括号里的分隔符不拆）。"""
+    depth, cur, out = 0, "", []
+    for ch in zh:
+        if ch in "（(":
+            depth += 1
+        elif ch in "）)" and depth > 0:
+            depth -= 1
+        if depth == 0 and ch in _ALT_SEPARATORS:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    out.append(cur)
+    return [a.strip() for a in out if a.strip()]
+
+
 def variants(zh: str) -> set[str]:
-    """译名在正文中可接受的形式：去括注、去词尾「的」、去词头「具/呈」、门纲级可省阶元字。"""
-    v = {zh, re.sub(r"[（(][^）)]*[）)]", "", zh)}
-    for x in list(v):
-        v.add(x[:-1] if x.endswith("的") and len(x) > 2 else x)
-    for x in list(v):
-        v.add(x[1:] if x[:1] in "具呈" and len(x) > 2 else x)
-        v.add(re.sub(r"(动物门|门|亚纲|纲)$", lambda m: "动物" if m.group(1) == "动物门" else "", x) or x)
-    return {x for x in v if len(x) >= 2} | {zh}
+    """译名在正文中可接受的形式。
+    复合译名（「罩／盖（头罩、口盖）」「进化、演化」「单系(adj.) / 单系性(n.)」）：每个备选名都算。
+    括注：括号前的主名即使只有一个字也算（「枕（带齿片者称齿片枕）」→「枕」）；括号在词中间时（「刚（毛）叶」）
+    括号内容是可省的字，去掉和展开两种都算。
+    另有：去词尾「的」、去词头「具/呈」、门纲级可省阶元字（这些派生形式至少 2 字，免得单字到处命中）。"""
+    out = {zh}
+    for alt in _alternatives(zh) or [zh]:
+        base = {alt, _BRACKET.sub("", alt).strip() or alt}
+        if re.search(r"[）)]\s*\S", alt):
+            base.add(_BRACKET.sub(lambda m: m.group(0)[1:-1], alt))
+        v = set(base)
+        for x in list(v):
+            v.add(x[:-1] if x.endswith("的") and len(x) > 2 else x)
+        for x in list(v):
+            v.add(x[1:] if x[:1] in "具呈" and len(x) > 2 else x)
+            v.add(re.sub(r"(动物门|门|亚纲|纲)$", lambda m: "动物" if m.group(1) == "动物门" else "", x) or x)
+        out |= base | {x for x in v if len(x) >= 2}
+    return out
 
 
 def _uses(zh_text: str, zh: str) -> bool:
@@ -116,6 +173,11 @@ def check(con, src: str, zh: str, domain: str = "*", scope: set[str] | None = No
     issues: list[Issue] = []
     for en, n in sorted(found.items()):
         hits = candidates(con, en, domain, scope, fb)
+        shown_en = hits[0].en if hits else str(log[en][0].get("en", en)) if en in log else en  # found 的键是小写的
+        if is_genus_word(shown_en):
+            n = min(n, standalone_count(en, src))
+            if n == 0:   # 只在拉丁双名里出现：学名照原书，不要求译属名
+                continue
         cls = classify(hits) if hits else None
         if cls is not None and cls.kind == HARD:
             if hits[0].status != "已核" or _uses(zh, cls.zh or ""):

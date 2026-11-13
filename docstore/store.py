@@ -487,12 +487,25 @@ class Store:
         pp = f"第 {pr} 页（PDF 第 {n} 页）" if pr is not None else f"PDF 第 {n} 页（印刷页未定）"
         return f"{who}. {yr}. {d['title'] or key}. {pp}. [docstore:{key}]"
 
-    def export(self, key: str, fmt: str = "txt") -> str:
+    def export(self, key: str, fmt: str = "txt", pages: list[int] | None = None) -> str:
+        """fmt：txt｜md｜marked。marked＝翻译用原文：每页前一行 <!-- p.N -->（N＝印刷页码，没登记页码偏移就写 pdfNN），
+        页间空一行，页内文本原样；译文要原样保留这些标记，种名「每页首现拉丁名」按它判断（species_format.py）。
+        pages：只导出这些 PDF 页（1 起）。"""
         parts = []
         d = self.doc(key)
         if fmt == "md":
             parts.append(f"# {d['title'] or key}\n")
+        want = None if pages is None else set(pages)
+        if fmt == "marked":
+            for p in self.pages(key):
+                if want is not None and p["page"] not in want:
+                    continue
+                label = p["printed_page"] if p["printed_page"] is not None else f"pdf{p['page']}"
+                parts.append(f"<!-- p.{label} -->\n{(p.get('text') or '').strip()}\n\n")
+            return "".join(parts).rstrip("\n") + "\n"
         for p in self.pages(key):
+            if want is not None and p["page"] not in want:
+                continue
             tag = f"p{p['page']:04d}" + (f" 印刷页 {p['printed_page']}" if p["printed_page"] is not None else "")
             if fmt == "md":
                 parts.append(f"\n## {tag} · {p['verify_level']}\n\n{p.get('text') or ''}\n")

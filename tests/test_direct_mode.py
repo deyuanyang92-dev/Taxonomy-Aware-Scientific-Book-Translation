@@ -525,3 +525,347 @@ def test_agent_mode_prompts_describe_hard_soft_and_decisions(book, monkeypatch):
 def test_cli_help_mentions_fallback():
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "run_batches.py"), "--help"], capture_output=True, text=True)
     assert "--fallback" in r.stdout
+
+
+# ---------- 终稿核译（闸口改完后的合并稿）与自动术语检查（2026-11-13 试译） ----------
+
+def multi_para_zh(user):
+    """每块三段，各段带块内可识别的独特词。"""
+    k = len(user)
+    return f"第一段{k}。" + "沙蚕" * 50 + f"\n\n第二段{k}。" + "疣足" * 50 + f"\n\n第三段{k}。" + "刚毛" * 50 + "\n"
+
+
+def multi_para_book(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(multi_para_zh))
+    dm.merge_translation(ch, ids)
+    return ch, ids
+
+
+def test_split_merged_follows_chunks_after_gate_edits(book):
+    ch, ids = multi_para_book(book)
+    drafts = [dm.strip_pending(ch.text("out", c, "md"))[0] for c in ids]
+    merged = ch.merged.read_text(encoding="utf8")
+    edited = merged.replace("疣足", "疣足叶", 1)  # 闸口式改动：同一处只换字
+    ch.merged.write_text(edited, encoding="utf8")
+    parts = dm.split_merged(ch, ids)
+    assert len(parts) == len(ids) >= 3
+    assert "疣足叶" in parts[0] and "疣足叶" not in "".join(parts[1:])
+    for part, draft in zip(parts, drafts, strict=True):
+        assert part.splitlines()[0] == draft.splitlines()[0]
+    assert "".join(parts).replace("\n", "") == edited.replace("\n", "")
+
+
+def test_split_merged_falls_back_to_proportional_when_paragraphs_change(book):
+    ch, ids = multi_para_book(book)
+    merged = ch.merged.read_text(encoding="utf8")
+    ch.merged.write_text(merged.replace("\n\n", "\n\n加一段。\n\n", 1), encoding="utf8")  # 闸口改动新增了段落
+    parts = dm.split_merged(ch, ids)
+    assert len(parts) == len(ids) and all(p.strip() for p in parts)
+    assert "".join(parts).replace("\n", "") == ch.merged.read_text(encoding="utf8").replace("\n", "")
+
+
+def test_final_review_reviews_merged_gated_text_not_out_drafts(book):
+    ch, ids = multi_para_book(book)
+    ch.merged.write_text(ch.merged.read_text(encoding="utf8").replace("疣足", "疣足叶", 1), encoding="utf8")
+    seen = []
+
+    def reply(user):
+        seen.append(user)
+        return "NO_ISSUES"
+
+    n, skipped, fails = dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", Fake(reply))
+    assert (n, skipped, fails) == (len(ids), 0, [])
+    zh_seen = "".join(u.split("=== 中文译文 ===")[1] for u in seen)
+    assert "疣足叶" in zh_seen                                   # 闸口改后的字出现在核译输入里
+    assert all(u.startswith("file: ch05_直译初译.md") for u in seen)
+    assert (ch.dir / "final" / "c00.jsonl").read_text() == "" and (ch.dir / "final" / "c00.meta.json").exists()
+    assert not (ch.dir / "review").exists()                       # 不碰 out 阶段的核译产物
+    assert dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", Fake(reply)) == (0, len(ids), [])
+
+
+def test_final_review_stale_when_merged_text_changes_again(book):
+    ch, ids = multi_para_book(book)
+    dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", Fake("NO_ISSUES"))
+    ch.merged.write_text(ch.merged.read_text(encoding="utf8").replace("刚毛", "刚毛束", 1), encoding="utf8")
+    with pytest.raises(dm.StaleOutputError, match="所核译文变了"):
+        dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", Fake("NO_ISSUES"))
+    f = Fake("NO_ISSUES")
+    assert dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", f, force=True) == (1, len(ids) - 1, [])
+    assert len(f.calls) == 1
+
+
+def test_final_review_needs_merged_file(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    n, skipped, fails = dm.run_final_review(ch, ids, "deepseek-flash", "FSYS", Fake("NO_ISSUES"))
+    assert n == 0 and len(fails) == 1 and "合并" in fails[0]
+
+
+def test_merge_final_writes_final_issues_and_rejects_non_unique(book):
+    ch, ids = multi_para_book(book)
+    merged = ch.merged.read_text(encoding="utf8")
+    first = merged.splitlines()[0]
+    unique = first[:6]
+    assert merged.count(unique) == 1
+    (ch.dir / "final").mkdir(exist_ok=True)
+    rows = [{"old": unique, "new": "改后", "type": "误译"}, {"old": "沙蚕", "new": "X", "type": "术语"}]
+    (ch.dir / "final" / "c00.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf8")
+    ok, bad = dm.merge_final(ch, ids)
+    assert (ok, bad) == (1, 1)
+    out = book / "核译" / "issues" / "ch05_final.jsonl"
+    assert json.loads(out.read_text(encoding="utf8"))["file"] == "ch05_直译初译.md"
+    assert not ch.issues.exists()                                  # 不覆盖 out 阶段的问题单
+    assert (ch.dir / "rejected_final.jsonl").exists()
+
+
+def test_build_system_final_is_review_prompt_about_gated_text():
+    s = dm.build_system("final", "分类学")
+    assert "独立核译员" in s and "NO_ISSUES" in s and "闸口" in s
+    assert "终稿" in s
+
+
+# ---------- yiku check 自动运行 ----------
+
+def test_yiku_check_command_and_parsing(monkeypatch, tmp_path):
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        out = "Ceratonereis（原文 1 次）应译「角沙蚕属」，译文中未出现\n提示：cirrus（原文 2 次）有已核译名：须\n"
+        return subprocess.CompletedProcess(cmd, 1, out, "共 2 处（错误 1，提示 1）\n")
+
+    monkeypatch.setattr(dm.subprocess, "run", fake_run)
+    dec = tmp_path / "d.jsonl"
+    dec.write_text("{}\n")
+    errors, hints, report = dm.yiku_check(tmp_path / "s.txt", tmp_path / "z.md", "分类学", "Nereididae", "进化生物学", dec)
+    assert (errors, hints) == (1, 1) and "角沙蚕属" in report
+    cmd = seen[0]
+    assert cmd[:2] == ["yiku", "check"] and str(tmp_path / "s.txt") in cmd and str(tmp_path / "z.md") in cmd
+    assert cmd[cmd.index("--domain") + 1] == "分类学" and cmd[cmd.index("--scope") + 1] == "Nereididae"
+    assert cmd[cmd.index("--fallback") + 1] == "进化生物学" and cmd[cmd.index("--decisions") + 1] == str(dec)
+
+
+def test_yiku_check_real_failure_raises(monkeypatch, tmp_path):
+    monkeypatch.setattr(dm.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 2, "", "boom"))
+    with pytest.raises(RuntimeError, match="boom"):
+        dm.yiku_check(tmp_path / "s.txt", tmp_path / "z.md", "分类学")
+
+
+def test_run_term_check_writes_report_and_skips_without_merged(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    calls = []
+
+    def check_fn(src, zh, domain, scope="", fallback=None, decisions=None):
+        calls.append((src.name, zh.name, domain, scope, fallback, decisions))
+        return 2, 1, "A（原文 1 次）应译「甲」\n提示：B\n"
+
+    assert "尚未合并" in dm.run_term_check(ch, "分类学", None, None, check_fn) and calls == []
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))
+    dm.merge_translation(ch, ids)
+    summary = dm.run_term_check(ch, "分类学", None, "进化生物学", check_fn)
+    assert "错误 2" in summary and "提示 1" in summary
+    assert calls == [("ch05.txt", "ch05_直译初译.md", "分类学", "Nereididae", "进化生物学", None)]
+    assert "应译「甲」" in (ch.dir / "yiku_check.txt").read_text(encoding="utf8")
+    (book / "核译").mkdir(exist_ok=True)
+    (book / "核译" / "term_decisions.jsonl").write_text("{}\n")
+    dm.run_term_check(ch, "分类学", None, None, check_fn)
+    assert calls[-1][-1] == book / "核译" / "term_decisions.jsonl"
+
+
+def two_chapter_book(book):
+    (book / "src_en" / "captions.txt").write_text("Fig. 1. Dorsal view of *Thelepus* sp. " + make_text(1200), encoding="utf8")
+    return book
+
+
+def run_direct_args(**kw):
+    import types
+    base = dict(chapters="ch05,captions", mode="translate", domain="分类学", book_desc="", scope="Nereididae",
+                chunk_chars=1000, dry=False, engine="claude-sonnet", same_engine_ok=False, j=1, force=False, fallback=None)
+    return types.SimpleNamespace(**{**base, **kw})
+
+
+def test_run_direct_runs_yiku_check_on_body_and_captions(book, monkeypatch):
+    import llm_engines
+    two_chapter_book(book)
+    checked = []
+    monkeypatch.setattr(dm, "yiku_check", lambda src, zh, domain, scope="", fallback=None, decisions=None:
+                        (checked.append((src.name, zh.name)) or (1, 0, "Thelepus（原文 1 次）应译「乳蛰虫属」\n")))
+    monkeypatch.setattr(llm_engines, "call", Fake(zh_for))
+    assert run_batches.run_direct(run_direct_args(), book, "") == 0
+    assert checked == [("ch05.txt", "ch05_直译初译.md"), ("captions.txt", "captions_直译初译.md")]
+    assert (book / "核译" / "direct" / "captions" / "yiku_check.txt").exists()
+
+
+def test_run_direct_final_mode_reviews_merged_text_and_checks_terms(book, monkeypatch, capsys):
+    import llm_engines
+    two_chapter_book(book)
+    monkeypatch.setattr(dm, "yiku_check", lambda *a, **k: (0, 0, ""))
+    monkeypatch.setattr(llm_engines, "call", Fake(zh_for))
+    run_batches.run_direct(run_direct_args(), book, "")
+    reviews = Fake("NO_ISSUES")
+    monkeypatch.setattr(llm_engines, "call", reviews)
+    code = run_batches.run_direct(run_direct_args(mode="final", engine="deepseek-flash"), book, "")
+    assert code == 0 and reviews.calls
+    assert all("=== 中文译文 ===" in c[1] for c in reviews.calls)
+    assert (book / "核译" / "issues" / "ch05_final.jsonl").exists() and (book / "核译" / "issues" / "captions_final.jsonl").exists()
+    out = capsys.readouterr().out
+    assert "apply_issues.py" in out and "ch05_final.jsonl" in out
+    engines = json.loads((book / "核译" / "direct" / "ch05" / "engines.json").read_text())
+    assert engines == {"translate": "claude-sonnet", "final": "deepseek-flash"}
+
+
+def test_run_direct_final_mode_refuses_translator_engine(book, monkeypatch):
+    import llm_engines
+    monkeypatch.setattr(dm, "yiku_check", lambda *a, **k: (0, 0, ""))
+    monkeypatch.setattr(llm_engines, "call", Fake(zh_for))
+    run_batches.run_direct(run_direct_args(chapters="ch05"), book, "")
+    with pytest.raises(SystemExit) as e:
+        run_batches.run_direct(run_direct_args(chapters="ch05", mode="final", engine="claude-sonnet"), book, "")
+    assert "不能用同一个模型" in str(e.value)
+
+
+def test_cli_mode_final_listed_and_agent_engines_refuse_it(book):
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "run_batches.py"), "--help"], capture_output=True, text=True)
+    assert "final" in r.stdout
+    r = run_cli(book, "--mode", "final", "--engine", "codex", "--chapters", "ch05")
+    assert r.returncode != 0 and "直调" in (r.stdout + r.stderr)
+
+
+# ---------- OCR 来源提示 ----------
+
+def test_translate_prompt_tells_model_to_mark_ocr_glitches_not_blame_the_book():
+    s = dm.build_system("translate", "分类学")
+    assert "[OCR?]" in s and "原文来自 OCR" in s and "不得擅自注〔原书" in s
+
+
+def test_rules_md_section3_has_ocr_rule():
+    rules = (REPO / "skill" / "RULES.md").read_text(encoding="utf8")
+    sec3 = rules.split("## 3. 引证与原书错误")[1].split("## 4.")[0]
+    assert "OCR" in sec3 and "[OCR?]" in sec3 and "〔原书" in sec3
+
+
+def test_review_prompt_does_not_flag_ocr_marks():
+    s = dm.build_system("review", "分类学")
+    assert "[OCR?]" in s
+
+
+# ---------- 原书页码标记（种名「每页首现拉丁名」规则依赖它） ----------
+
+def marked_source(n_pages=6):
+    pages = [(11 + i, (f"Page {11 + i} text. " + PARA * 4).strip()) for i in range(n_pages)]
+    return dm.with_page_markers(pages)
+
+
+def test_with_page_markers_and_labels():
+    text = dm.with_page_markers([(11, "A one."), (12, "  "), (13, "B two.\n")])
+    assert text == "<!-- p.11 -->\nA one.\n\n<!-- p.13 -->\nB two.\n"
+    assert dm.page_labels(text) == ["11", "13"]
+    assert dm.page_labels("x <!-- p.5 --> y\n  <!--p. 7-->  \n") == ["7"]       # 只认独占一行的标记
+
+
+def test_chunks_keep_every_page_marker_exactly_once():
+    chunks = dm.split_chunks(marked_source(8), 1500)
+    assert len(chunks) >= 3
+    assert [p for c in chunks for p in dm.page_labels(c)] == [str(11 + i) for i in range(8)]
+
+
+def test_prompts_tell_models_to_keep_page_markers():
+    t = dm.build_system("translate", "分类学")
+    assert "<!-- p." in t and "原样保留" in t.split("<!-- p.")[1][:200] + t.split("<!-- p.")[0][-200:]
+    assert "<!-- p." in dm.build_system("review", "分类学") and "<!-- p." in dm.build_system("final", "分类学")
+
+
+def marked_book(book):
+    (book / "src_en" / "ch05.txt").write_text(marked_source(), encoding="utf8")
+    return book
+
+
+def keep_markers(user):
+    chunk = user.split("请翻译以下英文原文：")[1]
+    marks = dm.PAGE_MARK.findall(chunk)
+    return "沙蚕" * 400 + "".join(f"\n\n{dm.page_marker(m)}\n沙蚕" for m in marks) + "\n"
+
+
+def test_translate_accepts_chunks_that_keep_page_markers(book):
+    ch = dm.Chapter(marked_book(book), "ch05", 1500)
+    ids = ch.prepare("分类学", "Nereididae")
+    done, _, fails = dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(keep_markers))
+    assert (done, fails) == (len(ids), [])
+    dm.merge_translation(ch, ids)
+    assert dm.page_labels(ch.merged.read_text(encoding="utf8")) == [str(11 + i) for i in range(6)]
+
+
+def test_translate_rejects_chunk_that_drops_or_reorders_page_markers(book):
+    ch = dm.Chapter(marked_book(book), "ch05", 1500)
+    ids = ch.prepare("分类学", "Nereididae")
+    done, _, fails = dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))   # 译文里一个标记都没有
+    assert done == 0 and len(fails) == len(ids) and all("页码标记" in f for f in fails)
+    assert not list((ch.dir / "out").glob("c*.md")) or all(p.name.endswith(".suspect.md") for p in (ch.dir / "out").glob("c*.md"))
+    assert (ch.dir / "out" / "c00.suspect.md").exists()
+
+
+def test_sources_without_markers_are_unaffected(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    assert dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_for))[2] == []
+
+
+# ---------- 种名格式（--mode species，闸口之后跑） ----------
+
+def species_book(book, with_markers=True):
+    names = book / "species_names.tsv"
+    names.write_text("Sabella crassicornis\t厚角缨鳃虫\n", encoding="utf8")
+    body = ("<!-- p.13 -->\n厚角缨鳃虫的鳃丝。厚角缨鳃虫（*Sabella crassicornis*）。\n\n<!-- p.14 -->\n*Sabella crassicornis* 的管。\n"
+            if with_markers else "厚角缨鳃虫。\n")
+    (book / "译文").mkdir(exist_ok=True)
+    (book / "译文" / "ch05_直译初译.md").write_text(body, encoding="utf8")
+    (book / "译文" / "captions_直译初译.md").write_text(
+        "图 1. *Sabella crassicornis* 体前端。示厚角缨鳃虫（*Sabella crassicornis*）的眼。\n\n图 2. 厚角缨鳃虫。\n", encoding="utf8")
+    return names
+
+
+def species_args(names, **kw):
+    import types
+    base = dict(chapters="ch05,captions", domain="分类学", names=str(names), no_yiku=True, unit="auto", dry=False)
+    return types.SimpleNamespace(**{**base, **kw})
+
+
+def test_run_species_fixes_merged_text_with_backup_and_report(book, capsys):
+    names = species_book(book)
+    assert run_batches.run_species(species_args(names), book) == 0
+    merged = (book / "译文" / "ch05_直译初译.md").read_text(encoding="utf8")
+    assert merged == ("<!-- p.13 -->\n厚角缨鳃虫（*Sabella crassicornis*）的鳃丝。厚角缨鳃虫。\n\n"
+                      "<!-- p.14 -->\n厚角缨鳃虫（*Sabella crassicornis*）的管。\n")
+    caps = (book / "译文" / "captions_直译初译.md").read_text(encoding="utf8")
+    assert caps == ("图 1. 厚角缨鳃虫（*Sabella crassicornis*）体前端。示厚角缨鳃虫的眼。\n\n"
+                    "图 2. 厚角缨鳃虫（*Sabella crassicornis*）。\n")
+    assert (book / "译文" / "ch05_直译初译.md.bak-species").read_text(encoding="utf8").startswith("<!-- p.13 -->\n厚角缨鳃虫的鳃丝")
+    assert "待改 3 处" in capsys.readouterr().out
+    assert "p.13" in (book / "核译" / "direct" / "ch05" / "species_format.txt").read_text(encoding="utf8")
+    assert run_batches.run_species(species_args(names), book) == 0          # 再跑无改动
+
+
+def test_run_species_dry_only_reports(book):
+    names = species_book(book)
+    before = (book / "译文" / "ch05_直译初译.md").read_text(encoding="utf8")
+    assert run_batches.run_species(species_args(names, dry=True), book) == 0
+    assert (book / "译文" / "ch05_直译初译.md").read_text(encoding="utf8") == before
+    assert not (book / "译文" / "ch05_直译初译.md.bak-species").exists()
+
+
+def test_run_species_without_page_markers_fails_with_hint(book, capsys):
+    names = species_book(book, with_markers=False)
+    assert run_batches.run_species(species_args(names, chapters="ch05"), book) == 1
+    assert "页码标记" in capsys.readouterr().out
+
+
+def test_cli_mode_species_listed(book):
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "run_batches.py"), "--help"], capture_output=True, text=True)
+    assert "species" in r.stdout
+    names = species_book(book)
+    r = run_cli(book, "--mode", "species", "--chapters", "captions", "--names", str(names), "--no-yiku", "--dry")
+    assert r.returncode == 0, r.stderr
+    assert "待改" in r.stdout

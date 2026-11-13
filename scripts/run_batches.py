@@ -11,7 +11,13 @@
    每块注入 yiku 术语表，经 llm_engines 直接调模型，产物按块写盘、已有则跳过。详见 direct_mode.py。
   python3 run_batches.py <书> --mode translate --chapters ch05 --engine claude-sonnet [--scope Nereididae]
   python3 run_batches.py <书> --mode review    --chapters ch05 --engine deepseek-flash
+  python3 run_batches.py <书> --mode final     --chapters body,captions --engine deepseek-flash   # 闸口改完后核合并终稿
   推荐分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）。
+  每次合并后自动对合并译文跑 yiku check（正文和图注各一章，都跑），报告在 核译/direct/<章>/yiku_check.txt。
+  python3 run_batches.py <书> --mode species   --chapters body,captions [--names 种名.tsv] [--dry]   # 种名格式，闸口之后跑
+  流程：translate -> review -> apply_issues.py（闸口）-> species -> final -> apply_issues.py。
+  species 不调模型：对合并译文 译文/<章>_直译初译.md 按原书页规范有中文名的种（首现「中文（*拉丁*）」，同页再现只写中文；
+  页码来自译文里的 <!-- p.N --> 标记；图注类章节每条图注算一个单元），先备份 *.bak-species 再写回，--dry 只报告。
 
 --dry 只写提示词不执行，可人工检查后再跑。先试点 1 批，主线程抽查合格再铺开。"""
 import argparse
@@ -113,12 +119,12 @@ def run_direct(a, B, notes):
             continue
         engines_f = ch.dir / 'engines.json'
         used = json.loads(engines_f.read_text()) if engines_f.exists() else {}
-        other = used.get('review' if a.mode == 'translate' else 'translate')
-        if other == a.engine and not a.same_engine_ok:
+        others = [used.get('review'), used.get('final')] if a.mode == 'translate' else [used.get('translate')]
+        if a.engine in others and not a.same_engine_ok:
             sys.exit(f'{chn}：初译和核译不能用同一个模型（{a.engine}）；确需如此加 --same-engine-ok')
         used[a.mode] = a.engine
         engines_f.write_text(json.dumps(used, ensure_ascii=False))
-        fn = dm.run_translate if a.mode == 'translate' else dm.run_review
+        fn = {'translate': dm.run_translate, 'review': dm.run_review, 'final': dm.run_final_review}[a.mode]
         try:
             n, skipped, fails = fn(ch, ids, a.engine, system, llm_engines.call, a.j, usage, a.force)
         except dm.StaleOutputError as exc:
@@ -130,17 +136,71 @@ def run_direct(a, B, notes):
             code = 1
         if a.mode == 'translate':
             print(f'{chn}：', dm.merge_translation(ch, ids))
+        elif a.mode == 'final':
+            ok, bad = dm.merge_final(ch, ids)
+            print(f'{chn}：终稿问题单 {ok} 条 -> {ch.final_issues}；拒绝 {bad} 条（见 {ch.dir}/rejected_final.jsonl）')
+            print(f'  下一步：python3 {S}/apply_issues.py {B} 核译/issues/{ch.final_issues.name} --dry')
         else:
             ok, bad = dm.merge_review(ch, ids)
             print(f'{chn}：问题单 {ok} 条 -> {ch.issues}；拒绝 {bad} 条（见 {ch.dir}/rejected.jsonl）')
             print(f'  下一步：python3 {S}/apply_issues.py {B} 核译/issues/{ch.issues.name} --dry')
+        try:   # 单个核译模型会漏 HARD 术语：每次合并后对合并译文自动跑 yiku check，正文和图注都跑
+            print(dm.run_term_check(ch, a.domain, a.scope, getattr(a, 'fallback', None)))
+        except RuntimeError as exc:
+            print(f'{chn}：术语检查没能运行：{exc}')
+            code = 1
+    return code
+
+
+def run_species(a, B):
+    """--mode species：对每章合并译文跑 species_format（不调模型）。返回退出码：没有页码标记或取不到名单为 1。"""
+    import direct_mode as dm
+    import species_format as sf
+    chapters = [c for c in a.chapters.split(',') if c]
+    if not chapters:
+        sys.exit('species 模式必须给 --chapters ch05,captions')
+    code = 0
+    for chn in chapters:
+        ch = dm.Chapter(B, chn)
+        if not ch.merged.exists():
+            print(f'{chn}：没有合并译文 {ch.merged.name}，跳过')
+            code = 1
+            continue
+        text = ch.merged.read_text(encoding='utf8')
+        unit = sf.auto_unit(ch.merged) if getattr(a, 'unit', 'auto') == 'auto' else a.unit
+        try:
+            names = sf.collect_names(text, a.names, None if a.no_yiku else a.domain)
+            new, changes = sf.fix_text(text, names, unit)
+        except sf.NoPageMarkers:
+            print(f'{chn}：译文里没有页码标记 <!-- p.N -->，无法按原书页处理；请用带页码标记的原文重译（见 direct_mode.with_page_markers），'
+                  '或确认整篇只算一页后单独跑 species_format.py --unit whole')
+            code = 1
+            continue
+        except (FileNotFoundError, ImportError) as exc:
+            print(f'{chn}：取不到 yiku 种名（{exc}）；用 --names 给名单或 --no-yiku')
+            code = 1
+            continue
+        print(f"{chn}：名单 {len(names)} 个种，按{ {'page': '页', 'paragraph': '段（每条图注一个单元）', 'whole': '整篇'}[unit] }，"
+              f"待改 {len(changes)} 处")
+        for c in changes:
+            print('  ' + c.line())
+        ch.dir.mkdir(parents=True, exist_ok=True)
+        (ch.dir / 'species_format.txt').write_text(''.join(c.line() + '\n' for c in changes), encoding='utf8')
+        if changes and not a.dry:
+            bak = ch.merged.with_name(ch.merged.name + sf.BACKUP_SUFFIX)
+            if not bak.exists():
+                bak.write_text(text, encoding='utf8')
+            ch.merged.write_text(new, encoding='utf8')
+            print(f'  已写回 {ch.merged}（原件备份 {bak.name}）')
     return code
 
 
 def main():
     ap = argparse.ArgumentParser(description='批次调度：智能体模式（codex/claude）或直调模式（deepseek-*/claude-*），见文件头说明')
     ap.add_argument('book')
-    ap.add_argument('--mode', choices=['review', 'translate'], required=True)
+    ap.add_argument('--mode', choices=['review', 'translate', 'final', 'species'], required=True,
+                    help='translate=初译；review=核译初译原稿；final=核闸口改完后的合并终稿（仅直调模式）；'
+                         'species=按原书页规范种名拉丁名（闸口之后跑，不调模型）')
     ap.add_argument('--engine', choices=['codex', 'claude', *DIRECT_ENGINES], default='codex',
                     help='codex/claude=智能体模式；deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus=直调模式。'
                          '默认分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）')
@@ -156,6 +216,10 @@ def main():
     ap.add_argument('--force', action='store_true',
                     help='直调模式：已有产物与当前引擎/系统提示词/术语表不一致时，删掉不一致的块重做（默认报错停下）')
     ap.add_argument('--same-engine-ok', action='store_true', help='直调模式：允许初译与核译用同一模型（默认拒绝）')
+    ap.add_argument('--names', default=None, help='species 模式：种名 TSV（拉丁名<TAB>中文名）；与 yiku 的 HARD 种名叠加，TSV 优先')
+    ap.add_argument('--no-yiku', action='store_true', help='species 模式：不去 yiku 查 HARD 种名，只用 --names')
+    ap.add_argument('--unit', choices=['auto', 'page', 'paragraph', 'whole'], default='auto',
+                    help='species 模式：单元＝页（页码标记）/段（每条图注）/整篇；auto＝章名含 caption 或 图注 按段，否则按页')
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
     B = pathlib.Path(a.book).resolve()
@@ -163,8 +227,12 @@ def main():
     DOMAIN = a.domain
     FALLBACK = a.fallback
     notes = pathlib.Path(a.notes).read_text() if a.notes else ''
+    if a.mode == 'species':
+        sys.exit(run_species(a, B))
     if a.engine in DIRECT_ENGINES:
         sys.exit(run_direct(a, B, notes))
+    if a.mode == 'final':
+        sys.exit('--mode final 只支持直调模式（--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus）')
     P, L = B / '核译' / 'prompts', B / '核译' / 'logs'
     P.mkdir(parents=True, exist_ok=True)
     L.mkdir(parents=True, exist_ok=True)

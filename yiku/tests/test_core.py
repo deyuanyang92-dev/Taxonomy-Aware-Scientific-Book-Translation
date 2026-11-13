@@ -219,3 +219,89 @@ def test_lookup_hints_other_domains(con, capsys):
     assert "其他领域有（进化生物学）" in capsys.readouterr().out
     cli.cmd_lookup(argparse.Namespace(term="nonexistent", domain="*", scope=None), con)
     assert "库中无此术语" in capsys.readouterr().out
+
+
+# ---------- 2026-11-13 试译发现的 check 误报 ----------
+
+def test_latin_plural_rule_needs_a_stem():
+    """「um」的拉丁复数规则 um->a 会产出单字母 a，把冠词 a 当成术语（试译里「um」被报出现 50 次）。"""
+    assert "a" not in M.forms("um")
+    assert "a" not in M.forms("on")
+    assert {"notopodia", "ova"} <= M.forms("notopodium") | M.forms("ovum")
+    assert "i" not in M.forms("us")
+
+
+def test_short_term_matches_whole_words_only(con):
+    D.add_term(con, "um", "微米", "dzz54", domain="分类学")
+    text = "a notopodium with a cirrus; a tube, a lobe, a ridge; Scale bar = 50 um."
+    assert M.find_terms(con, text, "分类学") == {"um": 1}
+    assert M.find_terms(con, "a notopodium and a podium", "分类学") == {}
+
+
+def test_check_short_term_not_counted_inside_other_words(con):
+    D.add_term(con, "um", "微米", "dzz54", domain="分类学", status="已核")
+    assert M.check(con, "A notopodium and a neuropodium; a ridge.", "背叶和腹叶。", "分类学") == []
+    issues = M.check(con, "Bar = 50 um.", "比例尺 = 50。", "分类学")
+    assert [(i.en, i.count_en) for i in issues] == [("um", 1)]
+
+
+def test_variants_head_before_bracket_even_if_one_char():
+    v = M.variants("枕（带齿片者称齿片枕）")
+    assert "枕" in v and "枕（带齿片者称齿片枕）" in v
+    assert "须" in M.variants("须（触须）")
+
+
+def test_variants_optional_inner_bracket_and_alternatives():
+    assert {"刚叶", "刚毛叶"} <= M.variants("刚（毛）叶")
+    assert {"刚毛逆转", "刚毛逆反转"} <= M.variants("刚毛逆（反）转")
+    v = M.variants("罩／盖（头罩、口盖）")
+    assert {"罩", "盖"} <= v
+    assert {"进化", "演化"} <= M.variants("进化、演化")
+    assert {"单系", "单系性", "单系群"} <= M.variants("单系(adj.) / 单系性(n.) / 单系群(monophyletic group)")
+    assert "外群" in M.variants("外群(括注outgroup)；名词委标准形式为\"外类群\"")
+
+
+def test_check_composite_name_accepts_head_form(con):
+    D.add_term(con, "torus", "枕（带齿片者称齿片枕）", "dzz54", domain="分类学", status="已核")
+    assert M.check(con, "Each torus bears uncini.", "每个枕上有齿片。", "分类学") == []
+    assert M.check(con, "Each torus bears uncini.", "每个齿片枕上有齿片。", "分类学") == []
+    miss = M.check(con, "Each torus bears uncini.", "每个垫上有齿片。", "分类学")
+    assert [(i.en, i.level) for i in miss] == [("torus", "error")]
+
+
+# ---------- 拉丁双名里的属名保持拉丁，不要求译属名 ----------
+
+@pytest.fixture
+def genus_con(con):
+    D.add_term(con, "Gyptis", "英虫属", "dzz54", domain="分类学", status="已核")
+    D.add_term(con, "Ceratonereis", "角沙蚕属", "dzz54", domain="分类学", status="已核")
+    D.add_term(con, "Glycera", "吻沙蚕属", "dzz54", domain="分类学", status="已核")
+    return con
+
+
+def test_check_genus_inside_binomial_is_not_reported(genus_con):
+    src = ("*Gyptis vittata* (Hesionidae) is commensal; Fig. 4. Anterior end of *Glycera dibranchiata* "
+           "(Glyceridae); *Glycera (Glycera) alba* and Nereis.")
+    assert M.check(genus_con, src, "*Gyptis vittata*（沙蚕科）共栖。*Glycera dibranchiata*。", "分类学") == []
+
+
+def test_check_standalone_genus_is_still_reported(genus_con):
+    src = "Fig. 5. *Ceratonereis* sp.; the genus Glycera has long proboscis; *Gyptis vittata*."
+    issues = M.check(genus_con, src, "图 5。*Ceratonereis* sp.；Glycera 吻长。*Gyptis vittata*。", "分类学")
+    assert [(i.en, i.level, i.count_en) for i in issues] == [("Ceratonereis", "error", 1), ("Glycera", "error", 1)]
+
+
+def test_check_genus_count_only_counts_standalone_mentions(genus_con):
+    src = "*Glycera dibranchiata* and *Glycera alba*; Glycera sp. occurs; *Glycera* is large."
+    issues = M.check(genus_con, src, "沙蚕。", "分类学")
+    assert [(i.en, i.count_en) for i in issues] == [("Glycera", 2)]
+
+
+def test_check_genus_followed_by_english_word_is_standalone(genus_con):
+    issues = M.check(genus_con, "Glycera has a long proboscis, whereas Gyptis and Glycera are small.", "无。", "分类学")
+    assert [(i.en, i.count_en) for i in issues] == [("Glycera", 2), ("Gyptis", 1)]
+
+
+def test_check_soft_genus_inside_binomial_not_hinted(con):
+    D.add_term(con, "Capitella", "稚齿虫属", "dzz54", domain="分类学")  # 候选：SOFT
+    assert M.check(con, "*Capitella capitata* lives here.", "无。", "分类学") == []

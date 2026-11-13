@@ -198,7 +198,8 @@ def cmd_cite(st: Store, a) -> None:
 
 
 def cmd_export(st: Store, a) -> None:
-    txt = st.export(a.key, "md" if a.md else "txt")
+    fmt = "marked" if a.marked else "md" if a.md else "txt"
+    txt = st.export(a.key, fmt, _parse_pages(a.pages))
     if a.out:
         Path(a.out).write_text(txt, encoding="utf-8")
         print(a.out)
@@ -379,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     g = s.add_mutually_exclusive_group()
     g.add_argument("--txt", action="store_true")
     g.add_argument("--md", action="store_true")
+    g.add_argument("--marked", action="store_true",
+                   help="翻译用原文：每页前一行 <!-- p.N -->（印刷页码），供种名按页规范（species_format.py）")
+    s.add_argument("--pages", help="只导出这些 PDF 页（1 起），如 24-30,32")
     s.add_argument("-o", "--out")
     s.set_defaults(fn=cmd_export)
 
