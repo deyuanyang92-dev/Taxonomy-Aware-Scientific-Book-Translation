@@ -15,6 +15,19 @@ except ModuleNotFoundError:  # pragma: no cover
 LATIN_RE = re.compile(r"\b[A-Z][a-z-]+(?:\s+[a-z][a-z-]+){1,2}\b")
 CN_TOKEN_MAX = 8
 CN_TOKEN_RE = re.compile(r"[\u4e00-\u9fff]{2,%d}" % CN_TOKEN_MAX)
+CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+LATIN_LETTER_RE = re.compile(r"[A-Za-z]")
+# 行尾断词：小写字母 + 连字号 + 换行/空白 + 小写字母
+HYPHEN_BREAK_RE = re.compile(r"(?<=[a-z])-\s+(?=[a-z])")
+# CJK 字符占（CJK + 拉丁字母）的比例低于它，就当英文页
+ENGLISH_MAX_CJK_RATIO = 0.05
+
+
+def is_english_text(text: str) -> bool:
+    """页面基本是英文：中文字符占 (中文字符 + 拉丁字母) 不足 5%。"""
+    cjk = len(CJK_CHAR_RE.findall(text))
+    latin = len(LATIN_LETTER_RE.findall(text))
+    return cjk <= ENGLISH_MAX_CJK_RATIO * (cjk + latin)
 
 
 def _lev(a: str, b: str) -> int:
@@ -182,7 +195,32 @@ class Fixer:
             idx = self._indexes[name] = VocabIndex(vocab, max_dist, max_token_len)
         return idx
 
-    def apply(self, text: str) -> tuple[str, list[dict]]:
+    @staticmethod
+    def _latin_english(text: str, idx: VocabIndex, changes: list[dict]) -> str:
+        """英文页的拉丁名步骤：只做「行尾断词合并」，且合并结果必须与词表条目完全相同；绝不做编辑距离纠错。
+
+        LATIN_RE（大写词 + 1~2 个小写词）在英文正文里会匹配作者名（Boilly and Wissocq）、属名、
+        普通句子开头（The body is），而词表里混有 OCR 文本、散文行抓来的短语。编辑距离 1~2 的「纠错」
+        因此把人名、种名和普通词改成别的词（Boilly->Bailey, Friedman->Freeman, papillicornis->papilliorni,
+        is->has；2026-11-13 Harrison1992_MAI_Annelida 实测 330 处大写词、56 处拉丁种加词被改错）。
+        英文页没有可靠的词表可据以猜词，所以只保留确定无误的断词合并。
+        """
+
+        def repl(m: re.Match[str]) -> str:
+            raw = m.group(0)
+            if raw in idx.words:
+                return raw
+            joined = HYPHEN_BREAK_RE.sub("", raw)
+            if joined != raw and joined in idx.words:
+                if not any(c["rule"] == "latin_dehyphen" and c["before"] == raw for c in changes):
+                    changes.append({"rule": "latin_dehyphen", "before": raw, "after": joined})
+                return joined
+            return raw
+
+        return LATIN_RE.sub(repl, text)
+
+    def apply(self, text: str, *, english: bool | None = None) -> tuple[str, list[dict]]:
+        """english：True/False 强制英文页（保守）/中文页（原行为）；None 按中文字符占比自动判断。"""
         fixed = text
         changes: list[dict] = []
         for rule in self.cfg.get("regex_rules", []):
@@ -197,11 +235,16 @@ class Fixer:
                 fixed = new
         max_latin = int(self.cfg.get("latin", {}).get("max_distance", 2))
         latin_idx = self._index("latin", self.latin, max_latin, None)
-        for m in sorted(set(LATIN_RE.findall(fixed)), key=len, reverse=True):
-            best = latin_idx.best(m)
-            if best and best != m:
-                fixed = fixed.replace(m, best)
-                changes.append({"rule": "latin_edit_distance", "before": m, "after": best})
+        if english is None:
+            english = is_english_text(fixed)
+        if english:
+            fixed = self._latin_english(fixed, latin_idx, changes)
+        else:
+            for m in sorted(set(LATIN_RE.findall(fixed)), key=len, reverse=True):
+                best = latin_idx.best(m)
+                if best and best != m:
+                    fixed = fixed.replace(m, best)
+                    changes.append({"rule": "latin_edit_distance", "before": m, "after": best})
         max_cn = int(self.cfg.get("chinese", {}).get("max_distance", 0))
         if max_cn <= 0:
             return fixed, changes

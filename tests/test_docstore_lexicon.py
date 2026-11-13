@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from docstore import open_store, textify
 from docstore.lexicon import Fixer, VocabIndex, _lev, _lev_bounded
 
 
@@ -84,3 +85,87 @@ def test_fixer_scales_to_large_vocab(tmp_path):
     t = time.time()
     fx.apply(text)
     assert time.time() - t < 20  # 原实现这一规模要几小时
+
+
+# ---- 英文页：不得把人名/属名/普通英文词改成词表里的近似词（Harrison1992_MAI_Annelida 实例）----
+# 词表里混有从 OCR 文本、散文行里抓来的「大写词+小写词」短语（"Bailey and"、"The bone is" 等）。
+
+
+def _en_fixer(tmp_path, latin, chinese="", **extra):
+    rules = tmp_path / "en.toml"
+    body = "[latin]\nmax_distance = 2\nbuiltin = [%s]\n" % ", ".join(f'"{x}"' for x in latin)
+    body += '[chinese]\nmax_distance = 0\nbuiltin = []\n' + chinese
+    rules.write_text(body, encoding="utf-8")
+    return Fixer(rules)
+
+
+@pytest.mark.parametrize(
+    "text, vocab",
+    [
+        # 引文里的作者名（Boilly -> Bailey，Friedman -> Freeman 的真实案例）
+        ("in Magelona papillicornis (Boilly and Wissocq, 1977). The", ["Bailey and", "Magelona papilliorni"]),
+        ("as shown by Friedman and Weiss (1980) in", ["Freeman and", "Freeman and Weiss"]),
+        ("(Golding and Yuwono, 1994)", ["Coding and"]),
+        # 句中大写的人名/属名、学名里的小写种名
+        ("studied by Fischer in the", ["Fisher in the"]),
+        ("lives with Dinophilus gyrociliatus in", ["Dinophilus gyroliliatus"]),
+        ("Haementeria depressa is a leech", ["Haementerian depress"]),
+        ("see Phragmatopoma lapidosa and", ["Phramatopoma lapidosa and"]),
+        # 句首的普通英文词、普通短语
+        ("The body is long. Their cilia", ["The bone is", "The cilia"]),
+        ("complex structures and", ["Comple structures"]),
+        ("Sabellaria spinulosa, Sabellaria", ["Sabellaridae spinulosa"]),
+    ],
+)
+def test_english_page_never_fuzzy_edits_names_or_prose(tmp_path, text, vocab):
+    fx = _en_fixer(tmp_path, vocab)
+    out, ch = fx.apply(text)
+    assert out == text, (out, ch)
+    assert not [c for c in ch if c["rule"] == "latin_edit_distance"]
+
+
+def test_english_page_keeps_hyphen_join_inside_known_name(tmp_path):
+    fx = _en_fixer(tmp_path, ["Nereis marina", "Amphitrite ornata"])
+    out, ch = fx.apply("on Nereis ma-\nrina and Amphitrite ornata here")
+    assert "Nereis marina and" in out and "Amphitrite ornata" in out
+    assert [c["rule"] for c in ch] == ["latin_dehyphen"]
+    # 连字号断行但合并后不在词表里：不动
+    out2, _ = fx.apply("on Nereis ba-\nrina here")
+    assert out2 == "on Nereis ba-\nrina here"
+
+
+def test_english_page_still_applies_fixed_regex_and_replace_rules(tmp_path):
+    rules = tmp_path / "r.toml"
+    rules.write_text(
+        '[latin]\nmax_distance = 2\nbuiltin = ["Bailey and"]\n[chinese]\nmax_distance = 0\n'
+        '[[regex_rules]]\nname = "pm"\npattern = "(?<=\\\\d) pm\\\\b"\nreplace = " µm"\n',
+        encoding="utf-8",
+    )
+    out, ch = Fixer(rules).apply("fibers 10 pm wide (Boilly and Wissocq, 1977)")
+    assert out == "fibers 10 µm wide (Boilly and Wissocq, 1977)"
+    assert [c["rule"] for c in ch] == ["pm"]
+
+
+def test_language_switch_autodetect_and_explicit(tmp_path):
+    fx = _en_fixer(tmp_path, ["Lopadorhynchus brevis"])
+    typo = "see Lopadorhynthus brevis."
+    assert fx.apply(typo)[0] == typo                                   # 纯英文页：自动判英文，不纠
+    assert fx.apply(typo, english=False)[0] == "see Lopadorhynchus brevis."   # 显式关掉英文保守模式
+    cjk = "，环带沙虫，Lopadorhynthus brevis，单钩鳃裂虫。" * 3
+    assert "Lopadorhynchus brevis" in fx.apply(cjk)[0]                 # 中文页：保持原行为
+    assert "Lopadorhynchus" not in fx.apply(cjk, english=True)[0]      # 显式英文
+
+
+def test_textify_consensus_rebuild_leaves_english_names_alone(tmp_path, monkeypatch):
+    from docstore.store import make_version
+
+    st = open_store(tmp_path / "libx")
+    key, _ = st.register(None, key="Harrison_test", status="原件缺失")
+    st.update_doc(key, lang="en")
+    raw = "Cross-striated (Boilly and Wissocq, 1977) in Magelona papillicornis."
+    st.put_version(key, 1, make_version(raw, "ocr", producer="tesseract", conf=0.7))
+    monkeypatch.setattr(textify, "_FIXER", _en_fixer(tmp_path, ["Bailey and", "Magelona papilliorni"]))
+    out = textify.consensus(st, key, pages=[1], by="pytest")
+    assert out["recomputed"] == 1
+    assert st.page(key, 1)["text"] == raw
+
