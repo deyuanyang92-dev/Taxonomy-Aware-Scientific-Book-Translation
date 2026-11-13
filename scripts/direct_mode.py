@@ -167,11 +167,13 @@ def detect_scope(text: str) -> str:
     return ";".join(sorted({w.capitalize() for w in re.findall(r"\b([A-Za-z]+(?:idae|ida))\b", head)}))
 
 
-def yiku_table(chunk_file: Path, domain: str, scope: str = "", fallback: str | None = None) -> str:
-    """fallback：yiku 的 --fallback（回退领域）；None 用 yiku 默认（分类学回退到进化生物学）。"""
+def yiku_table(chunk_file: Path, domain: str, scope: str = "", fallback: str | None = None,
+               no_usage: bool = False, env: dict[str, str] | None = None) -> str:
+    """fallback：yiku 的 --fallback（回退领域）；None 用 yiku 默认（分类学回退到进化生物学）。
+    no_usage：加 --no-usage（不取资料库用例）；env：子进程环境（如 YIKU_DB 指向过滤后的库）。"""
     cmd = (["yiku", "table", str(chunk_file), "--domain", domain] + (["--scope", scope] if scope else [])
-           + (["--fallback", fallback] if fallback else []))
-    r = subprocess.run(cmd, capture_output=True, text=True)
+           + (["--fallback", fallback] if fallback else []) + (["--no-usage"] if no_usage else []))
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     if r.returncode != 0:
         raise RuntimeError(f"yiku table 失败（没有术语表不开跑）：{r.stderr.strip()[:200]}")
     return r.stdout

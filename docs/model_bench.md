@@ -55,3 +55,38 @@ python3 scripts/bench/bench.py eval D             # scores.tsv、term_miss.tsv
 python3 scripts/bench/bench.py blind D --seed 1   # 盲评目录，映射在 D/blind_key_*.json
 python3 scripts/bench/bench.py tally D            # 评者填完 D/盲评_*.md 后汇总
 ```
+
+## 参照译本对照比测（refcompare，2026-11-13）
+
+用途：拿本流水线的译文去对照名家中译本（或对照本流水线的两次运行，例如改了技能规则之后），回答「差在哪里、规则改了有没有用」。工具 `scripts/bench/refcompare.py`，翻译与评审调用都走 `llm_engines`，单元测试 `tests/test_refcompare.py`（假引擎，不联网）。
+
+工作目录 D 里放配置 `refcompare.json`（或 `.yaml`）和样段：`D/<段>_en.txt` 原文、`D/<段>_pub.txt` 参照译本（先清洗对齐，只留正文）。配置要点（全部字段见脚本开头的说明）：
+
+```json
+{"passages": ["S1", "S2", "S3"], "domain": "进化生物学", "term_domains": ["进化生物学", "科学史"],
+ "book_desc": "（作者，书名，年份 的一段）", "skill_dir": "/root/.claude/skills/yzz-translate",
+ "engines": {"draft": "claude-sonnet", "review": "codex-sol", "judges": ["codex-sol", "cursor-grok"]},
+ "leakage": {"exclude_sources": [], "exclude_note_like": ["Mayr 中译本"], "no_usage": true,
+             "exclude_docstore_keys": ["Mayr1982_zh"]}}
+```
+
+防泄漏：参照译本不能进术语表。`leakage` 把 yiku 库复制一份（`terms/yiku_filtered.db`，原库不动），删掉 `exclude_sources` 来源的术语和 note 含 `exclude_note_like` 子串的术语（例如 note 写着「与某中译本一致」的核定条目）；`no_usage` 对应 `yiku table --no-usage`（不从资料库取中文用例）；不关用例时，`exclude_docstore_keys` 经环境变量 `YIKU_USAGE_EXCLUDE_KEYS` 让这些 docstore 键不当用例来源。
+
+流程（每步已有产物先查 `.meta.json`，引擎、系统提示词、用户消息的 sha256 一致才跳过，不一致报 `StaleOutputError`，`--force` 重做）：
+
+```bash
+refcompare.py terms D/refcompare.json                           # 术语表（已有则不重做）
+refcompare.py draft D/refcompare.json --run ours3 -j 3          # 初译 -> D/ours3/<段>_draft.txt
+refcompare.py review D/refcompare.json --run ours3 -j 3         # 核译 + 精确替换 -> D/<段>_ours3.txt，拒收记 D/ours3/<段>_rejects.jsonl
+refcompare.py judge D/refcompare.json --run ours3 -j 6          # 盲评 pub 对 ours3 -> D/judge/pub_vs_ours3/
+refcompare.py compare-runs D/refcompare.json ours2 ours3 -j 6   # 两次运行互比（同一盲评方案）
+refcompare.py aggregate D/refcompare.json pub_vs_ours2 pub_vs_ours3 ours2_vs_ours3
+```
+
+- 核译：问题单 old 必须在译文里恰好出现 1 次，新旧不同；非「术语/误译/漏译/增译」类改动不得丢英文词或数字；改动若把 HARD 术语译名改掉则拒收（纯删除除外）。拒收原因逐条记 `rejects.jsonl`。
+- 盲评：每段每评委独立随机 A/B，映射存 `judge/<对>/key.json`；评委按 MQM 输出严格 JSON（错误的 category 与 severity、每版本 0 到 100 分、preferred）。输出不合格重试，至多 3 次。`aggregate` 解盲后给逐段分数、偏好、错误计数表（合计和分评委）和 MQM 罚分（major=5、minor=1），多对时末尾加「版本 × 类别」对照。
+- 读法：评委是 LLM，偏爱贴近原文、带括注原词的译法；核译员兼评委有自我偏好风险（用不同厂家的评委对照）；同一批样段上反复改规则再测是样本内检验，只能说明规则「被执行了」，不能说明对新段落也有效。
+- 隔离：codex 在新建空临时目录里运行（`llm_engines._codex` 的 `-C`），但 read-only 沙箱仍可读全盘，所以核译与评委提示词都写明不得读本地文件（含 `~/.yiku`）。
+
+首次使用的记录在 `/mnt/p/翻译-译作/_比测/2026-11-13_Mayr对照/`（Mayr《生物学思想的发展》三段对照中译本）。
+第 3 轮（同一三段，当前技能重跑，`ours3`）：对中译本的盲评与第 2 轮持平（我方均分 97.7/92.0，第 2 轮 98.0/91.7，均 6/6 偏好我方）；第 2 轮对第 3 轮的互比里第 2 轮占优（4/6），翻译腔类 minor 没有减少；字面可执行的规则（Mendelism 译「孟德尔主义」、成语化、块首块末不加译不漏译）起了作用。这是样本内检验，且每个版本只采样一次，不能当作规则泛化的证据。

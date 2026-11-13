@@ -208,6 +208,14 @@ def test_prefers_source_book_then_fills_from_other_zh_books(store):
     assert not any("Handbook译稿" in e or "Rouse_en" in e for e in ex)  # 不取本项目译稿和英文书
 
 
+def test_env_excluded_keys_are_not_usage_sources(store, monkeypatch):
+    monkeypatch.setenv("YIKU_USAGE_EXCLUDE_KEYS", "Futuyma_zh, 动物志33")
+    assert U.UsageFinder(store, width=15).examples("同塑性", ["Futuyma_zh"], n=3) == []
+    monkeypatch.setenv("YIKU_USAGE_EXCLUDE_KEYS", "Futuyma_zh")
+    ex = U.UsageFinder(store, width=15).examples("同塑性", ["Futuyma_zh"], n=3)
+    assert ex and not any("Futuyma_zh" in e for e in ex)
+
+
 def test_short_zh_and_missing_store_give_no_examples(store):
     assert U.UsageFinder(store).examples("性", [], n=2) == []
     assert U.UsageFinder(None).examples("同塑性", [], n=2) == []

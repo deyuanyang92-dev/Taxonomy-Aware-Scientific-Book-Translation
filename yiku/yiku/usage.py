@@ -20,6 +20,11 @@ _CJK = re.compile("[\u4e00-\u9fff]")
 _PUA = re.compile("[\ue000-\uf8ff]")  # 私用区字符（字体映射残留）
 
 
+def _env_excluded() -> set[str]:
+    """环境变量 YIKU_USAGE_EXCLUDE_KEYS（逗号分隔的 docstore 键）：这些书不当用例来源（比测防泄漏用）。"""
+    return {k.strip() for k in os.environ.get("YIKU_USAGE_EXCLUDE_KEYS", "").split(",") if k.strip()}
+
+
 class UsageFinder:
     def __init__(self, store: Any = None, *, width: int = 30):
         self.store = store
@@ -45,6 +50,8 @@ class UsageFinder:
 
     # ---- 内部 ----
     def _doc_ok(self, key: str) -> bool:
+        if key in _env_excluded():
+            return False
         try:
             d = self.store.doc(key)
         except KeyError:

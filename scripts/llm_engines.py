@@ -135,13 +135,16 @@ def _claude(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
 
 
 def _codex(system: str, user: str, model: str | None = None) -> tuple[str, dict[str, Any]]:
-    with tempfile.TemporaryDirectory() as td:
+    # 工作目录用新建的空临时目录（-C 与 cwd 都指向它）；read-only 沙箱仍可读全盘，书稿提示词里另须写明不得读本地文件。
+    with tempfile.TemporaryDirectory(prefix="codex_") as td:
         out = pathlib.Path(td) / "codex_out.txt"
+        work = pathlib.Path(td) / "work"
+        work.mkdir()
         cmd = ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o", str(out)]
         if model:
             cmd += ["-m", model]
-        cmd.append("-")
-        r = _cli(cmd, system + "\n\n---\n\n" + user, "codex")
+        cmd += ["-C", str(work), "-"]
+        r = _cli(cmd, system + "\n\n---\n\n" + user, "codex", cwd=str(work))
         text = out.read_text(encoding="utf8") if out.exists() else ""
     if r.returncode != 0 or not text.strip():
         raise EngineError(f"codex 退出码 {r.returncode}：{r.stderr[-300:].strip()}")

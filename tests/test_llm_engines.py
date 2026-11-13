@@ -162,6 +162,7 @@ def test_codex_reads_output_file(monkeypatch):
 
     def fake_run(cmd, **kw):
         seen["cmd"] = cmd
+        seen["cwd"] = kw.get("cwd")
         out = cmd[cmd.index("-o") + 1]
         with open(out, "w", encoding="utf8") as f:
             f.write("codex 的译文")
@@ -172,6 +173,8 @@ def test_codex_reads_output_file(monkeypatch):
     assert text == "codex 的译文"
     assert seen["cmd"][:6] == ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o"] and seen["cmd"][-1] == "-"
     assert "-m" not in seen["cmd"]
+    work = seen["cmd"][seen["cmd"].index("-C") + 1]
+    assert seen["cwd"] == work and "codex_" in work and work != "/tmp"   # 空临时目录，不在共享 /tmp
     le.call("codex-sol", "s", "u")
     assert seen["cmd"][seen["cmd"].index("-m") + 1] == "gpt-6.1-sol" and seen["cmd"][-1] == "-"
 
