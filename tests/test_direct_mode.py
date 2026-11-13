@@ -821,6 +821,9 @@ def species_book(book, with_markers=True):
     body = ("<!-- p.13 -->\n厚角缨鳃虫的鳃丝。厚角缨鳃虫（*Sabella crassicornis*）。\n\n<!-- p.14 -->\n*Sabella crassicornis* 的管。\n"
             if with_markers else "厚角缨鳃虫。\n")
     (book / "译文").mkdir(exist_ok=True)
+    if with_markers:   # 补拉丁名前要核对原文该页：两页原文里都有这个种
+        (book / "src_en" / "ch05.txt").write_text(
+            "<!-- p.13 -->\nThe gills of Sabella crassicornis.\n\n<!-- p.14 -->\nTubes of Sabella crassicornis.\n", encoding="utf8")
     (book / "译文" / "ch05_直译初译.md").write_text(body, encoding="utf8")
     (book / "译文" / "captions_直译初译.md").write_text(
         "图 1. *Sabella crassicornis* 体前端。示厚角缨鳃虫（*Sabella crassicornis*）的眼。\n\n图 2. 厚角缨鳃虫。\n", encoding="utf8")
@@ -846,6 +849,15 @@ def test_run_species_fixes_merged_text_with_backup_and_report(book, capsys):
     assert "待改 3 处" in capsys.readouterr().out
     assert "p.13" in (book / "核译" / "direct" / "ch05" / "species_format.txt").read_text(encoding="utf8")
     assert run_batches.run_species(species_args(names), book) == 0          # 再跑无改动
+
+
+def test_run_species_does_not_add_latin_absent_from_the_source_page(book):
+    names = species_book(book)
+    (book / "src_en" / "ch05.txt").write_text("<!-- p.13 -->\nNothing relevant.\n\n<!-- p.14 -->\nSabella crassicornis.\n", encoding="utf8")
+    assert run_batches.run_species(species_args(names, chapters="ch05"), book) == 0
+    merged = (book / "译文" / "ch05_直译初译.md").read_text(encoding="utf8")
+    assert merged == ("<!-- p.13 -->\n厚角缨鳃虫的鳃丝。厚角缨鳃虫（*Sabella crassicornis*）。\n\n"
+                      "<!-- p.14 -->\n厚角缨鳃虫（*Sabella crassicornis*）的管。\n")   # p.13 第一处是裸中文名、原文无此种：不补，已有的保留
 
 
 def test_run_species_dry_only_reports(book):

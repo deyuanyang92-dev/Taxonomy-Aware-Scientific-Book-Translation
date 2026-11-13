@@ -11,8 +11,8 @@ REPO = Path(__file__).resolve().parent.parent
 NAMES = {"Sabella crassicornis": "厚角缨鳃虫", "Diopatra cuprea": "铜色巢沙蚕"}
 
 
-def fix(text, unit="page", names=NAMES):
-    return sf.fix_text(text, names, unit)
+def fix(text, unit="page", names=NAMES, **kw):
+    return sf.fix_text(text, names, unit, **kw)
 
 
 def test_first_on_page_gets_latin_added_to_bare_chinese():
@@ -217,3 +217,152 @@ def test_collect_names_priority_harvested_yiku_tsv(tmp_path, monkeypatch):
     got = sf.collect_names(t, f, "分类学")
     assert got == {"Podarke obscura": "YIKU", "Aa bb": "TSV乙", "Cc dd": "丙丙"}
     assert sf.collect_names(t, None, None) == {"Podarke obscura": "暗蛇潜虫", "Aa bb": "乙乙", "Cc dd": "丙丙"}
+
+
+# ---------------------------------------------------------------- 2026-11-13 Harrison ch2.2 试跑暴露的误改（合成句，不含书中原文）
+
+GENERIC = {"Nereis pelagica": "沙蚕", "Owenia fusiformis": "欧文虫", "Chaetopterus variopedatus": "燐虫",
+           "Sabella penicillus": "缨鳃虫"}
+OCR_NAMES = {"Magelona papilliorni": "乳突长手沙蚕", "Magelona papillicornis": "乳突长手沙蚕"}
+
+
+def test_never_match_inside_longer_taxon_name_with_rank_suffix():
+    text = ("<!-- p.1 -->\n如索沙蚕属、吻沙蚕科、沙蚕科、长手沙蚕科、缨鳃虫科、欧文虫属、燐虫属、欧文虫亚科、"
+            "沙蚕目、缨鳃虫类、缨鳃虫总科（Sabelloidea）。\n")
+    assert fix(text, names=GENERIC) == (text, [])
+
+
+def test_rank_suffix_lookalikes_are_not_ranks():
+    out, _ = fix("<!-- p.1 -->\n缨鳃虫属于多毛类；欧文虫目前已知一种；缨鳃虫类似于燐虫。\n", names=GENERIC)
+    assert "缨鳃虫（*Sabella penicillus*）属于多毛类" in out
+    assert "欧文虫（*Owenia fusiformis*）目前已知一种" in out
+
+
+def test_hit_inside_longer_known_name_is_skipped_longest_match():
+    names = {"Nereis pelagica": "沙蚕"}
+    text = "<!-- p.1 -->\n突变花索沙蚕很常见。\n"
+    assert fix(text, names=names, known={"突变花索沙蚕"}) == (text, [])
+    assert fix(text, names={**names, "Arabella mutans": "突变花索沙蚕"})[0] == \
+        "<!-- p.1 -->\n突变花索沙蚕（*Arabella mutans*）很常见。\n"
+
+
+def test_generic_name_never_gets_a_species_binomial():
+    text = "<!-- p.1 -->\n沙蚕的体壁。\n"
+    assert fix(text, names={"Nereis pelagica": "沙蚕"}, generic={"沙蚕"}) == (text, [])
+
+
+def test_latin_must_appear_on_the_source_page():
+    src = "<!-- p.1 -->\nThe Sabella crassicornis gill.\n\n<!-- p.2 -->\nNothing here.\n\n<!-- p.3 -->\nSabella\ncrassicornis again.\n"
+    text = "<!-- p.1 -->\n厚角缨鳃虫的鳃。\n\n<!-- p.2 -->\n厚角缨鳃虫的管。\n\n<!-- p.3 -->\n厚角缨鳃虫。\n"
+    out, ch = fix(text, src=src)
+    assert out == ("<!-- p.1 -->\n厚角缨鳃虫（*Sabella crassicornis*）的鳃。\n\n<!-- p.2 -->\n厚角缨鳃虫的管。\n\n"
+                   "<!-- p.3 -->\n厚角缨鳃虫（*Sabella crassicornis*）。\n")
+    assert [c.unit for c in ch] == ["1", "3"]
+
+
+def test_name_absent_from_source_page_is_not_added_but_unlisted_names_still_untouched():
+    names = {"Nereis pelagica": "沙蚕", "Diopatra cuprea": "铜色巢沙蚕"}
+    src = "<!-- p.1 -->\nDiopatra cuprea is a tube worm.\n"
+    out, ch = fix("<!-- p.1 -->\n沙蚕与铜色巢沙蚕。\n", names=names, src=src)
+    assert out == "<!-- p.1 -->\n沙蚕与铜色巢沙蚕（*Diopatra cuprea*）。\n" and len(ch) == 1
+
+
+def test_ocr_close_variant_on_source_counts_as_present():
+    src = "<!-- p.1 -->\nthe Sabella crassicornls gill.\n"
+    out, _ = fix("<!-- p.1 -->\n厚角缨鳃虫的鳃。\n", src=src)
+    assert out == "<!-- p.1 -->\n厚角缨鳃虫（*Sabella crassicornis*）的鳃。\n"
+
+
+def test_source_page_missing_means_no_addition():
+    src = "<!-- p.1 -->\nSabella crassicornis.\n"
+    text = "<!-- p.9 -->\n厚角缨鳃虫的鳃。\n"
+    assert fix(text, src=src) == (text, [])
+
+
+def test_paragraph_unit_uses_source_page_of_the_preceding_marker():
+    src = "<!-- p.1 -->\nFig. 1. Sabella crassicornis.\n\n<!-- p.2 -->\nFig. 2. Diopatra.\n"
+    text = "<!-- p.1 -->\n\n图 1 厚角缨鳃虫。\n\n<!-- p.2 -->\n\n图 2 厚角缨鳃虫。\n"
+    out, ch = fix(text, unit="paragraph", src=src)
+    assert out == "<!-- p.1 -->\n\n图 1 厚角缨鳃虫（*Sabella crassicornis*）。\n\n<!-- p.2 -->\n\n图 2 厚角缨鳃虫。\n"
+    assert len(ch) == 1
+
+
+def test_existing_latin_after_chinese_name_is_never_doubled():
+    text = "<!-- p.1 -->\n和乳突长手沙蚕（*Magelona papillicornis*）与乳突长手沙蚕（*Magelona papilliorni*）。\n"
+    out, ch = fix(text, names=OCR_NAMES)
+    assert out == "<!-- p.1 -->\n和乳突长手沙蚕（*Magelona papillicornis*）与乳突长手沙蚕。\n"   # 同页第二次去拉丁名，没有叠加括号
+    assert [c.kind for c in ch] == ["drop-latin"]
+    unk = "<!-- p.1 -->\n乳突长手沙蚕（*Magelona foo*）与乳突长手沙蚕 *Magelona bar*。\n"
+    assert fix(unk, names=OCR_NAMES) == (unk, [])                       # 中文名后已有别的拉丁名：不插入
+
+
+def test_latin_inside_existing_parentheses_is_not_nested():
+    text = "<!-- p.1 -->\n厚度约 1.5 µm（欧文虫 *Owenia fusiformis*）至 0.1 µm。\n"
+    out, ch = fix(text, names=GENERIC)
+    assert "（（" not in out and out == text and ch == []
+    out2, _ = fix("<!-- p.1 -->\n欧文虫（*Owenia fusiformis*）长；（欧文虫 *Owenia fusiformis*）短。\n", names=GENERIC)
+    assert out2 == "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*）长；（欧文虫）短。\n"
+    out3, _ = fix("<!-- p.1 -->\n（见 *Owenia fusiformis*）和欧文虫。\n", names=GENERIC)
+    assert "（（" not in out3 and out3.count("*Owenia fusiformis*") == 1
+
+
+def test_bare_chinese_inside_parentheses_does_not_get_nested_bracket():
+    out, _ = fix("<!-- p.1 -->\n体壁（在欧文虫中较厚）。欧文虫的鳃。\n", names=GENERIC)
+    assert out == "<!-- p.1 -->\n体壁（在欧文虫中较厚）。欧文虫（*Owenia fusiformis*）的鳃。\n"
+
+
+def test_ocr_variants_one_candidate_per_occurrence_preferring_source_variant():
+    src = "<!-- p.1 -->\nMagelona papillicornis (Bailey 1977).\n"
+    out, ch = fix("<!-- p.1 -->\n见乳突长手沙蚕的心脏。\n", names=OCR_NAMES, src=src)
+    assert out == "<!-- p.1 -->\n见乳突长手沙蚕（*Magelona papillicornis*）的心脏。\n" and len(ch) == 1
+    both = "<!-- p.1 -->\n*Magelona papillicornis* 与 *Magelona papilliorni* 及乳突长手沙蚕。\n"
+    out2, _ = fix(both, names=OCR_NAMES, src="<!-- p.1 -->\nMagelona papillicornis; Magelona papilliorni.\n")
+    assert out2 == "<!-- p.1 -->\n乳突长手沙蚕（*Magelona papillicornis*）与乳突长手沙蚕及乳突长手沙蚕。\n"
+    assert out2.count("*Magelona") == 1
+
+
+def test_ocr_marker_after_latin_is_preserved():
+    out, _ = fix("<!-- p.1 -->\n在 *Owenia fusiformis*[OCR?] 中。\n", names=GENERIC)
+    assert out == "<!-- p.1 -->\n在欧文虫（*Owenia fusiformis*[OCR?]）中。\n"
+    assert fix(out, names=GENERIC) == (out, [])
+    text = "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*[OCR?]）；*Owenia fusiformis*[OCR?]；欧文虫（*Owenia fusiformis*[OCR?]）。\n"
+    out2, _ = fix(text, names=GENERIC)
+    assert out2 == "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*[OCR?]）；欧文虫[OCR?]；欧文虫[OCR?]。\n"
+    out3, _ = fix("<!-- p.1 -->\n欧文虫（*Owenia fusiformis*）长；欧文虫 *Owenia fusiformis*[OCR?]。\n", names=GENERIC)
+    assert out3 == "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*）长；欧文虫[OCR?]。\n"
+
+
+def test_bare_chinese_followed_by_ocr_marker_keeps_marker_after_name_block():
+    out, _ = fix("<!-- p.1 -->\n在欧文虫[OCR?]中。\n", names=GENERIC)
+    assert "[OCR?]" in out and out.count("*Owenia fusiformis*") == 1 and "（（" not in out
+
+
+def test_collect_names_known_taxon_names_from_yiku(tmp_path):
+    from yiku import db as D
+    con = D.connect(tmp_path / "t.db")
+    D.add_source(con, "dzz", "动物志", "authority", domain="分类学", year=2004)
+    D.add_term(con, "Nereis", "沙蚕属", "dzz", domain="分类学", status="已核")
+    D.add_term(con, "Lumbrineris", "索沙蚕属", "dzz", domain="分类学", status="已核")
+    D.add_term(con, "Glyceridae", "吻沙蚕科", "dzz", domain="分类学", status="已核")
+    D.add_term(con, "Arabella mutans", "突变花索沙蚕", "dzz", domain="分类学", status="已核")
+    D.add_term(con, "Nereis pelagica", "沙蚕", "dzz", domain="分类学", status="已核")
+    D.add_term(con, "sand worm", "沙蚕", "dzz", domain="分类学", status="候选")
+    D.add_term(con, "gill", "鳃", "dzz", domain="分类学", status="已核")
+    known = sf.yiku_known_names(con, "分类学")
+    assert {"沙蚕属", "索沙蚕属", "吻沙蚕科", "突变花索沙蚕", "索沙蚕", "吻沙蚕"} <= known     # 带阶元后缀者连同词干一并收
+    assert "鳃" not in known
+    assert sf.yiku_generic_names(con, "分类学", {"Nereis pelagica": "沙蚕"}) == {"沙蚕"}   # 同一中文名还对应非拉丁英文词：通名
+
+
+def test_cli_auto_finds_src_en_and_only_adds_names_on_the_source_page(tmp_path):
+    book = tmp_path / "书"
+    (book / "译文").mkdir(parents=True)
+    (book / "src_en").mkdir()
+    (book / "src_en" / "body.txt").write_text("<!-- p.1 -->\nSabella crassicornis gill.\n\n<!-- p.2 -->\nNothing.\n", encoding="utf8")
+    f = book / "译文" / "body_直译初译.md"
+    f.write_text("<!-- p.1 -->\n厚角缨鳃虫的鳃与索沙蚕属。\n\n<!-- p.2 -->\n厚角缨鳃虫的管。\n", encoding="utf8")
+    n = tmp_path / "n.tsv"
+    n.write_text("Sabella crassicornis\t厚角缨鳃虫\n", encoding="utf8")
+    r = run_cli(str(f), "--names", str(n), "--no-yiku")
+    assert r.returncode == 1 and "[p.1]" in r.stdout and "[p.2]" not in r.stdout
+    assert "待改 1 处" in r.stdout

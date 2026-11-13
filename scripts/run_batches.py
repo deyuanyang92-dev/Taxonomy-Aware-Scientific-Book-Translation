@@ -170,7 +170,11 @@ def run_species(a, B):
         unit = sf.auto_unit(ch.merged) if getattr(a, 'unit', 'auto') == 'auto' else a.unit
         try:
             names = sf.collect_names(text, a.names, None if a.no_yiku else a.domain)
-            new, changes = sf.fix_text(text, names, unit)
+            known, generic = (set(), set()) if a.no_yiku else sf.yiku_context(names, a.domain)
+            src = ch.source.read_text(encoding='utf8') if ch.source.exists() else None   # 核对拉丁名是否在对应原书页出现
+            if src is None:
+                print(f'{chn}：没有原文 {ch.source}，拉丁名未核对原文')
+            new, changes = sf.fix_text(text, names, unit, src=src, known=known, generic=generic)
         except sf.NoPageMarkers:
             print(f'{chn}：译文里没有页码标记 <!-- p.N -->，无法按原书页处理；请用带页码标记的原文重译（见 direct_mode.with_page_markers），'
                   '或确认整篇只算一页后单独跑 species_format.py --unit whole')

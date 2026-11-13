@@ -67,7 +67,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
    - `apply_issues.py <书> 核译/issues/bNN.jsonl`：只在恰好匹配 1 次时替换；丢失英文或数字的改动自动拒绝。
    - `yiku check src zh --domain <D> [--decisions 核译/term_decisions.jsonl]`：HARD 严格检查；SOFT 按术语决策日志检查（同英文+义项必须同译名，不同义项可不同但须登记），没有日志时只给「提示」。
    - 术语决策：直调初译在译文后输出「### 术语决策」JSONL，脚本按块存 `核译/direct/<章>/decisions/` 并合并为 `核译/term_decisions.jsonl`；`yiku decide validate`（格式）→ `yiku decide review`（列出须主会话裁定的：多译名、无出处、zh 不在候选）→ `yiku decide apply --book <书>`（写回：候选，来源 `决策_<书>`；只有 `--verified` 才记已核）。
-   - 种名格式（分类学书）：`run_batches.py <书> --mode species --chapters body,captions [--names 种名.tsv]`（不调模型，闸口之后、终稿核译之前跑；`--dry` 只报告）。有中文名的种按原书页规范：每页首现「中文名（*Genus species*）」，同页再现只写中文，换页再写拉丁名；图注每条算一个单元；没有中文名的种不动。名单取 yiku 的 HARD 种名，再叠加 `--names` TSV（拉丁名、中文名）。先备份 `*.bak-species` 再写回。单文件用 `species_format.py`。
+   - 种名格式（分类学书）：`run_batches.py <书> --mode species --chapters body,captions [--names 种名.tsv]`（不调模型，闸口之后、终稿核译之前跑；`--dry` 只报告）。有中文名的种按原书页规范：每页首现「中文名（*Genus species*）」，同页再现只写中文，换页再写拉丁名；图注每条算一个单元；没有中文名的种不动。名单取 yiku 的 HARD 种名，再叠加 `--names` TSV（拉丁名、中文名）。先备份 `*.bak-species` 再写回。单文件用 `species_format.py`。补拉丁名前核对 `src_en/` 对应原书页：该拉丁名（OCR 近似写法也算）不在原文那一页就不补；后接科属目…后缀或落在更长类群名里的、中文名后已带拉丁名的、已在括号里的、通名（沙蚕 ↔ sand worm）一律不动；拉丁名后的 `[OCR?]` 保留。页码标记把一句话切成两段时，先 `join_page_breaks.py <译文>`（默认只报告，`--fix` 并段、标记移到合并段之后）再跑本步。
    - `drift_check.py <书>`：检查科名漂移。
    - `qa.py <书>`：检查残留英文、标点、空格和 U+3000。
 6. **抽查**：每批随机抽 20 条，由裁定者判断对错。

@@ -12,12 +12,18 @@
   python3 species_format.py 译文_正文.md 译文_图注.md --names species_names.tsv          # 只报告，有待改处退出码 1
   python3 species_format.py 译文_正文.md --names species_names.tsv --fix                  # 先备份 *.bak-species 再写回
   python3 species_format.py 译文.md --names n.tsv --no-yiku -o 修正后.md                  # 另存，不备份
+  python3 species_format.py 译文/body_直译初译.md                                           # 自动找 ../src_en/body.txt 核对拉丁名
+  python3 species_format.py 译文.md --src 原文.txt                                          # 指定原文（带同样的页码标记）
+核对原文：补拉丁名（给只写中文名的种加「（*Latin*）」）前，该拉丁名（或 OCR 近似写法）必须出现在对应原书页的英文原文里，
+  否则不补；一个中文名对应多个拉丁写法（OCR 变体）时只取与原文该页一致的那一个，同一处从不并列两个。没有原文时按旧办法（不核对），并提示。
 名单来源（可叠加，TSV 优先）：
   --names FILE   TSV：拉丁名<TAB>中文名，# 开头为注释（两列顺序写反也认）
   yiku           默认再按 --domain 去 yiku 查文中斜体双名（*Genus species*），只收 HARD 译名（classify 规则）；--no-yiku 关闭
 识别的写法：「中文（*Latin*）」「中文（*Latin*，科…）」「中文 *Latin*」、单独的 *Latin* 或 *G. species*（缩写）、单独的中文名。
-局限：只认斜体（*…*）的拉丁名；中文名按字面匹配（名单里的中文名不应是别的词的一部分）；
-不认 *Genus species* 后紧跟的命名人（Sars, 1851）。修正是确定性的字符串改写，改完建议复读一遍。
+不改的情形：中文名后紧跟阶元后缀（索沙蚕属、吻沙蚕科、…类）或落在更长的已知类群名里（longest-match，已知名＝yiku 的属/科/种名＋名单）；
+中文名后已跟着别的 *拉丁名*（不叠加第二个括号）；已在括号里的「（欧文虫 *Owenia fusiformis*）」不再套括号；yiku 里还对应非拉丁英文词的通名（如 沙蚕 ↔ sand worm）。
+拉丁名后的 [OCR?] 标记保留。
+局限：只认斜体（*…*）的拉丁名；不认 *Genus species* 后紧跟的命名人（Sars, 1851）。修正是确定性的字符串改写，改完建议复读一遍。
 """
 from __future__ import annotations
 
@@ -101,22 +107,126 @@ def yiku_names(text: str, domain: str = "分类学", con: Any = None, db: str | 
     return out
 
 
+# ---------------------------------------------------------------- yiku：已知类群名、通名
+
+_RANK_STEM = re.compile(r"^(.{2,}?)[亚总超]?(?:科|属|目|纲|门|族)$")
+_LATIN_EN = re.compile(r"[A-Z][a-z]+(?: [a-z]+)?")            # 属名、双名（后面可带命名人）
+_COMMON_EN = re.compile(r"[a-z][a-z' \-]{2,}")                 # 小写开头的英文普通词：sand worm
+_ONLY_CJK = re.compile(r"[一-鿿]{2,}")
+
+
+def _yiku_con(domain: str, con: Any = None, db: str | Path | None = None) -> Any:
+    import importlib
+    D = importlib.import_module("yiku.db")
+    if con is None:
+        path = Path(db) if db else D.default_path()
+        if not path.exists():
+            raise FileNotFoundError(f"找不到 yiku 库 {path}")
+        con = D.connect(path)
+    return con
+
+
+def yiku_known_names(con: Any, domain: str = "分类学") -> set[str]:
+    """yiku 里已知的中文类群名，供 longest-match 用：拉丁名是属/种名的，或中文名带科属目…后缀的，连同去掉后缀的词干
+    （索沙蚕属 → 索沙蚕）。普通术语（鳃、上皮）不收。"""
+    known: set[str] = set()
+    for en, zh in con.execute("SELECT en, zh FROM terms WHERE domain = ?", (domain,)):
+        zh = re.sub(r"[（(].*", "", zh).strip()
+        if not _ONLY_CJK.fullmatch(zh):
+            continue
+        stem = _RANK_STEM.match(zh)
+        if stem:
+            known.add(zh)
+            known.add(stem.group(1))
+        elif _LATIN_EN.match(en.strip()):
+            known.add(zh)
+    return known
+
+
+def yiku_generic_names(con: Any, domain: str, names: dict[str, str]) -> set[str]:
+    """名单里的中文名，若 yiku 里还对应小写开头的英文普通词（沙蚕 ↔ sand worm），视为通名：不给它补种名拉丁名。"""
+    generic: set[str] = set()
+    for zh in set(names.values()):
+        for (en,) in con.execute("SELECT en FROM terms WHERE zh = ? AND domain = ?", (zh, domain)):
+            if _COMMON_EN.fullmatch(en.strip()):
+                generic.add(zh)
+                break
+    return generic
+
+
+def yiku_context(names: dict[str, str], domain: str = "分类学", con: Any = None,
+                 db: str | Path | None = None) -> tuple[set[str], set[str]]:
+    """(已知类群名, 通名)。取不到 yiku 时抛 FileNotFoundError/ImportError，由调用方决定怎么提示。"""
+    con = _yiku_con(domain, con, db)
+    return yiku_known_names(con, domain), yiku_generic_names(con, domain, names)
+
+
+# ---------------------------------------------------------------- 原文核对
+
+_BINOM = re.compile(r"\b([A-Z][a-z]+)\s+([a-z]{3,})\b")
+
+
+def split_pages(text: str) -> dict[str, str]:
+    """按页码标记把带标记的文本切成 {页码标签: 该页文本}；首个标记之前的文字归 ""。同标签的页拼在一起。"""
+    pages: dict[str, str] = {}
+    marks = list(PAGE_MARK.finditer(text))
+    first = text[:marks[0].start()] if marks else text
+    pages[""] = first
+    for i, m in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        pages[m.group(1)] = pages.get(m.group(1), "") + "\n" + text[m.end():end]
+    return pages
+
+
+def _lev(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _on_page(latin: str, page: str, close: bool = False) -> bool:
+    """该双名（或其缩写 G. species）是否出现在原文页里；close＝允许 OCR 近似（同属、种加名编辑距离 ≤2，种加名 ≥6 字母）。"""
+    g, s = latin.split(" ", 1)
+    if not close:
+        return bool(re.search(rf"\b(?:{re.escape(g)}|{re.escape(g[0])}\.)\s*{re.escape(s)}\b", page))
+    if len(s) < 6:
+        return False
+    return any(_lev(g2, g) <= 1 and _lev(s2, s) <= 2 and (g2, s2) != (g, s) for g2, s2 in _BINOM.findall(page))
+
+
+def _verified(latins: list[str], page: str | None) -> list[str]:
+    """原文页里有的候选（精确优先，其次 OCR 近似）。page 为 None＝没有原文，不核对，全部算数。"""
+    if page is None:
+        return list(latins)
+    exact = [x for x in latins if _on_page(x, page)]
+    return exact or [x for x in latins if _on_page(x, page, close=True)]
+
+
 # ---------------------------------------------------------------- 单个名字的正则
 
-def _latin(latin: str) -> str:
-    g, s = latin.split(" ", 1)
-    return rf"\*(?:{re.escape(g)}|{re.escape(g[0])}\.)\s+{re.escape(s)}\*"
+_OCR = r"(?:\[OCR\?\])?"
+# 紧跟中文名的阶元后缀：该词是更高阶元名（吻沙蚕科、索沙蚕属…），不是种名。「属于」「目前」「类似」不算。
+_RANK_AFTER = re.compile(r"[亚总超]?(?:科(?![学研])|属(?![于性])|目(?![前的标录镜击测])|纲|门|族)|类(?![似型别比])")
 
 
-def _pattern(latin: str, zh: str) -> re.Pattern[str]:
-    z, lat = re.escape(zh), _latin(latin)
+def _lat_alt(latins: list[str]) -> str:
+    return "|".join(rf"(?:{re.escape(g)}|{re.escape(g[0])}\.)\s+{re.escape(s)}" for g, s in (x.split(" ", 1) for x in latins))
+
+
+def _pattern(latins: list[str], zh: str) -> re.Pattern[str]:
+    z, alt = re.escape(zh), _lat_alt(latins)
     op, cl = "[（(]", "[）)]"
     fam = rf"(?:{op}(?P<fam_{{}}>[^（）()*]*){cl})?"
     return re.compile(
-        rf"(?P<A>{z}{op}(?P<pre>[^（）()*]*?){lat}(?P<post>[^（）()*]*){cl})"       # 中文（*Latin*，科）
-        rf"|(?P<D>{z}[ \t]*{lat}{fam.format('d')}(?P<rsp_d>[ \t]*))"              # 中文 *Latin*
-        rf"|(?P<B>(?P<lsp_b>[ \t]*){lat}{fam.format('b')}(?P<rsp_b>[ \t]*))"       # 单独的 *Latin*
-        rf"|(?P<C>{z}{fam.format('c')})"                                          # 单独的中文名
+        rf"(?P<A>{z}{op}(?P<pre>[^（）()*]*?)\*(?P<lt_a>{alt})\*(?P<ocr_a>{_OCR})(?P<post>[^（）()*]*){cl})"   # 中文（*Latin*，科）
+        rf"|(?P<D>{z}[ \t]*\*(?P<lt_d>{alt})\*(?P<ocr_d>{_OCR}){fam.format('d')}(?P<rsp_d>[ \t]*))"          # 中文 *Latin*
+        rf"|(?P<B>(?P<lsp_b>[ \t]*)\*(?P<lt_b>{alt})\*(?P<ocr_b>{_OCR}){fam.format('b')}(?P<rsp_b>[ \t]*))"   # 单独的 *Latin*
+        rf"|(?P<E>{z}(?=[（(]\*|[ \t]*\*[A-Z]))"                                                              # 中文后已跟别的拉丁名
+        rf"|(?P<C>{z}{fam.format('c')})"                                                                      # 单独的中文名
     )
 
 
@@ -128,58 +238,127 @@ def _is_family(s: str | None) -> bool:
     return bool(s and _FAMILY.search(s))
 
 
-def _with_latin(zh: str, latin: str, fam: str | None) -> str:
-    """首现的规范写法：科名括注并进去，其他括注原样保留在后面。"""
+def _with_latin(zh: str, latin: str, fam: str | None, ocr: str = "") -> str:
+    """首现的规范写法：科名括注并进去，其他括注原样保留在后面；[OCR?] 留在拉丁名之后。"""
     if fam is not None and _is_family(fam):
-        return f"{zh}（*{latin}*，{fam}）"
-    return f"{zh}（*{latin}*）" + (f"（{fam}）" if fam is not None else "")
+        return f"{zh}（*{latin}*{ocr}，{fam}）"
+    return f"{zh}（*{latin}*{ocr}）" + (f"（{fam}）" if fam is not None else "")
 
 
-def _without_latin(zh: str, fam: str | None) -> str:
-    return zh + (f"（{fam}）" if fam is not None else "")
+def _without_latin(zh: str, fam: str | None, ocr: str = "") -> str:
+    return zh + ocr + (f"（{fam}）" if fam is not None else "")
 
 
-def _fix_unit(text: str, names: dict[str, str], label: str, changes: list[Change]) -> str:
-    """一个单元（一页或一条图注）：每个名字第一次出现规范为「中文（*Latin*）」，之后只留中文。"""
-    for latin, zh in sorted(names.items(), key=lambda kv: -len(kv[1])):
-        state = {"first": True}
+def _inside_paren(s: str, pos: int) -> bool:
+    """pos 处是否在尚未闭合的括号里（只看所在行）。"""
+    seg = s[s.rfind("\n", 0, pos) + 1:pos]
+    return len(re.findall(r"[（(]", seg)) > len(re.findall(r"[）)]", seg))
 
-        def repl(m: re.Match[str], latin: str = latin, zh: str = zh, state: dict[str, bool] = state) -> str:
-            src = m.group(0)
-            first = state["first"]
+
+def _protected(s: str, start: int, zh: str, longer: list[str]) -> bool:
+    """s[start:] 开头的 zh 是否落在某个更长的已知名里（longest-match）。"""
+    for p in longer:
+        k = p.find(zh)
+        while k != -1:
+            if start - k >= 0 and s.startswith(p, start - k):
+                return True
+            k = p.find(zh, k + 1)
+    return False
+
+
+def _full_latin(raw: str, latins: list[str]) -> str:
+    """文中斜体拉丁名（可能是 G. species 缩写）→ 名单里对应的完整双名。"""
+    g, s = re.split(r"\s+", raw.strip(), maxsplit=1)
+    for x in latins:
+        xg, xs = x.split(" ", 1)
+        if xs == s and (xg == g or (g.endswith(".") and xg.startswith(g[0]))):
+            return x
+    return latins[0]
+
+
+def _pick(latins: list[str], text: str, page: str | None) -> str | None:
+    """补拉丁名用哪一个：先取原文该页有的；多个时取译文本单元里最先出现的，其次原文里最先出现的。"""
+    ok = _verified(latins, page)
+    if not ok:
+        return None
+    if len(ok) == 1:
+        return ok[0]
+
+    def where(x: str, hay: str, star: str) -> int:
+        g, s = x.split(" ", 1)
+        m = re.search(rf"{star}(?:{re.escape(g)}|{re.escape(g[0])}\.)\s*{re.escape(s)}", hay)
+        return m.start() if m else 1 << 30
+    in_text = [(where(x, text, r"\*"), i, x) for i, x in enumerate(ok)]
+    best = min(in_text)
+    if best[0] < 1 << 30:
+        return best[2]
+    if page is not None:
+        return min((where(x, page, ""), i, x) for i, x in enumerate(ok))[2]
+    return ok[0]
+
+
+def _fix_group(text: str, zh: str, latins: list[str], label: str, changes: list[Change], page: str | None,
+               longer: list[str]) -> str:
+    """一个单元里一个中文名（可对应多个拉丁写法）：第一次出现规范为「中文（*Latin*）」，之后只留中文。"""
+    state = {"first": True}
+    pick = _pick(latins, text, page)
+
+    def repl(m: re.Match[str]) -> str:
+        src = m.group(0)
+        s = m.string
+        if m.group("B") is None and (_protected(s, m.start(), zh, longer) or _RANK_AFTER.match(s, m.start() + len(zh))):
+            return src                                        # 更高阶元名的一部分：不是种
+        first = state["first"]
+        if m.group("E"):                                      # 中文名后已有别的拉丁名：不叠加；这一处算本页的首现
             state["first"] = False
-            if m.group("A"):
-                pre, post = m.group("pre"), m.group("post")
-                if first:
-                    new = f"{zh}（{pre}*{latin}*{post}）"
-                    kind = "expand-latin"
-                else:
-                    rest = "，".join(x for x in (pre.strip(" ，,；;"), post.strip(" ，,；;")) if x)
-                    new, kind = (f"{zh}（{rest}）" if rest else zh), "drop-latin"
-            elif m.group("D") or m.group("B"):
-                key = "d" if m.group("D") else "b"
-                fam, rsp = m.group(f"fam_{key}"), m.group(f"rsp_{key}")
-                lsp = "" if key == "d" else m.group("lsp_b")
-                before_ch = m.string[m.start() - 1] if m.start() > 0 else ""
-                after_ch = m.string[m.end()] if m.end() < len(m.string) else ""
-                lsp = lsp if _keeps_space(before_ch) else ""   # 中文（或行首、行尾）旁不留空格，西文旁保留
-                rsp = rsp if _keeps_space(after_ch) else ""
-                if first:
-                    new, kind = _with_latin(zh, latin, fam), "add-latin"
-                else:
-                    new, kind = _without_latin(zh, fam), "drop-latin"
-                new = lsp + new + rsp
-            else:                                          # C：单独的中文名
-                fam = m.group("fam_c")
-                if first:
-                    new, kind = _with_latin(zh, latin, fam), "add-latin"
-                else:
-                    return src
-            if new != src:
-                changes.append(Change(label, zh, kind, _ctx(m.string, m.start(), m.end()), _ctx_after(m.string, m, new)))
-            return new
+            return src
+        inside = _inside_paren(s, m.start())
+        if m.group("A"):
+            state["first"] = False
+            latin = _full_latin(m.group("lt_a"), latins)
+            pre, post, ocr = m.group("pre"), m.group("post"), m.group("ocr_a")
+            if first:
+                new, kind = f"{zh}（{pre}*{latin}*{ocr}{post}）", "expand-latin"
+            else:
+                rest = "，".join(x for x in (pre.strip(" ，,；;"), post.strip(" ，,；;")) if x)
+                new, kind = zh + ocr + (f"（{rest}）" if rest else ""), "drop-latin"
+        elif m.group("D") or m.group("B"):
+            state["first"] = False
+            key = "d" if m.group("D") else "b"
+            latin = _full_latin(m.group(f"lt_{key}"), latins)
+            fam, rsp, ocr = m.group(f"fam_{key}"), m.group(f"rsp_{key}"), m.group(f"ocr_{key}")
+            if first and inside:                              # 已在括号里：不再套括号，原样保留
+                return src
+            lsp = "" if key == "d" else m.group("lsp_b")
+            before_ch = s[m.start() - 1] if m.start() > 0 else ""
+            after_ch = s[m.end()] if m.end() < len(s) else ""
+            lsp = lsp if _keeps_space(before_ch) else ""      # 中文（或行首、行尾）旁不留空格，西文旁保留
+            rsp = rsp if _keeps_space(after_ch) else ""
+            if first:
+                new, kind = _with_latin(zh, latin, fam, ocr), "add-latin"
+            else:
+                new, kind = _without_latin(zh, fam, ocr), "drop-latin"
+            new = lsp + new + rsp
+        else:                                                 # C：单独的中文名
+            if not first or inside or pick is None:
+                return src                                    # 重复；括号里；原文该页没有这个拉丁名：不补
+            fam = m.group("fam_c")
+            state["first"] = False
+            new, kind = _with_latin(zh, pick, fam), "add-latin"
+        if new != src:
+            changes.append(Change(label, zh, kind, _ctx(s, m.start(), m.end()), _ctx_after(s, m, new)))
+        return new
 
-        text = _pattern(latin, zh).sub(repl, text)
+    return _pattern(latins, zh).sub(repl, text)
+
+
+def _fix_unit(text: str, groups: dict[str, list[str]], label: str, changes: list[Change], page: str | None,
+              longer: dict[str, list[str]], generic: set[str]) -> str:
+    """一个单元（一页或一条图注）：每个名字第一次出现规范为「中文（*Latin*）」，之后只留中文。"""
+    for zh, latins in sorted(groups.items(), key=lambda kv: -len(kv[0])):
+        if zh in generic:
+            continue
+        text = _fix_group(text, zh, latins, label, changes, page, longer[zh])
     return text
 
 
@@ -193,41 +372,63 @@ def _ctx_after(s: str, m: re.Match[str], new: str, w: int = 6) -> str:
 
 # ---------------------------------------------------------------- 分单元处理
 
-def fix_text(text: str, names: dict[str, str], unit: str = "page") -> tuple[str, list[Change]]:
+def fix_text(text: str, names: dict[str, str], unit: str = "page", src: str | None = None,
+             known: set[str] | None = None, generic: set[str] | None = None) -> tuple[str, list[Change]]:
     """返回 (修正后的文本, 改动列表)。unit：page＝按页码标记分页；paragraph＝每个空行分隔的段（图注）；whole＝整篇一页。
-    page 但文中没有页码标记：抛 NoPageMarkers。"""
+    page 但文中没有页码标记：抛 NoPageMarkers。
+    src：英文原文（同样的页码标记）。给了就核对：只有拉丁名出现在对应原书页的原文里才补；没给则不核对。
+    known：其他已知中文类群名（属、科、种…），命中落在更长的已知名里就跳过。generic：通名，不补拉丁名。"""
     changes: list[Change] = []
     if not names:
         return text, changes
-    spans: list[tuple[int, int, str]] = []
+    groups: dict[str, list[str]] = {}
+    for latin, zh in sorted(names.items()):
+        groups.setdefault(zh, []).append(latin)
+    allk = set(known or ()) | set(groups)
+    longer = {zh: sorted((p for p in allk if len(p) > len(zh) and zh in p), key=len, reverse=True) for zh in groups}
+    src_pages = split_pages(src) if src is not None else None
+    marks = list(PAGE_MARK.finditer(text))
+    spans: list[tuple[int, int, str, str | None]] = []       # (起, 止, 标签, 对应原文页标签；None＝整篇原文)
     if unit == "whole":
-        spans = [(0, len(text), "全文")]
+        spans = [(0, len(text), "全文", None)]
     elif unit == "paragraph":
         pos, n = 0, 0
         for m in list(re.finditer(r"\n[ \t]*\n+", text)) + [None]:
             end = len(text) if m is None else m.start()
             if text[pos:end].strip():
                 n += 1
-                spans.append((pos, end, f"段 {n}"))
+                prev = [mk for mk in marks if mk.start() < pos]
+                srclab = (prev[-1].group(1) if prev else "") if marks else None
+                spans.append((pos, end, f"段 {n}", srclab))
             if m is not None:
                 pos = m.end()
     elif unit == "page":
-        marks = list(PAGE_MARK.finditer(text))
         if not marks:
             raise NoPageMarkers("文中没有页码标记 <!-- p.N -->")
-        bounds = [(0, marks[0].start(), "（首个页码标记之前）")]
+        bounds = [(0, marks[0].start(), "（首个页码标记之前）", "")]
         for i, m in enumerate(marks):
-            bounds.append((m.end(), marks[i + 1].start() if i + 1 < len(marks) else len(text), m.group(1)))
-        spans = [(a, b, lab) for a, b, lab in bounds if text[a:b].strip()]
+            bounds.append((m.end(), marks[i + 1].start() if i + 1 < len(marks) else len(text), m.group(1), m.group(1)))
+        spans = [(a, b, lab, sl) for a, b, lab, sl in bounds if text[a:b].strip()]
     else:
         raise ValueError(f"unit 只能是 page、paragraph 或 whole：{unit}")
     out, pos = [], 0
-    for a, b, lab in spans:
+    for a, b, lab, srclab in spans:
+        page = None if src_pages is None else (src if srclab is None else src_pages.get(srclab, ""))
         out.append(text[pos:a])
-        out.append(_fix_unit(text[a:b], names, lab, changes))
+        out.append(_fix_unit(text[a:b], groups, lab, changes, page, longer, set(generic or ())))
         pos = b
     out.append(text[pos:])
     return "".join(out), changes
+
+
+def auto_src(path: str | Path) -> Path | None:
+    """译文/body_直译初译.md → 同书的 src_en/body.txt；找不到返回 None。"""
+    p = Path(path).resolve()
+    for base in (p.parent.parent, p.parent):
+        cand = base / "src_en" / (p.name.split("_")[0].split(".")[0] + ".txt")
+        if cand.exists():
+            return cand
+    return None
 
 
 def auto_unit(path: str | Path) -> str:
@@ -306,6 +507,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--domain", default="分类学", help="yiku 领域")
     ap.add_argument("--unit", choices=["auto", "page", "paragraph", "whole"], default="auto",
                     help="auto＝文件名含「图注」/caption 按段落（每条图注一个单元），否则按页码标记；whole＝整篇当一页（不推荐）")
+    ap.add_argument("--src", help="英文原文（带同样的页码标记），用来核对拉丁名是否出现在对应原书页；缺省自动找 <书>/src_en/<文件名首段>.txt")
     ap.add_argument("--fix", action="store_true", help="写回文件（先备份为 <文件>.bak-species，已有备份不覆盖）")
     ap.add_argument("-o", "--out", help="另存为（只能配单个输入文件；不备份）")
     a = ap.parse_args(argv)
@@ -324,14 +526,25 @@ def main(argv: list[str] | None = None) -> int:
         for latin, caps in skipped.items():
             print(f"{p.name}：*{latin}* 的中文名不确定，未收（{'、'.join(caps)}），请人工核对", file=sys.stderr)
         unit = auto_unit(p) if a.unit == "auto" else a.unit
+        src_path = Path(a.src) if a.src else auto_src(p)
+        src = src_path.read_text(encoding="utf8") if src_path else None
+        if src is None:
+            print(f"{p.name}：没有找到英文原文（--src 或 <书>/src_en/），无法核对拉丁名是否出现在对应原书页；按未核对处理", file=sys.stderr)
+        known: set[str] = set()
+        generic: set[str] = set()
+        if not a.no_yiku:
+            try:
+                known, generic = yiku_context(names, a.domain)
+            except (FileNotFoundError, ImportError) as exc:
+                print(f"{p.name}：取不到 yiku 类群名（{exc}），longest-match 只用名单内的名字", file=sys.stderr)
         try:
-            new, changes = fix_text(text, names, unit)
+            new, changes = fix_text(text, names, unit, src=src, known=known, generic=generic)
         except NoPageMarkers:
             print(f"{p.name}：没有页码标记 <!-- p.N -->，无法按原书页处理。请从带页码标记的原文重译，或确认整篇只算一页后加 "
                   "--unit whole（整篇只保留第一次的拉丁名，一般不是想要的）", file=sys.stderr)
             return 2
         print(f"{p.name}：名单 {len(names)} 个种，按{ {'page': '页', 'paragraph': '段（每条图注一个单元）', 'whole': '整篇'}[unit] }，"
-              f"待改 {len(changes)} 处")
+              f"{'核对原文 ' + src_path.name + '，' if src_path else '未核对原文，'}待改 {len(changes)} 处")
         for c in changes:
             print("  " + c.line())
         if not changes:
