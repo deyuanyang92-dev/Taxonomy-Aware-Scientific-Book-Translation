@@ -25,6 +25,6 @@
 - 论证极性：evidence for / against、no evidence that、not … but 等，译后回读一遍，确认没有译反。
 - 生态学概念不混：niche 生态位，habitat 生境。
 - 种下单位不升格：race / geographical race 译「宗」「地理宗」，不译「种」。
-- 宗教头衔照实：Reverend 牧师，Bishop 主教，Archbishop 大主教，Archdeacon 会吏长；不确定的保留原文。
+- 宗教头衔照实：Reverend 牧师，Bishop 主教，Archbishop 大主教，Archdeacon 副主教（圣公会正式称「会吏长」）；不确定的保留原文。
 - 哲学/思想史固定术语用学界通行译名：argument from design 设计论证，natural theology 自然神学。
 我们自己的坑（Sonnet 初译）：块首凭空加译一句、块首英文句漏译。核译必须逐句核对每块的第一句和最后一句。

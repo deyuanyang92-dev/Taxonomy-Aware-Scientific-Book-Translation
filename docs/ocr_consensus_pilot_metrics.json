@@ -34,12 +34,12 @@
   "n_pages": 30,
   "cer": {
     "rapid": 0.050433,
-    "consensus": 0.050433,
-    "consensus_fix": 0.048851,
-    "consensus_fix_vlm": 0.048851
+    "consensus": 1.051619,
+    "consensus_fix": 1.056232,
+    "consensus_fix_vlm": 1.056232
   },
-  "need_vlm_ratio": 0.0,
-  "need_vlm_chars": 0,
+  "need_vlm_ratio": 0.2595,
+  "need_vlm_chars": 5907,
   "total_chars": 22763,
   "vlm_note": "未接入 deepseek-flash 实际看图，本项暂与 consensus_fix 相同"
 }
