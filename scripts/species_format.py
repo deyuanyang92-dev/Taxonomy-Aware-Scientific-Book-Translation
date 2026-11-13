@@ -23,6 +23,8 @@
 不改的情形：中文名后紧跟阶元后缀（索沙蚕属、吻沙蚕科、…类）或落在更长的已知类群名里（longest-match，已知名＝yiku 的属/科/种名＋名单）；
 中文名后已跟着别的 *拉丁名*（不叠加第二个括号）；已在括号里的「（欧文虫 *Owenia fusiformis*）」不再套括号；yiku 里还对应非拉丁英文词的通名（如 沙蚕 ↔ sand worm）。
 拉丁名后的 [OCR?] 标记保留。
+括号里除拉丁名外还有引证、科名、图号、嵌套括号时（「中文（*Latin*，Rouse, 1986）」），同页重复只去掉拉丁名和它的一个分隔符，其余原样保留。
+保险：写出前核对改前改后「作者, 年份」引证、所有年份记号、「图 N」引用的多重集必须一致，不一致则该文件中止（退出码 2，不写出）。
 局限：只认斜体（*…*）的拉丁名；不认 *Genus species* 后紧跟的命名人（Sars, 1851）。修正是确定性的字符串改写，改完建议复读一遍。
 """
 from __future__ import annotations
@@ -32,6 +34,7 @@ import os
 import re
 import shutil
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +48,42 @@ _FAMILY = re.compile(r"科|[A-Za-z]+idae|[A-Za-z]+ida\b")
 
 class NoPageMarkers(ValueError):
     """按页处理却没有页码标记：整篇当一页会误删后面各页的拉丁名，所以拒绝。"""
+
+
+class CitationLost(ValueError):
+    """改写前后「作者, 年份」引证或「图 N」引用的多重集不一致：改写误删了引证，拒绝写出。"""
+
+
+# 引证与图号的指纹：只比较「改前改后是否一样」，所以宁可多收（所有年份、所有图号），不求精确解析。
+_YEAR = r"(?<!\d)(?:1[5-9]\d\d|20\d\d)(?!\d)[a-z]?"
+_CITE = re.compile(rf"([A-Z][A-Za-zÀ-ÖØ-öø-ÿ'’\-]*)(\s+et\s+al\.?)?\s*[,，]?\s*({_YEAR})")
+_FIG = re.compile(r"图\s*\d+[A-Za-z]?(?:\s*[–—\-~、，,]\s*\d+[A-Za-z]?)*")
+
+
+def citation_signature(text: str) -> Counter[tuple[str, ...]]:
+    """文本里的（作者, 年份）、所有年份记号、「图 N」引用的多重集（空白不计）。"""
+    sig: Counter[tuple[str, ...]] = Counter()
+    for author, etal, year in _CITE.findall(text):
+        sig[("cite", author, "et al." if etal else "", year)] += 1
+    for year in re.findall(_YEAR, text):
+        sig[("year", year)] += 1
+    for fig in _FIG.findall(text):
+        sig[("fig", re.sub(r"\s+", "", fig))] += 1
+    return sig
+
+
+def _fmt_sig(c: Counter[tuple[str, ...]]) -> str:
+    return "、".join(" ".join(filter(None, k[1:])) + (f"×{n}" if n > 1 else "") for k, n in sorted(c.items()))
+
+
+def check_preserved(before: str, after: str) -> None:
+    """改写不得增删引证或图号：多重集不同就抛 CitationLost（消息列出少了/多了什么）。"""
+    a, b = citation_signature(before), citation_signature(after)
+    if a == b:
+        return
+    lost, extra = a - b, b - a
+    raise CitationLost("改写会改动引证/图号：" + (f"丢失 {_fmt_sig(lost)}；" if lost else "")
+                       + (f"多出 {_fmt_sig(extra)}；" if extra else ""))
 
 
 @dataclass
@@ -221,8 +260,11 @@ def _pattern(latins: list[str], zh: str) -> re.Pattern[str]:
     z, alt = re.escape(zh), _lat_alt(latins)
     op, cl = "[（(]", "[）)]"
     fam = rf"(?:{op}(?P<fam_{{}}>[^（）()*]*){cl})?"
+    # 括号里除拉丁名外可有引证、科名、图号、嵌套括号（Rouse, 1986）、别的斜体名：只动拉丁名，其余原样（见 _body_without_latin）
+    nested = rf"{op}[^（）()]*{cl}"
     return re.compile(
-        rf"(?P<A>{z}{op}(?P<pre>[^（）()*]*?)\*(?P<lt_a>{alt})\*(?P<ocr_a>{_OCR})(?P<post>[^（）()*]*){cl})"   # 中文（*Latin*，科）
+        rf"(?P<A>{z}{op}(?P<pre>(?:[^（）()*]|{nested})*?)\*(?P<lt_a>{alt})\*(?P<ocr_a>{_OCR})"
+        rf"(?P<post>(?:[^（）()]|{nested})*?){cl})"                                                           # 中文（*Latin*，科）
         rf"|(?P<D>{z}[ \t]*\*(?P<lt_d>{alt})\*(?P<ocr_d>{_OCR}){fam.format('d')}(?P<rsp_d>[ \t]*))"          # 中文 *Latin*
         rf"|(?P<B>(?P<lsp_b>[ \t]*)\*(?P<lt_b>{alt})\*(?P<ocr_b>{_OCR}){fam.format('b')}(?P<rsp_b>[ \t]*))"   # 单独的 *Latin*
         rf"|(?P<E>{z}(?=[（(]\*|[ \t]*\*[A-Z]))"                                                              # 中文后已跟别的拉丁名
@@ -247,6 +289,31 @@ def _with_latin(zh: str, latin: str, fam: str | None, ocr: str = "") -> str:
 
 def _without_latin(zh: str, fam: str | None, ocr: str = "") -> str:
     return zh + ocr + (f"（{fam}）" if fam is not None else "")
+
+
+_SEP = "，,；;"
+_NESTED = re.compile(r"[（(][^（）()]*[）)]")
+
+
+def _body_without_latin(pre: str, post: str) -> str:
+    """括号里拉丁名两侧的内容 pre、post → 去掉拉丁名及其一个分隔符后的括号内文本；其余字符（引证、图号、科名）一概不动。"""
+    a, b = pre.rstrip(" \t"), post.lstrip(" \t")
+    if a and b:
+        if a[-1] in _SEP:
+            b = b.lstrip(_SEP + " \t")                          # 保留拉丁名前面那个分隔符
+        elif b[0] not in _SEP:
+            a += "，"
+    return (a + b).strip(" \t" + _SEP)
+
+
+def _unbracket_drop(zh: str, ocr: str, pre: str, post: str) -> str:
+    """同页重复：中文（…*Latin*…）→ 中文（余下内容）；余下恰是一个嵌套括号（Rouse, 1986）时直接接在中文名后，不再套一层。"""
+    rest = _body_without_latin(pre, post)
+    if not rest:
+        return zh + ocr
+    if _NESTED.fullmatch(rest):
+        return zh + ocr + "（" + rest[1:-1] + "）"
+    return zh + ocr + f"（{rest}）"
 
 
 def _inside_paren(s: str, pos: int) -> bool:
@@ -320,9 +387,15 @@ def _fix_group(text: str, zh: str, latins: list[str], label: str, changes: list[
             if first:
                 new, kind = f"{zh}（{pre}*{latin}*{ocr}{post}）", "expand-latin"
             else:
-                rest = "，".join(x for x in (pre.strip(" ，,；;"), post.strip(" ，,；;")) if x)
-                new, kind = zh + ocr + (f"（{rest}）" if rest else ""), "drop-latin"
+                new, kind = _unbracket_drop(zh, ocr, pre, post), "drop-latin"
         elif m.group("D") or m.group("B"):
+            if m.group("B"):
+                head = s[:m.start("lt_b") - 1].rstrip(" \t")      # 拉丁名紧接在本中文名（或「中文（」）后，却没被 A/D 认出：不动，免得把中文名重复写进括号
+                if head.endswith(("（", "(")):
+                    head = head[:-1]
+                if head.endswith(zh):
+                    state["first"] = False
+                    return src
             state["first"] = False
             key = "d" if m.group("D") else "b"
             latin = _full_latin(m.group(f"lt_{key}"), latins)
@@ -558,6 +631,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{p.name}：没有页码标记 <!-- p.N -->，无法按原书页处理。请从带页码标记的原文重译，或确认整篇只算一页后加 "
                   "--unit whole（整篇只保留第一次的拉丁名，一般不是想要的）", file=sys.stderr)
             return 2
+        try:
+            check_preserved(text, new)
+        except CitationLost as exc:
+            print(f"{p.name}：{exc}。本文件中止，未写出；请把该处报给维护者", file=sys.stderr)
+            code = 2
+            continue
         print(f"{p.name}：名单 {len(names)} 个种，按{ {'page': '页', 'paragraph': '段（每条图注一个单元）', 'whole': '整篇'}[unit] }，"
               f"{'核对原文 ' + src_path.name + '，' if src_path else '未核对原文，'}待改 {len(changes)} 处")
         for c in changes:

@@ -405,3 +405,92 @@ def test_cli_auto_finds_src_en_and_only_adds_names_on_the_source_page(tmp_path):
     r = run_cli(str(f), "--names", str(n), "--no-yiku")
     assert r.returncode == 1 and "[p.1]" in r.stdout and "[p.2]" not in r.stdout
     assert "待改 1 处" in r.stdout
+
+
+# ---- 括号里除拉丁名外还有引证/科名/图号：只动拉丁名和它的分隔符，其余原样保留（Harrison ch2s5b 回归）
+
+REPEAT = "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*）长；{x}。\n"
+
+
+@pytest.mark.parametrize("inner, expected", [
+    ("*Owenia fusiformis*，Rouse, 1986", "Rouse, 1986"),
+    ("*Owenia fusiformis*; Ochi et al., 1977", "Ochi et al., 1977"),
+    ("*Owenia fusiformis* Rouse, 1986a, b", "Rouse, 1986a, b"),
+    ("*O. fusiformis*，Afzelius, 1983, 1984", "Afzelius, 1983, 1984"),
+    ("Rouse, 1986；*Owenia fusiformis*", "Rouse, 1986"),
+    ("图3；*Owenia fusiformis*，Rouse, 1986", "图3；Rouse, 1986"),
+    ("*Owenia fusiformis*，Rouse 与 Pitt, 1986，见图 3", "Rouse 与 Pitt, 1986，见图 3"),
+    ("*Owenia fusiformis*，欧文虫科", "欧文虫科"),
+])
+def test_repeat_latin_in_paren_with_other_content_only_loses_latin(inner, expected):
+    out, ch = fix(REPEAT.format(x=f"欧文虫（{inner}）"), names=GENERIC)
+    assert out == REPEAT.format(x=f"欧文虫（{expected}）")
+    assert [c.kind for c in ch] == ["drop-latin"]
+
+
+def test_repeat_latin_with_nested_citation_paren_is_not_duplicated():
+    for inner in ("*Owenia fusiformis*（Rouse, 1986）", "*Owenia fusiformis* (Rouse, 1986)"):
+        out, ch = fix(REPEAT.format(x=f"欧文虫（{inner}）"), names=GENERIC)
+        assert "欧文虫（欧文虫" not in out
+        assert out.endswith("长；欧文虫（Rouse, 1986）。\n")
+        assert [c.kind for c in ch] == ["drop-latin"]
+
+
+def test_repeat_latin_paren_with_other_italic_name_keeps_other_name_and_citation():
+    x = "欧文虫（*Owenia fusiformis*，Rouse, 1986；另见 *Owenia collaris*，Hartman, 1955）"
+    out, _ = fix(REPEAT.format(x=x), names=GENERIC)
+    assert out == REPEAT.format(x="欧文虫（Rouse, 1986；另见 *Owenia collaris*，Hartman, 1955）")
+
+
+def test_first_occurrence_with_citation_in_paren_keeps_citation_and_expands_genus():
+    out, ch = fix("<!-- p.1 -->\n欧文虫（*O. fusiformis*，Rouse, 1986）；欧文虫（*Owenia fusiformis*（Rouse, 1986））。\n",
+                  names=GENERIC)
+    assert out == "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*，Rouse, 1986）；欧文虫（Rouse, 1986）。\n"
+    assert [c.kind for c in ch] == ["expand-latin", "drop-latin"]
+
+
+def test_citation_after_chinese_name_without_latin_survives_add_latin():
+    out, _ = fix("<!-- p.1 -->\n欧文虫（Rouse, 1986）、欧文虫（Ochi et al., 1977）。\n", names=GENERIC)
+    assert "Rouse, 1986" in out and "Ochi et al., 1977" in out
+
+
+def test_citation_and_figure_signature_ignores_formatting_but_counts_each_item():
+    sig = sf.citation_signature
+    assert sig("（Rouse, 1986）图 3") == sig("Rouse, 1986。图3")
+    assert sig("Afzelius, 1983, 1984") != sig("Afzelius, 1983")
+    assert sig("Rouse, 1986；Rouse, 1986") != sig("Rouse, 1986")
+    assert sig("Ochi et al., 1977") != sig("Ochi, 1977")
+    assert sig("图3、图4") != sig("图3")
+
+
+def test_check_preserved_raises_when_citation_or_figure_ref_lost():
+    sf.check_preserved("欧文虫（*Owenia fusiformis*，Rouse, 1986，图3）", "欧文虫（Rouse, 1986，图3）")
+    with pytest.raises(sf.CitationLost):
+        sf.check_preserved("欧文虫（*Owenia fusiformis*，Rouse, 1986）", "欧文虫")
+    with pytest.raises(sf.CitationLost):
+        sf.check_preserved("欧文虫（*Owenia fusiformis*，图 3）", "欧文虫")
+
+
+def test_fix_aborts_file_when_planned_edit_would_drop_a_citation(tmp_path, monkeypatch):
+    f = tmp_path / "body_直译初译.md"
+    original = "<!-- p.1 -->\n欧文虫（*Owenia fusiformis*，Rouse, 1986）长；欧文虫（*Owenia fusiformis*，Rouse, 1986）。\n"
+    f.write_text(original, encoding="utf8")
+    n = tmp_path / "n.tsv"
+    n.write_text("Owenia fusiformis\t欧文虫\n", encoding="utf8")
+    real = sf.fix_text
+    monkeypatch.setattr(sf, "fix_text", lambda *a, **k: (real(*a, **k)[0].replace("（Rouse, 1986）", "", 1).replace("，Rouse, 1986", ""),
+                                                          real(*a, **k)[1]))
+    assert sf.main([str(f), "--names", str(n), "--no-yiku", "--fix"]) == 2
+    assert f.read_text(encoding="utf8") == original and not (tmp_path / (f.name + ".bak-species")).exists()
+
+
+def test_cli_fix_keeps_every_citation_end_to_end(tmp_path):
+    f = tmp_path / "body_直译初译.md"
+    f.write_text("<!-- p.1 -->\n欧文虫（*Owenia fusiformis*，Rouse, 1986）长；欧文虫（*Owenia fusiformis*; Ochi et al., 1977）、"
+                 "欧文虫（*Owenia fusiformis*（Afzelius, 1983, 1984；图3））。\n", encoding="utf8")
+    n = tmp_path / "n.tsv"
+    n.write_text("Owenia fusiformis\t欧文虫\n", encoding="utf8")
+    r = run_cli(str(f), "--names", str(n), "--no-yiku", "--fix")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert f.read_text(encoding="utf8") == ("<!-- p.1 -->\n欧文虫（*Owenia fusiformis*，Rouse, 1986）长；欧文虫（Ochi et al., 1977）、"
+                                            "欧文虫（Afzelius, 1983, 1984；图3）。\n")
