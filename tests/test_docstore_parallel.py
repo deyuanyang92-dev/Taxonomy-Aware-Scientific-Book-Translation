@@ -178,3 +178,12 @@ def test_promote_existing_alternate():
     st.put_version(key, 1, b, promote=True)
     p = st.page(key, 1)
     assert p["producer"] == "b" and [v["producer"] for v in p["alternates"]] == ["a"]
+
+
+def test_register_stores_absolute_path(tmp_path, monkeypatch):
+    """在资料目录里用相对路径 docstore add，登记的必须是绝对路径（2026-11-13 五本书「原件缺失」）。"""
+    pdf = make_scan(tmp_path / "scan.pdf", 1)
+    monkeypatch.chdir(tmp_path)
+    st = open_store(tmp_path / "lib")
+    key, _ = st.register("scan.pdf", key="rel")
+    assert st.doc(key)["path"] == str(pdf.resolve())

@@ -199,7 +199,7 @@ class Store:
         返回 (key, 是否新登记)。"""
         from . import classify
 
-        p = Path(path) if path else None
+        p = Path(path).resolve() if path else None
         if p is not None and p.exists():
             sha = sha or sha256_file(p)
         sha = sha or ""
