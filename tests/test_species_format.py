@@ -173,3 +173,47 @@ def test_cli_page_mode_without_markers_exits_2_with_hint(tmp_path):
     r = run_cli(str(f), "--names", str(n), "--no-yiku")
     assert r.returncode == 2 and "页码标记" in r.stderr and "--unit whole" in r.stderr
     assert run_cli(str(f), "--names", str(n), "--no-yiku", "--unit", "whole").returncode == 1
+
+
+def test_harvest_pairs_from_translation():
+    t = "其一为暗蛇潜虫（*Podarke obscura*）。另见暗蛇潜虫（*Podarke obscura*）与甲（*Aa bb*）、乙（*Aa bb*）。"
+    got = sf.harvest_pairs(t)
+    assert got == {"Podarke obscura": "暗蛇潜虫"}  # 一名多译的不收
+
+
+def test_harvest_pairs_single_occurrence_strips_leading_words():
+    for pre, zh, latin in [("另见", "暗蛇潜虫", "Podarke obscura"), ("为", "覆瓦哈鳞虫", "Harmothoe imbricata"),
+                           ("检查了", "微怪鳞虫", "Paralepidonotus ampulliferus"), ("例如", "厚角缨鳃虫", "Pseudopotamilla crassa"),
+                           ("", "铜色巢沙蚕", "Nereis aenea")]:
+        assert sf.harvest_pairs(f"{pre}{zh}（*{latin}*）。") == {latin: zh}
+    assert sf.harvest_pairs("为暗（*Aa bb*）。") == {}              # 剥完不足 2 字，不收
+
+
+def test_harvest_pairs_common_suffix_across_occurrences():
+    t = "我们发现了暗蛇潜虫（*Podarke obscura*），后文再提到暗蛇潜虫（*Podarke obscura*）。"
+    assert sf.harvest_pairs(t) == {"Podarke obscura": "暗蛇潜虫"}   # 公共后缀恰是第二次的整串
+    t2 = "该种暗蛇潜虫（*Podarke obscura*）与此暗蛇潜虫（*Podarke obscura*）。"
+    assert sf.harvest_pairs(t2) == {"Podarke obscura": "暗蛇潜虫"}
+
+
+def test_harvest_pairs_conflicting_chinese_skipped_and_reported():
+    t = "铜色巢沙蚕（*Nereis aenea*）与另一种沙蚕（*Nereis aenea*）。甲乙丙（*Cc dd*）、丁戊己（*Cc dd*）。"
+    skipped: dict[str, list[str]] = {}
+    assert sf.harvest_pairs(t, skipped=skipped) == {}
+    assert set(skipped) == {"Nereis aenea", "Cc dd"}
+
+
+def test_harvest_pairs_prefers_known_names():
+    t = "我们发现了暗蛇潜虫（*Podarke obscura*）。"
+    assert sf.harvest_pairs(t, known={"暗蛇潜虫", "潜虫"}) == {"Podarke obscura": "暗蛇潜虫"}   # 取最长的已知后缀
+    assert sf.harvest_pairs("见暗蛇潜虫（*Podarke obscura*）。", known={"覆瓦哈鳞虫"}) == {"Podarke obscura": "暗蛇潜虫"}
+
+
+def test_collect_names_priority_harvested_yiku_tsv(tmp_path, monkeypatch):
+    monkeypatch.setattr(sf, "yiku_names", lambda text, domain="分类学", con=None, db=None: {"Podarke obscura": "YIKU", "Aa bb": "YIKU乙"})
+    f = tmp_path / "n.tsv"
+    f.write_text("Aa bb\tTSV乙\n", encoding="utf8")
+    t = "暗蛇潜虫（*Podarke obscura*）、乙乙（*Aa bb*）、丙丙（*Cc dd*）。"
+    got = sf.collect_names(t, f, "分类学")
+    assert got == {"Podarke obscura": "YIKU", "Aa bb": "TSV乙", "Cc dd": "丙丙"}
+    assert sf.collect_names(t, None, None) == {"Podarke obscura": "暗蛇潜虫", "Aa bb": "乙乙", "Cc dd": "丙丙"}

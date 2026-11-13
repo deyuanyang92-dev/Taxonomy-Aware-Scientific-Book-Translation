@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import sys
@@ -234,15 +235,64 @@ def auto_unit(path: str | Path) -> str:
     return "paragraph" if ("图注" in name or "caption" in name) else "page"
 
 
+_PAIR = re.compile(r"([\u4e00-\u9fff]{2,12})（\*([A-Z][a-zë]+ [a-z][a-z\-]+)\*")
+# 名前常被正则连带吞进的句首虚词（「另见暗蛇潜虫」「为覆瓦哈鳞虫」「检查了微怪鳞虫」）
+_LEAD = re.compile(r"^(?:例如|如|即|为|是|与|和|及|另见|见|检查了|研究了|在|对|把|将|其一为|其中)+")
+
+
+def _longest_known_suffix(cap: str, known: set[str]) -> str:
+    return max((k for k in known if len(k) >= 2 and cap.endswith(k)), key=len, default="")
+
+
+def _resolve_caps(caps: list[str], known: set[str]) -> str | None:
+    """同一拉丁名的若干次捕获 → 中文名；无法确定（一名多译等）返回 None。"""
+    hits = [_longest_known_suffix(c, known) for c in caps]
+    if any(hits):                                       # 1. 已知中文名（yiku / --names）：取最长的、作为捕获串后缀的
+        found = {h for h in hits if h}
+        if len(found) != 1:
+            return None
+        zh = found.pop()
+        return zh if all(c.endswith(zh) for c in caps) else None
+    clean = [_LEAD.sub("", c) for c in caps]            # 2./3. 未知：先剥句首虚词，再取各次出现的公共后缀
+    if min(map(len, clean)) < 2:
+        return None
+    suf = os.path.commonprefix([c[::-1] for c in clean])[::-1]
+    # 公共后缀恰是某一次的整串（「暗蛇潜虫」与「该种暗蛇潜虫」）才算一致；否则要求后缀 ≥3 字，
+    # 免得「铜色巢沙蚕」与「另一种沙蚕」被并成「沙蚕」（一名多译，不收）
+    if len(suf) < 2 or (suf not in clean and len(suf) < 3):
+        return None
+    return suf
+
+
+def harvest_pairs(text: str, known: set[str] | frozenset[str] | None = None,
+                  skipped: dict[str, list[str]] | None = None) -> dict[str, str]:
+    """从译文收集「中文名（*Genus species*）」对子。
+
+    正则会连带吞进名前的汉字，故：优先按已知中文名（known＝yiku / --names 的中文名）取最长后缀；
+    否则取同一拉丁名各次出现的公共后缀；只出现一次时剥句首虚词（须 ≥2 字）。
+    一个拉丁名对应互相冲突的中文名、或确定不了名字的，不收；skipped 若给出则记下 {拉丁名: 捕获串}（交人工）。"""
+    seen: dict[str, list[str]] = {}
+    for zh, latin in _PAIR.findall(text):
+        seen.setdefault(latin, []).append(zh)
+    out: dict[str, str] = {}
+    for latin, caps in seen.items():
+        zh = _resolve_caps(caps, set(known or ()))
+        if zh:
+            out[latin] = zh
+        elif skipped is not None:
+            skipped[latin] = sorted(set(caps))
+    return out
+
+
 def collect_names(text: str, names_file: str | Path | None = None, yiku_domain: str | None = "分类学",
-                  db: str | Path | None = None) -> dict[str, str]:
-    """名单：yiku HARD 种名（可关）再叠加 TSV（TSV 优先）。"""
-    names: dict[str, str] = {}
-    if yiku_domain:
-        names.update(yiku_names(text, yiku_domain, db=db))
-    if names_file:
-        got, _bad = load_names(names_file)
-        names.update(got)
+                  db: str | Path | None = None, skipped: dict[str, list[str]] | None = None) -> dict[str, str]:
+    """名单：译文里已写成「中文（*Genus species*）」的对子 → yiku HARD 种名（可关）→ TSV（后者优先）。
+    译文自带的对子覆盖经异名匹配得来、yiku 里没有该拉丁名的种（如 暗蛇潜虫 *Podarke obscura*）。"""
+    yk = yiku_names(text, yiku_domain, db=db) if yiku_domain else {}
+    tsv = load_names(names_file)[0] if names_file else {}
+    names = harvest_pairs(text, set(yk.values()) | set(tsv.values()), skipped)
+    names.update(yk)
+    names.update(tsv)
     return names
 
 
@@ -266,10 +316,13 @@ def main(argv: list[str] | None = None) -> int:
         p = Path(f)
         text = p.read_text(encoding="utf8")
         try:
-            names = collect_names(text, a.names, None if a.no_yiku else a.domain)
+            skipped: dict[str, list[str]] = {}
+            names = collect_names(text, a.names, None if a.no_yiku else a.domain, skipped=skipped)
         except (FileNotFoundError, ImportError) as exc:
             print(f"{p.name}：取不到 yiku 种名（{exc}）；用 --names 给名单或 --no-yiku", file=sys.stderr)
             return 2
+        for latin, caps in skipped.items():
+            print(f"{p.name}：*{latin}* 的中文名不确定，未收（{'、'.join(caps)}），请人工核对", file=sys.stderr)
         unit = auto_unit(p) if a.unit == "auto" else a.unit
         try:
             new, changes = fix_text(text, names, unit)
