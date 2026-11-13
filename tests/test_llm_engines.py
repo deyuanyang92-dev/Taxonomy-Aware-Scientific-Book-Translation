@@ -47,6 +47,7 @@ def make_client(*outcomes):
 @pytest.fixture(autouse=True)
 def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_USAGE_TSV", str(tmp_path / "usage.tsv"))
+    monkeypatch.setenv("YZZ_ALLOW_DEEPSEEK", "1")  # 旧 DeepSeek 测试保留；默认停用另有测试
     monkeypatch.setattr(le, "wait_offpeak", lambda *a, **k: None)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.delenv("LLM_SKIP_OFFPEAK", raising=False)
@@ -170,6 +171,27 @@ def test_codex_reads_output_file(monkeypatch):
     text, _ = le.call("codex", "s", "u")
     assert text == "codex 的译文"
     assert seen["cmd"][:6] == ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o"] and seen["cmd"][-1] == "-"
+    assert "-m" not in seen["cmd"]
+    le.call("codex-sol", "s", "u")
+    assert seen["cmd"][seen["cmd"].index("-m") + 1] == "gpt-6.1-sol" and seen["cmd"][-1] == "-"
+
+
+def test_cursor_engine_command(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="疣足具两束刚毛。", stderr="")
+
+    monkeypatch.setattr(le.subprocess, "run", fake_run)
+    text, _ = le.call("cursor-grok", "s", "u")
+    assert text == "疣足具两束刚毛。" and seen["cmd"][seen["cmd"].index("--model") + 1] == "cursor-grok-4.5-high"
+
+
+def test_deepseek_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("YZZ_ALLOW_DEEPSEEK", raising=False)
+    with pytest.raises(le.EngineError, match="DeepSeek 已停用"):
+        le.call("deepseek-flash", "s", "u")
 
 
 def test_unknown_engine():

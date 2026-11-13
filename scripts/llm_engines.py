@@ -27,7 +27,11 @@ from deepseek_offpeak import wait_offpeak
 
 DEEPSEEK_ENGINES = ("deepseek-flash", "deepseek-v4-pro")
 CLAUDE_ENGINES = {"claude-sonnet": "sonnet", "claude-opus": "opus"}
-ENGINES = (*DEEPSEEK_ENGINES, *CLAUDE_ENGINES, "codex")
+# Codex（ChatGPT Pro 账号）按任务选模型：sol 核译/盲评，astra 只用于最难的少数段，luna 简单任务；"codex" = config 默认
+CODEX_ENGINES = {"codex": None, "codex-luna": "gpt-6-luna", "codex-sol": "gpt-6.1-sol", "codex-astra": "gpt-6-astra"}
+# Cursor：本地区只开放非 Anthropic/OpenAI 的模型（2026-11-13 实测 Claude、GPT 均报 region 不支持）
+CURSOR_ENGINES = {"cursor-grok": "cursor-grok-4.5-high", "cursor-composer": "composer-2.5"}
+ENGINES = (*DEEPSEEK_ENGINES, *CLAUDE_ENGINES, *CODEX_ENGINES, *CURSOR_ENGINES)
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
 DEEPSEEK_ENV_FILE = "/mnt/p/纤毛虫-环节动物定殖/claude-deepseek.sh"
@@ -130,15 +134,26 @@ def _claude(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
     return r.stdout, {"input_tokens": None, "output_tokens": None, "cache_read_tokens": None}
 
 
-def _codex(system: str, user: str) -> tuple[str, dict[str, Any]]:
+def _codex(system: str, user: str, model: str | None = None) -> tuple[str, dict[str, Any]]:
     with tempfile.TemporaryDirectory() as td:
         out = pathlib.Path(td) / "codex_out.txt"
-        cmd = ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o", str(out), "-"]
+        cmd = ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o", str(out)]
+        if model:
+            cmd += ["-m", model]
+        cmd.append("-")
         r = _cli(cmd, system + "\n\n---\n\n" + user, "codex")
         text = out.read_text(encoding="utf8") if out.exists() else ""
     if r.returncode != 0 or not text.strip():
         raise EngineError(f"codex 退出码 {r.returncode}：{r.stderr[-300:].strip()}")
     return text, {"input_tokens": None, "output_tokens": None, "cache_read_tokens": None}
+
+
+def _cursor(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
+    cmd = ["cursor-agent", "-p", "--model", CURSOR_ENGINES[engine], "--output-format", "text", "--mode", "ask", "--trust"]
+    r = _cli(cmd, system + "\n\n---\n\n" + user, engine)
+    if r.returncode != 0 or not r.stdout.strip() or "Error:" in r.stdout[:200]:
+        raise EngineError(f"{engine} 退出码 {r.returncode}：{(r.stderr or r.stdout)[-300:].strip()}")
+    return r.stdout, {"input_tokens": None, "output_tokens": None, "cache_read_tokens": None}
 
 
 def usage_path(usage_file: str | os.PathLike[str] | None = None) -> pathlib.Path:
@@ -171,13 +186,17 @@ def call(engine: str, system: str, user: str, *, max_tokens: int = MAX_TOKENS, t
     if engine not in ENGINES:
         raise EngineError(f"未知 engine {engine!r}，可选：{', '.join(ENGINES)}")
     t0 = time.time()
+    if engine in DEEPSEEK_ENGINES and not os.environ.get("YZZ_ALLOW_DEEPSEEK"):
+        raise EngineError("DeepSeek 已停用（用户 2026-11-13）；确需调用请设 YZZ_ALLOW_DEEPSEEK=1")
     if engine in DEEPSEEK_ENGINES:
         if offpeak and not os.environ.get("LLM_SKIP_OFFPEAK"):
             wait_offpeak()
         t0 = time.time()
         text, usage = _deepseek(engine, system, user, max_tokens)
-    elif engine == "codex":
-        text, usage = _codex(system, user)
+    elif engine in CODEX_ENGINES:
+        text, usage = _codex(system, user, CODEX_ENGINES[engine])
+    elif engine in CURSOR_ENGINES:
+        text, usage = _cursor(engine, system, user)
     else:
         text, usage = _claude(engine, system, user)
     usage = {**usage, "engine": engine, "seconds": time.time() - t0}
