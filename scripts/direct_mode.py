@@ -3,9 +3,11 @@
 流程（每章一个目录 <书>/核译/direct/<章>/，已有产物一律跳过，可断点续跑）：
   chunks/cNN.txt   原文块（约 9000 字符，在句末断开）
   terms/cNN.md     该块的 yiku 术语表（yiku table <块> --domain D [--scope 科名]）
-  out/cNN.md       初译输出（含末尾「### 待定术语」节）
+  out/cNN.md       初译输出（含末尾「### 待定术语」「### 术语决策」节）
+  decisions/cNN.jsonl  从 out 里解析出的术语决策（一行一个 JSON；格式不对的行存 cNN.invalid.txt）
   review/cNN.jsonl 核译问题单（解析通过才写；空文件 = 模型显式输出了 NO_ISSUES）
 合并：<书>/译文/<章>_直译初译.md（已存在则不覆盖）、待定术语汇总 pending_terms.tsv、
+      术语决策 <章>/term_decisions.jsonl 与全书汇总 <书>/核译/term_decisions.jsonl（yiku decide validate/review/apply）、
       问题单 <书>/核译/issues/<章>_direct.jsonl（old 在合并译文中恰好出现 1 次才收，其余进 rejected.jsonl）。
 问题单交给 apply_issues.py --dry 过闸口，本模块不改译文。
 """
@@ -22,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 PENDING_HEAD = "### 待定术语"
+DECISION_HEAD = "### 术语决策"
+DECISIONS_FILE = "term_decisions.jsonl"
 MERGED_SUFFIX = "_直译初译.md"
 MIN_ZH_RATIO = 0.05  # 汉字数/原文字符数低于此值视为疑似拒译或截断
 
@@ -76,8 +80,13 @@ TRANSLATE_OUTPUT = """## 本次输出要求
 - 只输出译文（Markdown），不要说明、前言或结语。本块可能从某节中间开始或在某节中间结束，照原样接续，不要补写或总结。
 - 原文中独占一行的节标题用 ### 或 ####；段首的引导词（如 "Digestive system."）译为加粗引导词，如 **消化系统。**
 - 若正文中混入页眉页码或孤立碎片，删去不译。正文中对图、表的引用照常翻译。
-- 术语表「已核」必用；义项不同或不明的，按本书语境译，不硬套。拿不准的译名或词源上另有更贴切译法时，正文用通行名并加〔译注：…〕。
-- 不写文件、不调用工具。末尾另起「### 待定术语」逐行列：English｜所用译法｜理由。没有则省略。"""
+- 术语表分 HARD 与 SOFT 两节。HARD 必用，不得改译。SOFT 先读「定义/出处语境」判断本块里的义项，再取舍或另译；「已核」不等于必用，〔回退〕译名只在义项吻合时参考。拿不准的译名或词源上另有更贴切译法时，正文用通行名并加〔译注：…〕。
+- 不写文件、不调用工具。译文之后依次另起两节，没有内容的节省略：
+  1. 「### 待定术语」逐行列：English｜所用译法｜理由。
+  2. 「### 术语决策」：对本块出现的每个 SOFT 术语，写一行 JSON（不加代码围栏，不加说明）：
+     {"en":"cirrus","zh":"须","sense":"沙蚕疣足背须（形态）","reason":"本块指疣足背须，不是阴茎","source":"杨德渐2006 p.0168","chunk":"（填用户消息里的本块编号）"}
+     en＝英文术语；zh＝本块实际所用译名；sense＝义项简述；reason＝取舍理由；source＝所依据的术语表来源及页码，没有依据就写空串，不要编造；
+     同一术语在本块有不同义项时，各写一行。HARD 术语不用写。"""
 
 NO_ISSUES = "NO_ISSUES"
 
@@ -87,8 +96,9 @@ old 必须逐字复制自译文，且在给出的译文块中只出现 1 次。
 核完确实没有问题时，整个输出只写一行 {NO_ISSUES}（不要输出空内容：空输出会被当作失败重跑）。"""
 
 
-def user_translate(table: str, chunk: str) -> str:
-    return f"本块术语表（来自 yiku）：\n{table}\n\n请翻译以下英文原文：\n\n{chunk}"
+def user_translate(table: str, chunk: str, tag: str = "") -> str:
+    tag_line = f"本块编号：{tag}\n\n" if tag else ""
+    return f"本块术语表（来自 yiku）：\n{table}\n\n{tag_line}请翻译以下英文原文：\n\n{chunk}"
 
 
 def user_review(fname: str, table: str, src_chunk: str, zh_chunk: str) -> str:
@@ -157,8 +167,10 @@ def detect_scope(text: str) -> str:
     return ";".join(sorted({w.capitalize() for w in re.findall(r"\b([A-Za-z]+(?:idae|ida))\b", head)}))
 
 
-def yiku_table(chunk_file: Path, domain: str, scope: str = "") -> str:
-    cmd = ["yiku", "table", str(chunk_file), "--domain", domain] + (["--scope", scope] if scope else [])
+def yiku_table(chunk_file: Path, domain: str, scope: str = "", fallback: str | None = None) -> str:
+    """fallback：yiku 的 --fallback（回退领域）；None 用 yiku 默认（分类学回退到进化生物学）。"""
+    cmd = (["yiku", "table", str(chunk_file), "--domain", domain] + (["--scope", scope] if scope else [])
+           + (["--fallback", fallback] if fallback else []))
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"yiku table 失败（没有术语表不开跑）：{r.stderr.strip()[:200]}")
@@ -167,20 +179,50 @@ def yiku_table(chunk_file: Path, domain: str, scope: str = "") -> str:
 
 # ---------------------------------------------------------------- 输出整理
 
+_FENCE = re.compile(r"^```[A-Za-z]*$")
+
+
+def split_sections(zh: str) -> tuple[str, list[str], list[str]]:
+    """把模型输出拆成 (正文, 待定术语行, 术语决策行)。两节在译文之后，顺序不限；每节到下一个节标题或文末为止。"""
+    marks = sorted((i, h) for h in (PENDING_HEAD, DECISION_HEAD) if (i := zh.find(h)) != -1)
+    if not marks:
+        return zh.strip(), [], []
+    sections: dict[str, list[str]] = {PENDING_HEAD: [], DECISION_HEAD: []}
+    for k, (i, h) in enumerate(marks):
+        j = marks[k + 1][0] if k + 1 < len(marks) else len(zh)
+        sections[h] = [ln.strip() for ln in zh[i + len(h):j].splitlines() if ln.strip()]
+    pending = [ln.lstrip("-*• ").strip() for ln in sections[PENDING_HEAD]]
+    return zh[:marks[0][0]].strip(), [ln for ln in pending if ln], sections[DECISION_HEAD]
+
+
 def strip_pending(zh: str) -> tuple[str, list[str]]:
-    """去掉末尾「### 待定术语」节，返回 (正文, 待定术语行)。"""
-    i = zh.find(PENDING_HEAD)
-    if i == -1:
-        return zh.strip(), []
-    lines = [ln.strip().lstrip("-*• ").strip() for ln in zh[i + len(PENDING_HEAD):].splitlines()]
-    return zh[:i].strip(), [ln for ln in lines if ln]
+    """去掉末尾「### 待定术语」「### 术语决策」两节，返回 (正文, 待定术语行)。"""
+    body, pending, _ = split_sections(zh)
+    return body, pending
+
+
+def parse_decisions(lines: list[str], tag: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """宽松解析术语决策行：围栏标记行忽略；是 JSON 对象且 en、zh 都是非空字符串的收下，chunk 一律改写为本块编号
+    （脚本比模型更清楚是哪一块）；其余行原样返回作为无效行。字段是否齐全由 yiku decide validate 严格检查。"""
+    ok: list[dict[str, Any]] = []
+    bad: list[str] = []
+    for ln in lines:
+        if _FENCE.match(ln):
+            continue
+        try:
+            obj = json.loads(ln)
+        except json.JSONDecodeError:
+            bad.append(ln)
+            continue
+        if isinstance(obj, dict) and all(isinstance(obj.get(k), str) and obj[k].strip() for k in ("en", "zh")):
+            ok.append({**obj, "chunk": tag})
+        else:
+            bad.append(ln)
+    return ok, bad
 
 
 class ReviewParseError(ValueError):
     """核译输出不是合法的 JSONL 问题单（也不是 NO_ISSUES）。"""
-
-
-_FENCE = re.compile(r"^```[A-Za-z]*$")
 
 
 def parse_review(text: str) -> list[dict[str, Any]]:
@@ -252,9 +294,11 @@ class Chapter:
         return p if p.suffix == ".txt" else p.with_suffix(".txt")
 
     def prepare(self, domain: str, scope: str | None,
-                table_fn: Callable[[Path, str, str], str] | None = None) -> list[str]:
-        """切块并生成每块术语表；已有则复用。原文或块长变了就报错，避免新旧块混用。"""
-        table_fn = table_fn or yiku_table
+                table_fn: Callable[[Path, str, str], str] | None = None, fallback: str | None = None) -> list[str]:
+        """切块并生成每块术语表；已有则复用。原文或块长变了就报错，避免新旧块混用。
+        fallback：传给 yiku table --fallback 的回退领域（None＝yiku 默认）。"""
+        if table_fn is None:
+            table_fn = yiku_table if fallback is None else (lambda f, d, s: yiku_table(f, d, s, fallback))
         if not self.source.exists():
             raise FileNotFoundError(f"找不到原文 {self.source}")
         text = _read(self.source).replace("\r\n", "\n")
@@ -336,8 +380,20 @@ def _check_resume(ch: Chapter, kind: str, ext: str, ids: list[str], reasons: dic
             f"{ch.name}：{kind} 已有产物与当前设置不一致（{shown}{more}）。续跑会混用不同来源的块；"
             "确要重做这些块请加 --force（会删除它们的已有产物，初译重做时一并删除对应的核译产物）")
     for c in reasons:
-        for k, e in ((kind, ext), (kind, "meta.json"), (kind, "suspect.md")) + ((("review", "jsonl"), ("review", "meta.json")) if kind == "out" else ()):
+        for k, e in ((kind, ext), (kind, "meta.json"), (kind, "suspect.md")) + ((("review", "jsonl"), ("review", "meta.json"), ("decisions", "jsonl"), ("decisions", "invalid.txt")) if kind == "out" else ()):
             ch.path(k, c, e).unlink(missing_ok=True)
+
+
+def _save_decisions(ch: Chapter, cid: str, text: str) -> list[dict[str, Any]]:
+    """解析该块输出里的「### 术语决策」，存 decisions/cNN.jsonl；格式不对的行存 cNN.invalid.txt。"""
+    ok, bad = parse_decisions(split_sections(text)[2], f"{ch.name}/{cid}")
+    _write(ch.path("decisions", cid, "jsonl"), "".join(json.dumps(d, ensure_ascii=False) + "\n" for d in ok))
+    inv = ch.path("decisions", cid, "invalid.txt")
+    if bad:
+        _write(inv, "\n".join(bad) + "\n")
+    else:
+        inv.unlink(missing_ok=True)
+    return ok
 
 
 def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
@@ -350,12 +406,14 @@ def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller:
     def one(cid: str) -> str | None:
         src = ch.text("chunks", cid, "txt")
         terms = ch.text("terms", cid, "md")
-        text, _ = caller(engine, system, user_translate(terms, src), tag=f"{ch.name}/{cid}", usage_file=usage_file)
+        text, _ = caller(engine, system, user_translate(terms, src, f"{ch.name}/{cid}"), tag=f"{ch.name}/{cid}",
+                         usage_file=usage_file)
         body = strip_pending(text)[0]
         if len(src) > 500 and zh_ratio(body, src) < MIN_ZH_RATIO:
             _write(ch.path("out", cid, "suspect.md"), text)
             return f"{cid} 疑似拒译或截断（汉字/原文字符 {zh_ratio(body, src):.3f}），已存 {cid}.suspect.md"
         _write(ch.path("out", cid, "md"), text)
+        _save_decisions(ch, cid, text)
         _write_meta(ch, "out", cid, engine, system, terms)
         return None
 
@@ -441,10 +499,31 @@ def merge_translation(ch: Chapter, ids: list[str]) -> str:
     if pending:
         rows = ["English\t所用译法\t理由"] + ["\t".join((c + ["", ""])[:3]) for c in pending.values()]
         _write(ch.dir / "pending_terms.tsv", "\n".join(rows) + "\n")
+    ndec = merge_decisions(ch, ids)
     if ch.merged.exists():
-        return f"已存在 {ch.merged.name}，不覆盖（删除后可重新合并）；待定术语 {len(pending)} 条"
+        return f"已存在 {ch.merged.name}，不覆盖（删除后可重新合并）；待定术语 {len(pending)} 条；术语决策 {ndec} 条"
     _write(ch.merged, "\n\n".join(bodies) + "\n")
-    return f"已合并 {len(ids)} 块 -> {ch.merged}；待定术语 {len(pending)} 条"
+    return f"已合并 {len(ids)} 块 -> {ch.merged}；待定术语 {len(pending)} 条；术语决策 {ndec} 条"
+
+
+def merge_decisions(ch: Chapter, ids: list[str]) -> int:
+    """合并各块术语决策 -> <章>/term_decisions.jsonl，并重写全书汇总 <书>/核译/term_decisions.jsonl。返回本章条数。
+    优先读 decisions/cNN.jsonl；没有（旧产物）就从 out/cNN.md 现解析。"""
+    rows: list[str] = []
+    for c in ids:
+        p = ch.path("decisions", c, "jsonl")
+        if p.exists():
+            rows.extend(ln for ln in _read(p).splitlines() if ln.strip())
+        elif ch.path("out", c, "md").exists():
+            ok, _bad = parse_decisions(split_sections(ch.text("out", c, "md"))[2], f"{ch.name}/{c}")
+            rows.extend(json.dumps(d, ensure_ascii=False) for d in ok)
+    rows = list(dict.fromkeys(rows))
+    _write(ch.dir / DECISIONS_FILE, "".join(r + "\n" for r in rows))
+    book_rows: list[str] = []
+    for f in sorted((ch.book / "核译" / "direct").glob(f"*/{DECISIONS_FILE}")):
+        book_rows.extend(ln for ln in _read(f).splitlines() if ln.strip())
+    _write(ch.book / "核译" / DECISIONS_FILE, "".join(r + "\n" for r in dict.fromkeys(book_rows)))
+    return len(rows)
 
 
 def merge_review(ch: Chapter, ids: list[str]) -> tuple[int, int]:

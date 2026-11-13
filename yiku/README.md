@@ -24,14 +24,25 @@ yiku pair en.pdf zh.pdf --source mayr1982 --domain 科学史 --auto --out review
 yiku import review.tsv --source mayr1982 --domain 科学史 --page-col 页码 --context-col 上下文
 yiku paren 洪德元2016.pdf --source hong2016 --domain 进化生物学 --out paren.tsv
 
-yiku table chapter.txt --domain 分类学 --scope Sabellidae   # 术语表 → 贴进任何模型的提示词
-yiku check chapter.txt chapter_zh.md --domain 分类学        # 译文术语一致性（退出码 1 = 有问题）
+yiku table chapter.txt --domain 分类学 --scope Sabellidae   # 术语表 → 贴进任何模型的提示词（HARD 必用 / SOFT 先判义项）
+yiku table chapter.txt --domain 分类学 --fallback 进化生物学  # 回退领域（缺省：分类学→进化生物学；none=不回退）
+yiku check chapter.txt chapter_zh.md --domain 分类学        # 译文术语一致性（退出码 1 = 有错误；「提示」不算）
+yiku check chapter.txt chapter_zh.md --domain 分类学 --decisions term_decisions.jsonl  # SOFT 按义项对照决策日志
+yiku decide validate term_decisions.jsonl                   # 术语决策日志：格式
+yiku decide review term_decisions.jsonl --domain 分类学     # 列出须主会话裁定的（多译名、无出处、zh 不在候选）
+yiku decide apply term_decisions.jsonl --book Handbook      # 写回：候选，来源 决策_Handbook；--verified 才记已核
 yiku lookup population --domain 进化生物学
 yiku review export queue.tsv && yiku review apply queue.tsv # 裁定候选
 yiku wikidata Maldanidae --taxon                            # 网络线索，入库为 external 候选
 yiku stats                                                  # 统计 + 未解决冲突
 ```
 支持的格式：有文本层 PDF、扫描版 PDF（RapidOCR）、EPUB、DOCX、HTML、TXT/MD。
+
+## HARD / SOFT 与决策日志
+- **HARD**（必用）：学名（拉丁名，同级最优来源一致）；非学名则本领域「所有」已核来源给出同一个中文名。
+- **SOFT**：其余——多个已核译名（同级冲突 ⚠ 或层级不同 ★首选）、只有候选、只在回退领域有。表中逐个译名列出来源页码、层级、状态、定义语境（`context` 列）和至多 2 条中文用例（来自 docstore，可选，没有则略过）。
+- 回退领域的译名永远排在本领域之后，不会压过本领域已核译名；整表 SOFT 节受 `--max-chars`（默认 9000）约束，HARD 不截断。
+- 决策日志 `term_decisions.jsonl`：`{en, zh, sense, reason, source, chunk}` 一行一个；`decide apply` 写成候选（来源 `决策_<书>`，层级 9，不会压过杨孙等一级来源）。
 
 ## 局限（已知）
 - `pair` 的位置映射假定译本是全译、章序一致；节译或改编会降低准确度，章数对不上时退回整书映射（误差更大）。

@@ -24,6 +24,9 @@ KIND_TIER = {
 }
 STATUSES = ("已核", "候选", "否决")
 DOMAINS = ("分类学", "进化生物学", "科学史", "分子系统学")  # 常用领域；'*' = 通用
+# 默认的跨领域回退：自域查不到（或只有候选）时，再看这些领域的译名，仅作参考，永不压过自域已核。
+# 例：环节动物书（分类学）里的 homoplasy、adaptive radiation 等通用进化术语，自域没有时可参考进化生物学。
+DEFAULT_FALLBACK = {"分类学": ["进化生物学"]}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(
@@ -118,36 +121,63 @@ class Hit:
     note: str | None
     context: str | None = None
     year: int | None = None
+    fallback: bool = False  # True = 来自回退领域（不是本书领域），只作参考
 
     def cite(self) -> str:
         return f"{self.source}" + (f" p.{self.page}" if self.page else "")
 
 
-def candidates(con, en: str, domain: str = "*", scope: set[str] | None = None) -> list[Hit]:
+def resolve_fallback(domain: str, spec: str | list[str] | None) -> list[str]:
+    """回退领域列表。spec=None 取默认（DEFAULT_FALLBACK）；'none'/空串/[] 表示不回退；
+    字符串用逗号或分号分隔。本书领域自身和通用域 '*' 不算回退。"""
+    if spec is None:
+        out = list(DEFAULT_FALLBACK.get(domain, []))
+    elif isinstance(spec, str):
+        out = [x.strip() for x in re.split(r"[,;，；]", spec) if x.strip() and x.strip().lower() != "none"]
+    else:
+        out = [x for x in spec if x]
+    return [d for d in dict.fromkeys(out) if d not in (domain, "*")]
+
+
+def candidates(con, en: str, domain: str = "*", scope: set[str] | None = None,
+               fallback_domains: list[str] | None = None) -> list[Hit]:
     """某英文术语的全部译名，按可信度排序：已核 > 候选；领域吻合 > 通用；类群吻合 > 通用；来源层级；
     同层级出版年新者优先（用户 2026-11-12：同一作者新旧版不一致，以新的为准）。
-    否决的不返回；其他领域的专用译名不返回（避免把植物学用字带进动物学）。"""
+    否决的不返回；其他领域的专用译名默认不返回（避免把植物学用字带进动物学）。
+
+    fallback_domains：自域（含通用 '*'）的全部命中排完之后，追加这些领域的命中，Hit.fallback=True。
+    回退命中永远排在自域命中之后，即使它的来源层级更高。"""
     scope = scope or set()
-    rows = con.execute(
-        "SELECT t.*, s.tier, s.year FROM terms t JOIN sources s ON s.key=t.source "
-        "WHERE t.en_norm=? AND t.status!='否决' AND (t.domain='*' OR t.domain=?)",
-        (norm(en), domain)).fetchall()
-    out = []
-    for r in rows:
-        sc = {x.strip() for x in r["scope"].split(";")}
-        if "*" not in sc and not (sc & scope):
-            continue  # 只适用于别的类群
-        out.append((r, sc))
+    fb = [d for d in dict.fromkeys(fallback_domains or []) if d not in (domain, "*")]
 
-    def key(item):
-        r, sc = item
-        return (r["status"] != "已核", r["domain"] == "*", "*" in sc, r["tier"], -(r["year"] or 0))
+    def fetch(domains: list[str]) -> list[tuple]:
+        marks = ",".join("?" * len(domains))
+        rows = con.execute(
+            "SELECT t.*, s.tier, s.year FROM terms t JOIN sources s ON s.key=t.source "
+            f"WHERE t.en_norm=? AND t.status!='否决' AND t.domain IN ({marks})",
+            (norm(en), *domains)).fetchall()
+        out = []
+        for r in rows:
+            sc = {x.strip() for x in r["scope"].split(";")}
+            if "*" not in sc and not (sc & scope):
+                continue  # 只适用于别的类群
+            out.append((r, sc))
 
-    out.sort(key=key)
-    return [Hit(r["en"], r["zh"], r["domain"], r["scope"], r["source"], r["tier"], r["status"],
-                r["page"], r["note"], r["context"], r["year"]) for r, _ in out]
+        def key(item):
+            r, sc = item
+            return (r["status"] != "已核", r["domain"] == "*", "*" in sc, r["tier"], -(r["year"] or 0))
+
+        out.sort(key=key)
+        return out
+
+    def hit(r, fallback: bool) -> Hit:
+        return Hit(r["en"], r["zh"], r["domain"], r["scope"], r["source"], r["tier"], r["status"],
+                   r["page"], r["note"], r["context"], r["year"], fallback)
+
+    own = [hit(r, False) for r, _ in fetch(["*", domain])]
+    return own + ([hit(r, True) for r, _ in fetch(fb)] if fb else [])
 
 
-def best(con, en, domain="*", scope=None) -> Hit | None:
-    c = candidates(con, en, domain, scope)
+def best(con, en, domain="*", scope=None, fallback_domains=None) -> Hit | None:
+    c = candidates(con, en, domain, scope, fallback_domains)
     return c[0] if c else None

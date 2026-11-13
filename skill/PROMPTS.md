@@ -9,8 +9,9 @@
 先读 ~/.claude/skills/yzz-translate/RULES.md、domains/<D>.md 与 STYLE.md，并严格执行。
 第一步 术语预扫：通读原文，列出本章术语（含术语表没有的），写入 核译/tmp/chNN/terms_scan.tsv，列为 English\t义项\t译法\t依据（表中已核/经典译本/暂定）。
 第二步 翻译：把 src_en/chNN.txt 译成中文，写入 译文/chNN_<中文章名>.md（Markdown：# 章标题，## / ### 小节，图注用 **图 N.N** …）。术语按 terms_scan.tsv。
-本章术语表（用法见表头；义项不同或不明的登记到 核译/tmp/chNN/uncertain_terms.tsv）：
+本章术语表（HARD 必用；SOFT 先判义项再取舍，用法见表头）：
 <粘贴 yiku table src_en/chNN.txt --domain <D> 的输出>
+SOFT 术语的每个取舍登记到 核译/tmp/chNN/term_decisions.jsonl（一行一个 JSON：en, zh, sense, reason, source, chunk；source 没有依据写空串）。
 每译完一节就写盘（追加）。不要自造科名、属名。
 结束回报 ≤150 字。
 ```

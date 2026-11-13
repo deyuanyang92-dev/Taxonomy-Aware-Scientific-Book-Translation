@@ -131,7 +131,7 @@
 
 工程目录 `<书>/`：`src_en/` 原文、`译文/` 译文、`核译/` 问题与报告、`脚本/` 本书脚本。`S=~/.claude/skills/yzz-translate/scripts`。
 
-1. **术语表**：`yiku table src_en/chNN.txt --domain 分类学 [--scope 类群]`。
+1. **术语表**：`yiku table src_en/chNN.txt --domain 分类学 [--scope 类群] [--fallback 领域]`。表分 HARD（必用）与 SOFT（先判义项，附出处、层级、定义语境与中文用例；分类学书缺省回退到进化生物学）。初译者对 SOFT 术语的取舍记入 `term_decisions.jsonl`，主会话用 `yiku decide review/apply` 裁定写回。
 2. **缺口**：本章有、库里没有的术语 → 按第 3 节查；名词委用 `python3 $S/termonline_lookup.py 缺口.tsv 结果.tsv`；类群名查 WoRMS（`oworms api`）。
 3. **例句检索**（新）：本章形态段落涉及的结构（口前叶、疣足、刚毛……），从知识库检索 2–3 段志书同类描述，作为写法示例注入提示词。理由：MAPS（He et al., TACL 2024）表明先给模型关键词、主题和相关示例能改善译文；arXiv 2503.05010 专门比较「检索」与「生成」两种领域知识用法（结论未细读，未确证）。
 4. **初译**（模型 A）：`python3 $S/run_batches.py <书> --mode translate --chapters chNN --engine <A> --domain 分类学`。注入 RULES、领域包、STYLE、术语表、例句。

@@ -419,3 +419,109 @@ def test_run_direct_same_engine_refused(book, monkeypatch):
     with pytest.raises(SystemExit) as e:
         run_batches.run_direct(a, book, "")
     assert "不能用同一个模型" in str(e.value)
+
+
+# ---------- 术语决策（term_decisions.jsonl） ----------
+
+DEC1 = '{"en":"cirrus","zh":"须","sense":"沙蚕背须","reason":"本块指背须","source":"杨德渐2006 p.0168","chunk":"乱填"}'
+DEC2 = '{"en":"palp","zh":"触须","sense":"口器","reason":"无","source":""}'
+
+
+def zh_with_decisions(user):
+    return ("沙蚕" * 400 + "\n\n### 待定术语\nnuchal organ｜项器｜暂定\n\n### 术语决策\n```\n"
+            + DEC1 + "\n" + DEC2 + "\n这行不是JSON\n{\"en\":\"x\"}\n```\n")
+
+
+def test_build_system_translate_asks_for_decision_block_with_schema():
+    s = dm.build_system("translate", "分类学")
+    assert "### 术语决策" in s and "HARD" in s and "SOFT" in s
+    for k in ('"en"', '"zh"', '"sense"', '"reason"', '"source"', '"chunk"'):
+        assert k in s
+    assert "没有依据就写空串" in s
+
+
+def test_user_translate_carries_chunk_tag_and_keeps_prefix():
+    u = dm.user_translate("TBL", "text", "ch05/c03")
+    assert u.startswith("本块术语表（来自 yiku）：\nTBL") and "本块编号：ch05/c03" in u and u.endswith("text")
+    assert "本块编号" not in dm.user_translate("TBL", "text")
+
+
+def test_split_sections_any_order_and_strip_pending_ignores_decisions():
+    body, pend, dec = dm.split_sections("译文\n\n### 待定术语\n- a｜甲｜暂定\n\n### 术语决策\n{\"en\":\"a\"}\n")
+    assert (body, pend, dec) == ("译文", ["a｜甲｜暂定"], ['{"en":"a"}'])
+    body2, pend2, dec2 = dm.split_sections("译文\n### 术语决策\n{\"en\":\"a\"}\n### 待定术语\nb｜乙｜暂定\n")
+    assert (body2, pend2, dec2) == ("译文", ["b｜乙｜暂定"], ['{"en":"a"}'])
+    assert dm.strip_pending("译文\n### 术语决策\n{\"en\":\"a\"}\n") == ("译文", [])
+    assert dm.split_sections("只有译文") == ("只有译文", [], [])
+
+
+def test_parse_decisions_overrides_chunk_and_collects_invalid():
+    ok, bad = dm.parse_decisions(["```", DEC1, DEC2, "这行不是JSON", '{"en":"x"}', "```"], "ch05/c02")
+    assert [d["en"] for d in ok] == ["cirrus", "palp"] and all(d["chunk"] == "ch05/c02" for d in ok)
+    assert bad == ["这行不是JSON", '{"en":"x"}']
+
+
+def test_translate_saves_decisions_per_chunk_and_merges_chapter_and_book(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    f = Fake(zh_with_decisions)
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", f)
+    assert "本块编号：ch05/c00" in f.calls[0][1]
+    per = (ch.dir / "decisions" / "c00.jsonl").read_text(encoding="utf8").splitlines()
+    assert [json.loads(x)["chunk"] for x in per] == ["ch05/c00", "ch05/c00"]
+    assert (ch.dir / "decisions" / "c00.invalid.txt").read_text(encoding="utf8").splitlines() == ["这行不是JSON", '{"en":"x"}']
+    msg = dm.merge_translation(ch, ids)
+    assert f"术语决策 {2 * len(ids)} 条" in msg
+    chap = [json.loads(x) for x in (ch.dir / "term_decisions.jsonl").read_text(encoding="utf8").splitlines()]
+    assert len(chap) == 2 * len(ids) and {d["chunk"] for d in chap} == {f"ch05/{i}" for i in ids}
+    book_file = book / "核译" / "term_decisions.jsonl"
+    assert len(book_file.read_text(encoding="utf8").splitlines()) == 2 * len(ids)
+    merged = ch.merged.read_text(encoding="utf8")
+    assert "术语决策" not in merged and "cirrus" not in merged and "待定术语" not in merged
+
+
+def test_merge_decisions_falls_back_to_out_files_and_is_idempotent(book):
+    ch = dm.Chapter(book, "ch05", 1000)
+    ids = ch.prepare("分类学", "Nereididae")
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_with_decisions))
+    for p in (ch.dir / "decisions").glob("*"):  # 旧产物没有 decisions/：从 out/cNN.md 现解析
+        p.unlink()
+    assert dm.merge_decisions(ch, ids) == 2 * len(ids)
+    assert dm.merge_decisions(ch, ids) == 2 * len(ids)
+    assert len((book / "核译" / "term_decisions.jsonl").read_text(encoding="utf8").splitlines()) == 2 * len(ids)
+
+
+def test_force_retranslate_drops_old_decisions(book):
+    ch, ids = translated(book)
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(zh_with_decisions), force=True)  # zh_for 无决策 -> 先造有的
+    assert (ch.dir / "decisions" / "c00.jsonl").exists()
+    dm.run_translate(ch, ids, "claude-opus", "SYS", Fake(zh_for), force=True)
+    assert (ch.dir / "decisions" / "c00.jsonl").read_text(encoding="utf8") == ""  # 重做后是新输出的（空）决策，不留旧的
+    assert not (ch.dir / "decisions" / "c00.invalid.txt").exists()
+
+
+def test_yiku_table_passes_fallback(monkeypatch, tmp_path):
+    seen = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, "TABLE", "")
+
+    monkeypatch.setattr(dm.subprocess, "run", fake_run)
+    assert dm.yiku_table(tmp_path / "c.txt", "分类学", "Nereididae", "进化生物学") == "TABLE"
+    assert seen[-1][-2:] == ["--fallback", "进化生物学"]
+    dm.yiku_table(tmp_path / "c.txt", "分类学")
+    assert "--fallback" not in seen[-1]
+
+
+def test_agent_mode_prompts_describe_hard_soft_and_decisions(book, monkeypatch):
+    monkeypatch.setattr(run_batches, "term_table", lambda src: "TABLE")
+    p = run_batches.translate_prompt(book, "ch05", "")
+    assert "HARD" in p and "SOFT" in p and "term_decisions.jsonl" in p and '"sense"' in p
+    r = run_batches.review_prompt(book, "b01", [{"src": "src_en/ch05.txt"}], "")
+    assert "--decisions" in r and "HARD" in r
+
+
+def test_cli_help_mentions_fallback():
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "run_batches.py"), "--help"], capture_output=True, text=True)
+    assert "--fallback" in r.stdout

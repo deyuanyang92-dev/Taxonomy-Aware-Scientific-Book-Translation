@@ -10,6 +10,7 @@ import urllib.request
 from pathlib import Path
 
 from . import db as D
+from . import decide as DC
 from . import extract as X
 from . import ingest as I
 from . import match as M
@@ -108,8 +109,12 @@ def cmd_pair(a, con):
           f"--domain {a.domain} --page-col 页码 --context-col 上下文")
 
 
+def _fallback(a):
+    return D.resolve_fallback(a.domain, getattr(a, "fallback", None))
+
+
 def cmd_lookup(a, con):
-    cs = D.candidates(con, a.term, a.domain, _scope(a.scope))
+    cs = D.candidates(con, a.term, a.domain, _scope(a.scope), _fallback(a))
     if not cs:
         other = con.execute("SELECT DISTINCT domain FROM terms WHERE en_norm=? AND status!='否决' ORDER BY domain",
                             (D.norm(a.term),)).fetchall()
@@ -119,21 +124,65 @@ def cmd_lookup(a, con):
         else:
             print("库中无此术语")
     for h in cs:
-        print(f"{h.zh}\t{h.status}\t领域={h.domain}\t范围={h.scope}\t{h.cite()}\t层级{h.tier}"
-              f"\t{h.year or '-'}\t{h.note or ''}")
+        print(f"{h.zh}\t{h.status}\t领域={h.domain}{'(回退)' if h.fallback else ''}\t范围={h.scope}\t{h.cite()}"
+              f"\t层级{h.tier}\t{h.year or '-'}\t{h.note or ''}")
 
 
 def cmd_table(a, con):
-    print(M.term_table(con, Path(a.src).read_text(encoding="utf8"), a.domain, _scope(a.scope)))
+    usage = False if getattr(a, "no_usage", False) else None
+    print(M.term_table(con, Path(a.src).read_text(encoding="utf8"), a.domain, _scope(a.scope),
+                       _fallback(a), usage, getattr(a, "max_chars", M.DEFAULT_MAX_CHARS)))
 
 
 def cmd_check(a, con):
+    decisions: list[dict] = []
+    if getattr(a, "decisions", None):
+        decisions, errs = DC.read_files(a.decisions)
+        for e in errs:
+            print(f"决策日志忽略：{e}", file=sys.stderr)
     issues = M.check(con, Path(a.src).read_text(encoding="utf8"), Path(a.zh).read_text(encoding="utf8"),
-                     a.domain, _scope(a.scope))
+                     a.domain, _scope(a.scope), _fallback(a), decisions)
     for i in issues:
         print(i.line())
-    print(f"共 {len(issues)} 处", file=sys.stderr)
-    return 1 if issues else 0
+    errors = sum(1 for i in issues if i.level == "error")
+    print(f"共 {len(issues)} 处（错误 {errors}，提示 {len(issues) - errors}）", file=sys.stderr)
+    return 1 if errors else 0
+
+
+def cmd_decide(a, con):
+    if a.action == "validate":
+        bad = 0
+        for f in a.files:
+            ok, errs = DC.read_files([f])
+            for e in errs:
+                print(e)
+            print(f"{f}：{len(ok)} 条合法，{len(errs)} 处错误")
+            bad += len(errs)
+        return 1 if bad else 0
+    ok, errs = DC.read_files(a.files)
+    for e in errs:
+        print(f"忽略：{e}", file=sys.stderr)
+    if a.action == "review":
+        todo = DC.review(con, ok, a.domain, _scope(a.scope), _fallback(a))
+        for r in todo:
+            print(f"{r['en']} → {r['zh']}｜义项：{r['sense']}｜{';'.join(r['chunks'][:3])}｜{'；'.join(r['flags'])}"
+                  f"｜理由：{r['reason']}｜库中候选：{'、'.join(r['candidates']) or '无'}")
+        if a.out:
+            Path(a.out).write_text("".join(json.dumps({k: v for k, v in r.items() if k not in ("count", "chunks", "candidates")},
+                                                      ensure_ascii=False) + "\n" for r in todo), encoding="utf8")
+            print(f"{len(todo)} 条写入 {a.out}（可在其中加 \"accept\": false 驳回，再 apply；flags 字段会被忽略）")
+        print(f"共 {len(ok)} 条决策，须主会话裁定 {len(todo)} 条", file=sys.stderr)
+        return 0
+    if not a.book:
+        print("apply 须指定 --book", file=sys.stderr)
+        return 2
+    if errs and not a.skip_invalid:
+        print(f"有 {len(errs)} 处格式错误，未写入；修正后重试，或加 --skip-invalid 只写合法的", file=sys.stderr)
+        return 1
+    r = DC.apply(con, ok, a.book, a.domain, a.scope or "*", a.verified)
+    print(f"新增 {r.added} 条、升级为已核 {r.upgraded} 条、并入义项 {r.merged} 条、驳回跳过 {r.skipped} 条、无效 {r.invalid} 条"
+          f"（来源 决策_{a.book}，状态 {'已核' if a.verified else '候选'}）")
+    return 0
 
 
 def cmd_review(a, con):
@@ -258,10 +307,14 @@ def build_parser():
     s.add_argument("--out", required=True)
     s.add_argument("--ocr", default="auto", choices=["auto", "always", "never"])
 
+    fb_help = ("回退领域：本领域没有时参考的其他领域（逗号/分号分隔；none=不回退）。"
+               "默认 分类学->进化生物学，其他领域不回退")
+
     s = sub.add_parser("lookup", help="查一个术语的全部译名")
     s.add_argument("term")
     s.add_argument("--domain", default="*")
     s.add_argument("--scope")
+    s.add_argument("--fallback", help=fb_help)
 
     for name, hlp in (("table", "为原文生成术语表（贴进任何模型的提示词）"), ("check", "检查译文术语一致性")):
         s = sub.add_parser(name, help=hlp)
@@ -270,6 +323,23 @@ def build_parser():
             s.add_argument("zh")
         s.add_argument("--domain", default="*")
         s.add_argument("--scope", help="类群，如 Sabellidae;Serpulidae")
+        s.add_argument("--fallback", help=fb_help)
+        if name == "table":
+            s.add_argument("--no-usage", action="store_true", help="不从资料库取中文用例")
+            s.add_argument("--max-chars", type=int, default=M.DEFAULT_MAX_CHARS, help="SOFT 节的长度预算（HARD 不截断）")
+        else:
+            s.add_argument("--decisions", nargs="+", help="术语决策日志 JSONL（文件或目录）；给了才按义项核对 SOFT 术语")
+
+    s = sub.add_parser("decide", help="术语决策日志：校验 / 列出须裁定的 / 写回术语库")
+    s.add_argument("action", choices=["validate", "review", "apply"])
+    s.add_argument("files", nargs="+", help="term_decisions.jsonl（或目录）")
+    s.add_argument("--domain", default="*")
+    s.add_argument("--scope")
+    s.add_argument("--fallback", help=fb_help)
+    s.add_argument("--book", help="apply：书名，来源记为 决策_<book>")
+    s.add_argument("--verified", action="store_true", help="apply：记为已核（默认候选；须主会话确认后才用）")
+    s.add_argument("--skip-invalid", action="store_true", help="apply：跳过格式错误的行而不是整体拒绝")
+    s.add_argument("--out", help="review：把须裁定的条目写成 JSONL，供编辑后 apply")
 
     s = sub.add_parser("review", help="导出候选供裁定 / 应用裁定")
     s.add_argument("action", choices=["export", "apply"])

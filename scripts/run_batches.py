@@ -30,11 +30,15 @@ DOMAIN = '分类学'
 DIRECT_ENGINES = ('deepseek-flash', 'deepseek-v4-pro', 'claude-sonnet', 'claude-opus')
 
 
+FALLBACK = None   # yiku --fallback；None = yiku 默认（分类学书回退到进化生物学）
+
+
 def term_table(src):
     """术语表来自 yiku 术语库；类群取原文前 5 行的 -idae/-ida 名（与旧 term_table.py 相同）。"""
     head = ' '.join(pathlib.Path(src).read_text(encoding='utf8').splitlines()[:5])
     scope = ';'.join(sorted({w.capitalize() for w in re.findall(r'\b([A-Za-z]+(?:idae|ida))\b', head)}))
-    cmd = ['yiku', 'table', str(src), '--domain', DOMAIN] + (['--scope', scope] if scope else [])
+    cmd = (['yiku', 'table', str(src), '--domain', DOMAIN] + (['--scope', scope] if scope else [])
+           + (['--fallback', FALLBACK] if FALLBACK else []))
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.stdout if r.returncode == 0 else f'（yiku table 失败：{r.stderr.strip()[:200]}）'
 
@@ -50,12 +54,12 @@ def review_prompt(B, bid, batch, notes):
     return f"""工作目录 {B}。不要再派生子代理/子任务。
 先读 {SKD}/RULES.md、{SKD}/domains/{DOMAIN}.md、{SKD}/STYLE.md，以及 {SKD}/PROMPTS.md 的「核译输出要求」，严格执行。
 本批范围：{'、'.join(chs)}。英文 src_en/<章>.txt；中译 译文/<章>*.md（用 ls 确认文件名）。临时脚本放 核译/tmp/{bid}/。
-各章术语表（用法见表头；术语按「英文 + 义项」核，见 RULES.md 第 2 节；义项不同或不明的登记 核译/tmp/{bid}/uncertain_terms.tsv）：
+各章术语表（分 HARD 必用 / SOFT 先判义项再取舍，用法见表头；术语按「英文 + 义项」核，见 RULES.md 第 2 节；SOFT 术语若译文取舍与术语表不符，核对是否有出处、义项是否吻合；义项不同或不明的登记 核译/tmp/{bid}/uncertain_terms.tsv）：
 {tables}
 {notes}
 输出：核译/issues/{bid}.jsonl（每核完一节就追加写入）。
 结束前运行 python3 {S}/apply_issues.py {B} 核译/issues/{bid}.jsonl --dry，修好所有拒绝行。不要去掉 --dry，不要改译文。
-结束前另跑 yiku check src_en/<章>.txt 译文/<章>*.md --domain {DOMAIN}，把术语不一致处并入 JSONL。
+结束前另跑 yiku check src_en/<章>.txt 译文/<章>*.md --domain {DOMAIN}（若存在 核译/term_decisions.jsonl，加 --decisions 核译/term_decisions.jsonl），把术语不一致处（「提示」不算错误，核对后再定）并入 JSONL。
 最后回复 ≤150 字：各类条数 + 最严重 2–3 处。"""
 
 
@@ -64,8 +68,9 @@ def translate_prompt(B, ch, notes):
 先读 {SKD}/RULES.md、{SKD}/domains/{DOMAIN}.md 与 {SKD}/STYLE.md，并严格执行。
 第一步 术语预扫：通读原文，列出本章术语（含术语表没有的），写入 核译/tmp/{ch}/terms_scan.tsv，列为 English\t义项\t译法\t依据（表中已核/经典译本/暂定）。
 第二步 翻译：把 src_en/{ch}.txt 译成中文，写入 译文/{ch}_<中文章名>.md（Markdown：# 章标题，## / ### 小节，图注用 **图 N.N** …）。术语按 terms_scan.tsv。
-本章术语表（用法见表头；义项不同或不明的登记到 核译/tmp/{ch}/uncertain_terms.tsv）：
+本章术语表（HARD 必用；SOFT 先读「定义/出处语境」判断本章义项再取舍，用法见表头；义项不同或不明的登记到 核译/tmp/{ch}/uncertain_terms.tsv）：
 {term_table(src_path(B, ch))}
+SOFT 术语的每个取舍，都追加登记到 核译/tmp/{ch}/term_decisions.jsonl，一行一个 JSON：{{"en":…,"zh":…,"sense":义项简述,"reason":理由,"source":依据的术语表来源及页码（没有就写空串，不编造）,"chunk":"{ch}"}}。HARD 术语不用写。
 {notes}
 每译完一节就写盘（追加）。不自造科名、属名。
 最后回复 ≤150 字。"""
@@ -101,7 +106,7 @@ def run_direct(a, B, notes):
     code = 0
     for chn in chapters:
         ch = dm.Chapter(B, chn, a.chunk_chars)
-        ids = ch.prepare(a.domain, a.scope)
+        ids = ch.prepare(a.domain, a.scope, fallback=getattr(a, 'fallback', None))
         (ch.dir / f'system_{a.mode}.md').write_text(system, encoding='utf8')
         print(f'{chn}：{len(ids)} 块，系统提示词 {len(system)} 字符 -> {ch.dir}')
         if a.dry:
@@ -144,6 +149,7 @@ def main():
     ap.add_argument('--chapters', default='')
     ap.add_argument('--notes', default='', help='附加说明文件（本批已知系统性问题等），内容原样插入提示词')
     ap.add_argument('--domain', default='分类学', help='yiku 领域')
+    ap.add_argument('--fallback', default=None, help='yiku --fallback 回退领域（逗号/分号分隔，none=不回退）；缺省用 yiku 默认：分类学回退到进化生物学')
     ap.add_argument('--scope', default=None, help='直调模式：yiku --scope 类群（科名，分号分隔）；缺省从原文前 5 行自动取 -idae/-ida')
     ap.add_argument('--chunk-chars', type=int, default=9000, help='直调模式：每块约多少字符')
     ap.add_argument('--book-desc', default='', help='直调模式：写进系统提示词的书目说明，如「（Handbook of Zoology 第4卷 沙蚕科 一章的一部分）」')
@@ -153,8 +159,9 @@ def main():
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
     B = pathlib.Path(a.book).resolve()
-    global DOMAIN
+    global DOMAIN, FALLBACK
     DOMAIN = a.domain
+    FALLBACK = a.fallback
     notes = pathlib.Path(a.notes).read_text() if a.notes else ''
     if a.engine in DIRECT_ENGINES:
         sys.exit(run_direct(a, B, notes))

@@ -49,7 +49,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 0. **定领域**：确认本书的 yiku 领域名，下文记作 `<D>`；确认 `domains/<D>.md` 已存在。
 1. **切章**：运行 `python3 $S/extract.py <pdf> <起页> <止页> > src_en/chNN.txt`。扫描本用 `python3 $S/ocr_rapid.py <pdf> <outdir>`，不要用 tesseract。
 2. **术语先行**（在初译之前完成）：
-   1. 运行 `yiku table src_en/chNN.txt --domain <D> [--scope <类群>]`，得到本章术语表。
+   1. 运行 `yiku table src_en/chNN.txt --domain <D> [--scope <类群>] [--fallback <领域>]`，得到本章术语表。表分 **HARD**（必用：学名与本领域已核译名一致者）和 **SOFT**（多译名/多义项/候选/跨领域〔回退〕，附出处页码、层级、定义语境和中文用例，由译者按本书义项取舍）。`--fallback` 缺省：分类学书回退到进化生物学，其他领域不回退。
    2. 找出缺口：本章出现、但术语库里没有的术语。用提示词 C，按 TERMS.md 和领域包列出的权威资料逐个定向查，每条都要写书名和页码。
    3. 仍然查不到的：如果是分类阶元名，按第 5 节拟「暂定」译名；其他术语直接标「暂定」，并保留英文。
 3. **初译**：运行 `python3 $S/run_batches.py <书> --mode translate --chapters chNN --engine <模型A> --domain <D>`。脚本会把 RULES、领域包、STYLE 和本章术语表注入提示词。
@@ -64,7 +64,8 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 4c. **外部审查意见**（Codex 等第二模型）：按 `domains/分类学.md` 第 7 节裁定——忠实度问题对照原文；用字问题先查志书计数与例句再定；逐条写裁定记录；发现一类问题就全书扫同类。
 5. **过闸口**：
    - `apply_issues.py <书> 核译/issues/bNN.jsonl`：只在恰好匹配 1 次时替换；丢失英文或数字的改动自动拒绝。
-   - `yiku check`：检查术语一致性。
+   - `yiku check src zh --domain <D> [--decisions 核译/term_decisions.jsonl]`：HARD 严格检查；SOFT 按术语决策日志检查（同英文+义项必须同译名，不同义项可不同但须登记），没有日志时只给「提示」。
+   - 术语决策：直调初译在译文后输出「### 术语决策」JSONL，脚本按块存 `核译/direct/<章>/decisions/` 并合并为 `核译/term_decisions.jsonl`；`yiku decide validate`（格式）→ `yiku decide review`（列出须主会话裁定的：多译名、无出处、zh 不在候选）→ `yiku decide apply --book <书>`（写回：候选，来源 `决策_<书>`；只有 `--verified` 才记已核）。
    - `drift_check.py <书>`：检查科名漂移。
    - `qa.py <书>`：检查残留英文、标点、空格和 U+3000。
 6. **抽查**：每批随机抽 20 条，由裁定者判断对错。
