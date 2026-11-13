@@ -209,14 +209,53 @@ def test_harvest_pairs_prefers_known_names():
     assert sf.harvest_pairs("见暗蛇潜虫（*Podarke obscura*）。", known={"覆瓦哈鳞虫"}) == {"Podarke obscura": "暗蛇潜虫"}
 
 
+# ---------------------------------------------------------------- 2026-11-14 Harrison ch2.4：句子片段被当成中文名收
+
+def test_harvest_rejects_clause_before_pair():
+    # 名前的整段从句（含 的 并 于 在 …）不是种的中文名；不收，且记入 skipped 交人工
+    cases = [("有的位于基部并伸入体腔", "Aa bb"), ("附着于近端导管的体腔侧缘", "Cc dd"),
+             ("而在白色吻沙蚕", "Ee ff"), ("的琴蛰虫", "Gg hh"), ("好转虫属的多纤毛终端细胞", "Ii jj"),
+             ("被覆在体表的虫", "Mm nn")]
+    for zh, latin in cases:
+        skipped: dict[str, list[str]] = {}
+        assert sf.harvest_pairs(f"{zh}（*{latin}*）。", skipped=skipped) == {}, zh
+        assert skipped == {latin: [zh]}, zh
+
+
+def test_harvest_rejects_bad_length_and_unknown_head():
+    assert sf.harvest_pairs("甲乙丙丁戊己庚辛壬虫（*Aa bb*）。") == {}      # 10 字，超过 8
+    assert sf.harvest_pairs("暗蛇潜虫虫虫虫虫（*Aa bb*）。") == {"Aa bb": "暗蛇潜虫虫虫虫虫"}   # 恰 8 字、虫结尾
+    assert sf.harvest_pairs("暗蛇潜虫虫虫虫虫虫（*Aa bb*）。") == {}         # 9 字
+    assert sf.harvest_pairs("体腔细胞（*Aa bb*）。") == {}                  # 不以通名字结尾
+    assert sf.harvest_pairs("体壁，暗蛇潜虫（*Aa bb*）。") == {"Aa bb": "暗蛇潜虫"}  # 标点本来就断开捕获
+
+
+def test_harvest_accepts_typical_vernacular_heads():
+    for zh in ["铜色巢沙蚕", "龙介虫", "某某蚓", "某某蛭", "琴蛰", "某某介", "某某螺", "某某贝", "某某蟹", "某某虾", "某某鱼"]:
+        assert sf.harvest_pairs(f"{zh}（*Aa bb*）。") == {"Aa bb": zh}, zh
+
+
+def test_harvest_known_name_bypasses_shape_check():
+    # 已由 yiku / --names 确认的名字不套形状规则（如不以通名字结尾、含「有」）
+    assert sf.harvest_pairs("见暗蛇潜（*Aa bb*）。", known={"暗蛇潜"}) == {"Aa bb": "暗蛇潜"}
+    assert sf.harvest_pairs("有孔类（*Aa bb*）。", known={"有孔类"}) == {"Aa bb": "有孔类"}
+    # 已知名只是句子片段的后缀时，仍取已知名（原行为）
+    assert sf.harvest_pairs("有的位于基部并伸入体腔暗蛇潜虫（*Aa bb*）。", known={"暗蛇潜虫"}) == {"Aa bb": "暗蛇潜虫"}
+
+
+def test_collect_names_no_bogus_pair_when_clause_precedes_binomial():
+    t = "有的位于基部并伸入体腔（*Aa bb*），叶须虫科的 *Aa bb* 无体腔膜细胞。<!-- p.1 -->"
+    assert sf.collect_names(t, None, None) == {}
+
+
 def test_collect_names_priority_harvested_yiku_tsv(tmp_path, monkeypatch):
     monkeypatch.setattr(sf, "yiku_names", lambda text, domain="分类学", con=None, db=None: {"Podarke obscura": "YIKU", "Aa bb": "YIKU乙"})
     f = tmp_path / "n.tsv"
     f.write_text("Aa bb\tTSV乙\n", encoding="utf8")
-    t = "暗蛇潜虫（*Podarke obscura*）、乙乙（*Aa bb*）、丙丙（*Cc dd*）。"
+    t = "暗蛇潜虫（*Podarke obscura*）、乙乙虫（*Aa bb*）、丙丙虫（*Cc dd*）。"
     got = sf.collect_names(t, f, "分类学")
-    assert got == {"Podarke obscura": "YIKU", "Aa bb": "TSV乙", "Cc dd": "丙丙"}
-    assert sf.collect_names(t, None, None) == {"Podarke obscura": "暗蛇潜虫", "Aa bb": "乙乙", "Cc dd": "丙丙"}
+    assert got == {"Podarke obscura": "YIKU", "Aa bb": "TSV乙", "Cc dd": "丙丙虫"}
+    assert sf.collect_names(t, None, None) == {"Podarke obscura": "暗蛇潜虫", "Aa bb": "乙乙虫", "Cc dd": "丙丙虫"}
 
 
 # ---------------------------------------------------------------- 2026-11-13 Harrison ch2.2 试跑暴露的误改（合成句，不含书中原文）

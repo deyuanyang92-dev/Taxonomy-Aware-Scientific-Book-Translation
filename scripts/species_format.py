@@ -441,6 +441,19 @@ _PAIR = re.compile(r"([\u4e00-\u9fff]{2,12})（\*([A-Z][a-zë]+ [a-z][a-z\-]+)\*
 _LEAD = re.compile(r"^(?:例如|如|即|为|是|与|和|及|另见|见|检查了|研究了|在|对|把|将|其一为|其中)+")
 
 
+# 种的中文俗名的形状：2–8 个汉字、不含虚词/动词字、以常见通名字结尾。正则会把名前整段从句吞进来
+# （「有的位于基部并伸入体腔（*Anaitides mucosa*」），这些捕获不是名字。已由 yiku / --names 确认的名字不套此规则。
+_FUNC_CHARS = frozenset("的并有在和与于是为被将及或位伸入等而且从把由该此了着过但则即如见以可也都还已能使所当若")
+_VERNACULAR_HEADS = frozenset("虫蚕蚓蛭蛰介螺贝蟹虾鱼蛤蚌蛎蛄蛇蛛蝎蝇蚊蚁蜂蝶蛾星胆参母螅蛸鲸鳗鲨龟蜗蠕蚶蛏蜊蛉")
+_VERNACULAR_LEN = (2, 8)
+
+
+def _looks_like_vernacular(zh: str) -> bool:
+    lo, hi = _VERNACULAR_LEN
+    return (lo <= len(zh) <= hi and re.fullmatch(r"[\u4e00-\u9fff]+", zh) is not None
+            and not _FUNC_CHARS.intersection(zh) and zh[-1] in _VERNACULAR_HEADS)
+
+
 def _longest_known_suffix(cap: str, known: set[str]) -> str:
     return max((k for k in known if len(k) >= 2 and cap.endswith(k)), key=len, default="")
 
@@ -462,7 +475,8 @@ def _resolve_caps(caps: list[str], known: set[str]) -> str | None:
     # 免得「铜色巢沙蚕」与「另一种沙蚕」被并成「沙蚕」（一名多译，不收）
     if len(suf) < 2 or (suf not in clean and len(suf) < 3):
         return None
-    return suf
+    # 走到这里说明捕获串都不以已知名结尾（否则第 1 步已取走），故只能凭形状判断是不是俗名
+    return suf if _looks_like_vernacular(suf) else None
 
 
 def harvest_pairs(text: str, known: set[str] | frozenset[str] | None = None,
@@ -470,7 +484,8 @@ def harvest_pairs(text: str, known: set[str] | frozenset[str] | None = None,
     """从译文收集「中文名（*Genus species*）」对子。
 
     正则会连带吞进名前的汉字，故：优先按已知中文名（known＝yiku / --names 的中文名）取最长后缀；
-    否则取同一拉丁名各次出现的公共后缀；只出现一次时剥句首虚词（须 ≥2 字）。
+    否则取同一拉丁名各次出现的公共后缀；只出现一次时剥句首虚词（须 ≥2 字）。未经已知名确认的，还须形如俗名
+    （2–8 字、不含的/并/有/在…等虚词字、以虫/蚕/蚓/蛭/螺/蟹…结尾），否则是被吞进来的从句，不收。
     一个拉丁名对应互相冲突的中文名、或确定不了名字的，不收；skipped 若给出则记下 {拉丁名: 捕获串}（交人工）。"""
     seen: dict[str, list[str]] = {}
     for zh, latin in _PAIR.findall(text):
