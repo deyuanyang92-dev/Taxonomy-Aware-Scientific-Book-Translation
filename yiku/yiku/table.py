@@ -98,11 +98,16 @@ def _priority(rows: list[_Row], cls: TermClass) -> int:
     return 3
 
 
+ALT_MAX_TIER = 3
+
+
 def _hard_line(hits: list[D.Hit], cls: TermClass) -> str:
     top = top_group(hits)
     alts: list[tuple[str, str]] = []
     for h in hits:
-        if not h.fallback and h.zh != cls.zh and h.zh not in [a[0] for a in alts]:
+        # 落选译名只列已核或高层级（≤3）来源的，低层级候选多是抽取噪声（如「板组成一个腕节」）
+        if (not h.fallback and h.zh != cls.zh and h.zh not in [a[0] for a in alts]
+                and (h.status == "已核" or (h.tier or 99) <= ALT_MAX_TIER)):
             alts.append((h.zh, h.cite()))
     alt = SEP.join(f"{z[:ALT_ZH_CHARS]}{'…' if len(z) > ALT_ZH_CHARS else ''}（{c}）" for z, c in alts[:3]) + (f"等{len(alts)}个" if len(alts) > 3 else "")
     return f"| {_cell(top[0].en)} | {_cell(cls.zh)} | {_cites(top)} | {top[0].status} | {_cell(alt)} |"

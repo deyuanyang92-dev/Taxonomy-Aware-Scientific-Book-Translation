@@ -264,7 +264,7 @@ def test_table_has_hard_and_soft_sections_and_classes(lib):
     hard, soft = section(t, "HARD"), section(t, "SOFT")
     assert "| Nereididae | 沙蚕科 |" in hard and "| Platynereis | 阔沙蚕属 |" in hard
     assert "| chaetiger | 刚节 |" in hard and "| antenna | 触手 |" in hard
-    assert "扁沙蚕属" in hard and "触角" in hard          # 落选译名也列出，但在「其他译名」列
+    assert "扁沙蚕属" not in hard and "触角" not in hard  # 低层级候选（wiki）不列为落选译名（2026-11-13 去噪）
     assert "Nereididae" not in soft and "chaetiger" not in soft
     for en in ("homoplasy", "adaptive radiation", "cirrus", "dorsal"):
         assert f"| {en} |" in soft and f"| {en} |" not in hard
@@ -485,3 +485,26 @@ def test_table_gives_examples_once_per_zh_and_avoids_longer_sibling(lib, store):
     assert "【同塑】" not in shortrow  # 库里「同塑」只出现在「同塑性」里，不算用例
     same = [r for r in rows if r.split("|")[2].strip() == "同塑性"]
     assert sum("【同塑性】" in r for r in same) == 1  # 自域行与回退行相同译名：用例只出现一次
+
+
+def test_backup_books_rank_last_for_examples(tmp_path):
+    """标「备用」的资料（OCR 质量一般）排在未设层级的资料之后（2026-11-13 Beklemishev 乱码用例）。"""
+    from docstore.store import Store, make_version
+    st = Store(tmp_path / "lib2")
+    st.register(None, key="备用书", kind="译本", lang="zh", tier="6", note="备用参考，质量一般", title="b")
+    st.register(None, key="普通书", kind="译本", lang="zh", title="n")
+    for k in ("备用书", "普通书"):
+        st.put_version(k, 1, make_version("前文很长很长很长的一段说明，性状缺乏导致证据不足，后文也很长很长很长。", "text_layer", producer="t"))
+    ex = U.UsageFinder(st, width=10).examples("性状", [], n=1)
+    assert ex and "普通书" in ex[0]
+
+
+def test_hard_alternatives_skip_low_tier_candidates(con):
+    from yiku import table as T
+    D.add_source(con, "top", "权威", "authority", tier=1, domain="分类学")
+    D.add_source(con, "low", "教材", "authority", tier=6, domain="分类学")
+    D.add_term(con, "article", "节", "top", domain="分类学", status="已核")
+    D.add_term(con, "article", "板组成一个腕节", "low", domain="分类学", status="候选")
+    out = M.term_table(con, "Each article is short.", "分类学")
+    assert "板组成一个腕节" not in out and "| article | 节 |" in out
+    assert T.ALT_MAX_TIER == 3

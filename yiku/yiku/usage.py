@@ -52,10 +52,17 @@ class UsageFinder:
         return (d.get("lang") or "zh") == "zh" and d.get("kind") not in EXCLUDE_KINDS
 
     def _tier(self, key: str) -> int:
+        """排序用层级：标「备用」的资料（用户 2026-11-13：质量一般，只作参考）排最后；未设层级的居中。"""
         try:
-            return int(self.store.doc(key).get("tier") or 99)
-        except (KeyError, ValueError):
+            d = self.store.doc(key)
+        except KeyError:
             return 99
+        if "备用" in (d.get("note") or ""):
+            return 98
+        try:
+            return int(d.get("tier") or 50)
+        except ValueError:
+            return 50
 
     def _find(self, zh: str, prefer: list[str], n: int, longer: tuple[str, ...]) -> list[str]:
         out: list[str] = []
