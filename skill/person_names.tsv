@@ -1,0 +1,17 @@
+# 惯译人名表（英文<TAB>中文）。fidelity_check.py --fix 把中文正文里的这些英文人名改成中文（引证、参考文献、Ray Lankester 这类前后另有姓名的不动）。
+# 只收有通行译名的；新增一行即可，不用改脚本。
+Darwin	达尔文
+Wallace	华莱士
+Bateson	贝特森
+Buffon	布丰
+Ray	雷
+Linnaeus	林奈
+Lamarck	拉马克
+De Vries	德弗里斯
+Mendel	孟德尔
+Cuvier	居维叶
+Haeckel	海克尔
+Mayr	迈尔
+Huxley	赫胥黎
+Lyell	莱尔
+Aristotle	亚里士多德

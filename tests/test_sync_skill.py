@@ -31,6 +31,7 @@ def test_sync_copies_skill_md_domains_and_scripts(dest):
     assert r.returncode == 0, r.stderr
     assert (dest / "RULES.md").read_text() == (REPO / "skill" / "RULES.md").read_text()
     assert (dest / "domains" / "分类学.md").exists()
+    assert (dest / "person_names.tsv").read_text(encoding="utf8") == (REPO / "skill" / "person_names.tsv").read_text(encoding="utf8")
     assert (dest / "scripts" / "deepseek_offpeak.py").exists()
     assert not list(dest.rglob("__pycache__"))
     # 再跑一次：已一致

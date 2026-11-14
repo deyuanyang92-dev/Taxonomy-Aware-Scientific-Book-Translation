@@ -13,6 +13,8 @@
   python3 run_batches.py <书> --mode review    --chapters ch05 --engine deepseek-flash
   python3 run_batches.py <书> --mode final     --chapters body,captions --engine deepseek-flash   # 闸口改完后核合并终稿
   推荐分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）。
+  初译写完各块后、合并前，自动按块序对每块输出跑 fidelity_check（拉丁名、惯译人名、数字、术语首现英文括注，确定性，不调模型），
+  日志 核译/direct/<章>/fidelity/cNN.txt；--no-fidelity 关闭。--no-yiku 同时让它不用术语库。
   每次合并后自动对合并译文跑 yiku check（正文和图注各一章，都跑），报告在 核译/direct/<章>/yiku_check.txt。
   python3 run_batches.py <书> --mode polish    --chapters body,captions                      # 中文通读：只看译文，按 STYLE.md 第 6 节改顺
   python3 run_batches.py <书> --mode species   --chapters body,captions [--names 种名.tsv] [--dry]   # 种名格式，闸口之后跑
@@ -150,6 +152,12 @@ def run_direct(a, B, notes):
         if fails:
             code = 1
         if a.mode == 'translate':
+            if not getattr(a, 'no_fidelity', False):   # 弱模型只管起草：拉丁名、人名、数字、术语首现括注由脚本核对并修正，合并前完成
+                import fidelity_check as fc
+                scope = {x for x in (json.loads((ch.dir / 'chunks.json').read_text()).get('scope') or '').split(';') if x}
+                yk = None if getattr(a, 'no_yiku', False) else fc.open_yiku(a.domain, scope=scope)
+                for ln in fc.run_chapter(ch.dir, ids, yiku=yk):
+                    print('  ' + ln)
             print(f'{chn}：', dm.merge_translation(ch, ids))
         elif a.mode == 'polish':
             check = getattr(a, 'polish_check_engine', None) or 'deepseek-flash'
@@ -300,6 +308,9 @@ def main():
     ap.add_argument('--no-yiku', action='store_true', help='species 模式：不去 yiku 查 HARD 种名，只用 --names')
     ap.add_argument('--unit', choices=['auto', 'page', 'paragraph', 'whole'], default='auto',
                     help='species 模式：单元＝页（页码标记）/段（每条图注）/整篇；auto＝章名含 caption 或 图注 按段，否则按页')
+    ap.add_argument('--no-fidelity', action='store_true',
+                    help='直调初译：不做保真检查（默认每块输出写好后按块序跑 fidelity_check：缺的拉丁名报告并按 yiku 补、'
+                         '惯译人名改中文、数字缺失报告、术语首现补「（English）」；日志 核译/direct/<章>/fidelity/cNN.txt，原稿备份 *.bak-fidelity）')
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
     if a.engine is None:

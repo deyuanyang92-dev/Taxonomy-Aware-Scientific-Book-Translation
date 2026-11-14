@@ -57,6 +57,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 3. **初译**：运行 `python3 $S/run_batches.py <书> --mode translate --chapters chNN --engine <模型A> --domain <D>`。脚本会把 RULES、领域包、STYLE 和本章术语表注入提示词。
 4. **核译**：先运行 `python3 $S/plan_batches.py <书>`，再运行 `run_batches.py <书> --mode review --engine <模型B> --domain <D>`。
    **直调模式**（不经智能体，按块直接调模型，产物按块写盘、断点续跑）：`--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus`，要 `--chapters`。推荐分配：初译 `claude-sonnet`，核译 `deepseek-flash`。初译输出在 `核译/direct/<章>/out/`，合并为 `译文/<章>_直译初译.md`；核译问题单合并为 `核译/issues/<章>_direct.jsonl`，再过 `apply_issues.py --dry`。引擎封装见 `scripts/llm_engines.py`，用量记在 `核译/usage.tsv`。续跑时每块产物旁的 `.meta.json`（引擎、系统提示词与术语表的 sha256；核译另含所核译文）必须与当前设置一致，不一致报错停下，确要重做加 `--force`。核译输出必须是 JSONL 问题单或单独一行 `NO_ISSUES`，其余格式该块记为失败、不写完成文件。
+   - **保真检查**（直调初译自动做，`--no-fidelity` 关闭；弱模型只管起草，格式规则交给脚本）：`fidelity_check.py --en 块.txt --zh 块.md [--fix] [--seen seen.json]`，确定性、不调模型。查拉丁名（英文里的属名/双名必须出现在中文里，缺的附英文原句；`--fix` 只在中文里已有 yiku 中文名时于其首现后补「（*Latin*）」）、惯译人名（`skill/person_names.tsv` 可增补；`--fix` 改中文并去掉名前缩写，引证与参考文献不动）、带单位数字和年份（只报告）、yiku 已核术语首现补「（English）」（各块共享首现状态）；日志 `核译/direct/<章>/fidelity/cNN.txt`。标题补英文用 `heading_bilingual.py --en body.txt --zh 译文.md [--fix]`（Title Case，默认只报告）。
    - 核译者只出 JSONL 问题清单，不改译文。
    - 先试点 1 批，裁定者抽查合格后再全面铺开，并发 3–4 个。
 4a. **覆盖核对**（可选，长章或重点章）：借用工作区技能 translation-quality-codex 的分块脚本，为本章原文编段号，核译时逐段对照，保证不漏段：
