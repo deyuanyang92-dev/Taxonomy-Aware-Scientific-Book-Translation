@@ -14,6 +14,9 @@
 终稿核译（mode=final）：闸口改完译文后，对合并译文 <书>/译文/<章>_直译初译.md 再核一轮（初译与核译只看 out/ 里的原稿，
 看不到闸口的改动）。合并译文按初译各块的段落数切回对应原文块（段落数变了就按字数比例），产物在 final/cNN.jsonl，
 问题单 <书>/核译/issues/<章>_final.jsonl，同样交给 apply_issues.py --dry。
+中文通读（mode=polish）：终稿核译、闸口改完之后，只把合并译文（不给英文原文）交给润色模型，按 STYLE.md 第 6 节「名家逻辑」改顺，
+产物 polish/cNN.jsonl，问题单 <书>/核译/issues/<章>_polish.jsonl（type=润色），同样交给 apply_issues.py。写问题单前先过
+polish_guard：引证、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记、HARD 术语任一被改动的条目拒绝（rejected_polish.jsonl）。
 页码标记：原文里单独成行的 `<!-- p.N -->`（原书页码，见 PAGE_MARK、with_page_markers）随块进入译文，译者须原样保留，
 丢失或不一致的块按疑似失败处理（存 cNN.suspect.md，不算完成）。species_format.py 靠它按原书页规范种名的拉丁名。
 术语检查：每次合并后自动对合并译文跑 yiku check（正文和图注各自一章，都跑），报告写 <章>/yiku_check.txt。
@@ -76,6 +79,19 @@ def output_requirements(prompts_md: str) -> str:
     return prompts_md[i:j if j != -1 else len(prompts_md)].strip()
 
 
+POLISH_SECTION = "名家逻辑"
+
+
+def style_section(sk: Path, keyword: str) -> str:
+    """STYLE.md 里标题含 keyword 的二级标题一节（到下一个二级标题为止）；运行时读取，不在代码里写死规则。"""
+    text = _read(sk / "STYLE.md")
+    m = re.search(rf"^## [^\n]*{re.escape(keyword)}[^\n]*$", text, re.M)
+    if not m:
+        raise ValueError(f"{sk / 'STYLE.md'} 里找不到标题含「{keyword}」的二级标题（润色规则来自 STYLE.md 第 6 节）")
+    j = text.find("\n## ", m.end())
+    return text[m.start():j if j != -1 else len(text)].strip()
+
+
 def build_system(mode: str, domain: str, book_desc: str = "", notes: str = "", skill: Path | None = None) -> str:
     """初译：用途说明 + 角色 + RULES + 领域包 + STYLE + 输出要求。核译：用途说明 + 角色 + RULES + 领域包 + 核译输出要求。
     final＝终稿核译：同核译，另加「所核的是闸口改过的合并终稿」说明。
@@ -97,8 +113,13 @@ def build_system(mode: str, domain: str, book_desc: str = "", notes: str = "", s
         parts = [head, rules, dom, output_requirements(_read(sk / "PROMPTS.md")), REVIEW_OUTPUT]
         if mode == "final":
             parts.append(FINAL_NOTE)
+    elif mode == "polish":
+        head = (f"用途说明：用户是{domain}研究者，拥有本书，此润色仅供其个人学习研究、不公开发布。\n\n"
+                f"你是{domain}专著的中文润色编辑。你只看到中文译文{desc}，看不到英文原文。"
+                "把读起来像翻译腔的句子，按下面「名家逻辑」改写成自然的中文。")
+        parts = [head, style_section(sk, POLISH_SECTION), POLISH_OUTPUT]
     else:
-        raise ValueError(f"mode 只能是 translate、review 或 final：{mode}")
+        raise ValueError(f"mode 只能是 translate、review、final 或 polish：{mode}")
     if notes.strip():
         parts.append("## 本书补充说明\n" + notes.strip())
     return "\n\n".join(p.strip() for p in parts) + "\n"
@@ -120,6 +141,15 @@ TRANSLATE_OUTPUT = """## 本次输出要求
 
 NO_ISSUES = "NO_ISSUES"
 
+POLISH_OUTPUT = f"""## 本次任务与输出
+- 你只看到中文译文，没有英文原文。把读起来生硬的句子，按上面「名家逻辑」的手法改写自然；已经通顺的句子不动，不要为改而改。
+- 不得增加或删去任何信息，不得删去限定语。下列内容一字不动：数字及其单位、拉丁学名（凡 *…* 之内的）、引证（作者, 年份，如 Smith, 1978、Smith（1978））、\
+图号引用（图 N…）、页码标记 `<!-- p.N -->`、〔译注…〕、[OCR?]，以及本消息术语表里的术语（HARD 译名必须原样保留，SOFT 术语不得改译）。
+- 只输出 JSONL，每行一个对象，字段 file（给定的文件名）、old、new、type（固定写「润色」）、reason（用了哪条手法，一句话）。不要代码围栏和其他文字。
+- old 必须逐字复制自译文，且在给出的译文块中只出现 1 次；取一个或几个整句即可，不要跨段、不要含空行或页码标记行。\
+new 是改写后的同一段文字，换行数与 old 相同。
+- 没有需要润色的句子时，整个输出只写一行 {NO_ISSUES}。"""
+
 REVIEW_OUTPUT = f"""## 本次输出
 只输出 JSONL，每行一个问题对象（必须含 old、new 字段），不要任何其他文字（不要代码围栏）。file 字段填给定的文件名。\
 old 必须逐字复制自译文，且在给出的译文块中只出现 1 次。
@@ -137,6 +167,10 @@ FINAL_NOTE = """## 本次核译对象：终稿
 def user_translate(table: str, chunk: str, tag: str = "") -> str:
     tag_line = f"本块编号：{tag}\n\n" if tag else ""
     return f"本块术语表（来自 yiku）：\n{table}\n\n{tag_line}请翻译以下英文原文：\n\n{chunk}"
+
+
+def user_polish(fname: str, table: str, zh_chunk: str) -> str:
+    return f"file: {fname}\n\n本块术语表：\n{table}\n\n=== 中文译文 ===\n{zh_chunk}"
 
 
 def user_review(fname: str, table: str, src_chunk: str, zh_chunk: str) -> str:
@@ -361,6 +395,7 @@ class Chapter:
         self.merged = book / "译文" / f"{name}{MERGED_SUFFIX}"
         self.issues = book / "核译" / "issues" / f"{name}_direct.jsonl"
         self.final_issues = book / "核译" / "issues" / f"{name}_final.jsonl"
+        self.polish_issues = book / "核译" / "issues" / f"{name}_polish.jsonl"
 
     @property
     def source(self) -> Path:
@@ -604,8 +639,9 @@ def split_merged(ch: Chapter, ids: list[str]) -> list[str]:
 
 
 def run_final_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
-                     usage_file: Path | None = None, force: bool = False) -> tuple[int, int, list[str]]:
+                     usage_file: Path | None = None, force: bool = False, kind: str = "final") -> tuple[int, int, list[str]]:
     """终稿核译：核的是闸口改完后的合并译文（不是 out/ 里的初译原稿）。产物 final/cNN.jsonl（空文件＝NO_ISSUES）。
+    kind="polish"：中文通读，同一套切块、续跑规则，只是不给英文原文，产物在 polish/cNN.jsonl（见 run_polish）。
     续跑规则同 run_review：引擎、系统提示词、术语表、所核译文任一变了就报 StaleOutputError，force 才重做
     （闸口又改了译文之后重跑终稿核译，会因「所核译文变了」要求 --force，只重核变了的块）。"""
     done = skipped = 0
@@ -620,16 +656,17 @@ def run_final_review(ch: Chapter, ids: list[str], engine: str, system: str, call
 
     def one(cid: str) -> None:
         zh, terms = zh_parts[cid], ch.text("terms", cid, "md")
-        user = user_review(fname, terms, ch.text("chunks", cid, "txt"), zh)
-        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/final", usage_file=usage_file)
+        user = (user_polish(fname, terms, zh) if kind == "polish"
+                else user_review(fname, terms, ch.text("chunks", cid, "txt"), zh))
+        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/{kind}", usage_file=usage_file)
         items = parse_review(text)
-        _write(ch.path("final", cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
-        _write_meta(ch, "final", cid, engine, system, terms, zh)
+        _write(ch.path(kind, cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
+        _write_meta(ch, kind, cid, engine, system, terms, zh)
 
-    reasons = {c: r for c in ids if ch.path("final", c, "jsonl").exists()
-               and (r := _stale_reason(ch, "final", c, engine, system, ch.text("terms", c, "md"), zh_parts[c]))}
-    _check_resume(ch, "final", "jsonl", ids, reasons, force)
-    todo = [c for c in ids if not ch.path("final", c, "jsonl").exists()]
+    reasons = {c: r for c in ids if ch.path(kind, c, "jsonl").exists()
+               and (r := _stale_reason(ch, kind, c, engine, system, ch.text("terms", c, "md"), zh_parts[c]))}
+    _check_resume(ch, kind, "jsonl", ids, reasons, force)
+    todo = [c for c in ids if not ch.path(kind, c, "jsonl").exists()]
     skipped = len(ids) - len(todo)
     with ThreadPoolExecutor(max(jobs, 1)) as ex:
         futs = {c: ex.submit(one, c) for c in todo}
@@ -640,6 +677,12 @@ def run_final_review(ch: Chapter, ids: list[str], engine: str, system: str, call
             except Exception as exc:  # noqa: BLE001
                 fails.append(f"{c} 失败：{exc}")
     return done, skipped, fails
+
+
+def run_polish(ch: Chapter, ids: list[str], engine: str, system: str, caller: Caller, jobs: int = 1,
+               usage_file: Path | None = None, force: bool = False) -> tuple[int, int, list[str]]:
+    """中文通读：对（终稿核译、闸口之后的）合并译文逐块只给中文，产物 polish/cNN.jsonl。"""
+    return run_final_review(ch, ids, engine, system, caller, jobs, usage_file, force, kind="polish")
 
 
 # ---------------------------------------------------------------- 合并
@@ -690,11 +733,12 @@ def merge_decisions(ch: Chapter, ids: list[str]) -> int:
 def merge_review(ch: Chapter, ids: list[str], kind: str = "review") -> tuple[int, int]:
     """合并各块问题单，写 核译/issues/<章>_direct.jsonl；old 在合并译文中不是恰好 1 次的进 rejected.jsonl。
     kind="final"：合并终稿核译的 final/cNN.jsonl，写 核译/issues/<章>_final.jsonl 与 rejected_final.jsonl
-    （只认合并译文，不回退到 out/ 原稿，也不覆盖 out 阶段的问题单）。"""
-    final = kind == "final"
+    （只认合并译文，不回退到 out/ 原稿，也不覆盖 out 阶段的问题单）。
+    kind="polish"：合并中文通读的 polish/cNN.jsonl，写 <章>_polish.jsonl 与 rejected_polish.jsonl；type 一律置「润色」，
+    并逐条过 polish_guard（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语不得变），不通过的进 rejected_polish.jsonl。"""
     if ch.merged.exists():
         target = _read(ch.merged)
-    elif final:
+    elif kind != "review":
         return 0, 0
     else:
         target = "\n\n".join(strip_pending(ch.text("out", c, "md"))[0] for c in ids)
@@ -718,12 +762,23 @@ def merge_review(ch: Chapter, ids: list[str], kind: str = "review") -> tuple[int
                 bad.append({**it, "reject": f"old 在合并译文中出现 {n} 次"})
             else:
                 ok.append(it)
-    _write(ch.final_issues if final else ch.issues, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in ok))
-    _write(ch.dir / ("rejected_final.jsonl" if final else "rejected.jsonl"),
-           "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in bad))
+    if kind == "polish":
+        import polish_guard   # 延迟导入：polish_guard -> species_format -> direct_mode
+        hard = {c: polish_guard.hard_terms(ch.text("terms", c, "md")) for c in ids if ch.path("terms", c, "md").exists()}
+        ok, more_bad = polish_guard.filter_issues(target, ok, lambda it: hard.get(str(it.get("chunk")), []))
+        bad += more_bad
+    issues_file = {"review": ch.issues, "final": ch.final_issues, "polish": ch.polish_issues}[kind]
+    rejected_file = {"review": "rejected.jsonl", "final": "rejected_final.jsonl", "polish": "rejected_polish.jsonl"}[kind]
+    _write(issues_file, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in ok))
+    _write(ch.dir / rejected_file, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in bad))
     return len(ok), len(bad)
 
 
 def merge_final(ch: Chapter, ids: list[str]) -> tuple[int, int]:
     """合并终稿核译的问题单，见 merge_review(kind="final")。"""
     return merge_review(ch, ids, "final")
+
+
+def merge_polish(ch: Chapter, ids: list[str]) -> tuple[int, int]:
+    """合并中文通读的问题单并过 polish_guard，见 merge_review(kind="polish")。"""
+    return merge_review(ch, ids, "polish")

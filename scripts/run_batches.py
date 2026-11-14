@@ -14,6 +14,7 @@
   python3 run_batches.py <书> --mode final     --chapters body,captions --engine deepseek-flash   # 闸口改完后核合并终稿
   推荐分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）。
   每次合并后自动对合并译文跑 yiku check（正文和图注各一章，都跑），报告在 核译/direct/<章>/yiku_check.txt。
+  python3 run_batches.py <书> --mode polish    --chapters body,captions                      # 中文通读：只看译文，按 STYLE.md 第 6 节改顺
   python3 run_batches.py <书> --mode species   --chapters body,captions [--names 种名.tsv] [--dry]   # 种名格式，闸口之后跑
   流程：translate -> review -> apply_issues.py（闸口）-> species -> final -> apply_issues.py。
   python3 run_batches.py <书> --mode split    --chapters body,captions   # 草稿前：src_en 的正文/图注切分检查（不调模型）
@@ -21,6 +22,11 @@
   split 对 src_en/<正文章>.txt 与 src_en/<图注章>.txt（--chapters 依次给正文章、图注章）跑 split_check.py，报告写 核译/split_check.txt，有可疑段退出码 1。
   cite 对每个 --chapters 章的 src_en/<章>.txt 与 译文/<章>_直译初译.md 合并后跑 cite_diff.py，报告写 核译/cite_diff.tsv
   （已确认噪声放 核译/cite_noise.tsv，可选别名 核译/cite_alias.tsv），有真差异退出码 1。
+  polish（直调模式，默认 --engine deepseek-flash，只在闲时跑）：终稿核译、闸口改完、species 之后，对合并译文逐块只给中文
+  （不给英文原文，规则从 skill/STYLE.md「## 6. 名家逻辑」运行时读入），模型按同一 JSONL 问题单格式交回 old -> new（type=润色）。
+  写问题单前自动逐条模拟应用并核验：引证（作者, 年份）、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记 <!-- p.N -->、
+  该块 HARD 术语，改前改后任一不同就拒绝该条，记入 核译/direct/<章>/rejected_polish.jsonl；通过的写 核译/issues/<章>_polish.jsonl，
+  再 apply_issues.py --dry 过闸口。应用后依次跑 --mode cite、--mode species --dry、yiku check 复核。流程：…final -> apply_issues.py -> polish -> apply_issues.py -> cite/species。
   species 不调模型：对合并译文 译文/<章>_直译初译.md 按原书页规范有中文名的种（首现「中文（*拉丁*）」，同页再现只写中文；
   页码来自译文里的 <!-- p.N --> 标记；图注类章节每条图注算一个单元），先备份 *.bak-species 再写回，--dry 只报告。
 
@@ -124,12 +130,14 @@ def run_direct(a, B, notes):
             continue
         engines_f = ch.dir / 'engines.json'
         used = json.loads(engines_f.read_text()) if engines_f.exists() else {}
-        others = [used.get('review'), used.get('final')] if a.mode == 'translate' else [used.get('translate')]
+        others = ([used.get('review'), used.get('final')] if a.mode == 'translate'
+                  else [] if a.mode == 'polish' else [used.get('translate')])   # 中文通读不看原文，不受「初译与核译异模型」限制
         if a.engine in others and not a.same_engine_ok:
             sys.exit(f'{chn}：初译和核译不能用同一个模型（{a.engine}）；确需如此加 --same-engine-ok')
         used[a.mode] = a.engine
         engines_f.write_text(json.dumps(used, ensure_ascii=False))
-        fn = {'translate': dm.run_translate, 'review': dm.run_review, 'final': dm.run_final_review}[a.mode]
+        fn = {'translate': dm.run_translate, 'review': dm.run_review, 'final': dm.run_final_review,
+              'polish': dm.run_polish}[a.mode]
         try:
             n, skipped, fails = fn(ch, ids, a.engine, system, llm_engines.call, a.j, usage, a.force)
         except dm.StaleOutputError as exc:
@@ -141,6 +149,11 @@ def run_direct(a, B, notes):
             code = 1
         if a.mode == 'translate':
             print(f'{chn}：', dm.merge_translation(ch, ids))
+        elif a.mode == 'polish':
+            ok, bad = dm.merge_polish(ch, ids)
+            print(f'{chn}：润色问题单 {ok} 条 -> {ch.polish_issues}；拒绝 {bad} 条（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语被改动者，见 {ch.dir}/rejected_polish.jsonl）')
+            print(f'  下一步：python3 {S}/apply_issues.py {B} 核译/issues/{ch.polish_issues.name} --dry；应用后跑 --mode cite、--mode species --dry、yiku check')
+            continue   # 译文尚未改动，术语检查等问题单应用后再跑
         elif a.mode == 'final':
             ok, bad = dm.merge_final(ch, ids)
             print(f'{chn}：终稿问题单 {ok} 条 -> {ch.final_issues}；拒绝 {bad} 条（见 {ch.dir}/rejected_final.jsonl）')
@@ -258,13 +271,14 @@ def run_species(a, B):
 def main():
     ap = argparse.ArgumentParser(description='批次调度：智能体模式（codex/claude）或直调模式（deepseek-*/claude-*），见文件头说明')
     ap.add_argument('book')
-    ap.add_argument('--mode', choices=['review', 'translate', 'final', 'species', 'split', 'cite'], required=True,
+    ap.add_argument('--mode', choices=['review', 'translate', 'final', 'polish', 'species', 'split', 'cite'], required=True,
                     help='translate=初译；review=核译初译原稿；final=核闸口改完后的合并终稿（仅直调模式）；'
+                         'polish=中文通读（只看译文，按 STYLE.md 第 6 节改顺；仅直调模式，默认 deepseek-flash，自动核验引证/图号/学名/数字/页码标记/HARD 术语不变）；'
                          'species=按原书页规范种名拉丁名（闸口之后跑，不调模型）；'
                          'split=草稿前检查正文/图注切分（--chapters 正文章,图注章）；cite=终稿后对照英文原文与译文的引文和图号（均不调模型）')
-    ap.add_argument('--engine', choices=['codex', 'claude', *DIRECT_ENGINES], default='codex',
+    ap.add_argument('--engine', choices=['codex', 'claude', *DIRECT_ENGINES], default=None,
                     help='codex/claude=智能体模式；deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus=直调模式。'
-                         '默认分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）')
+                         '默认分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）；缺省：polish 用 deepseek-flash，其余 codex')
     ap.add_argument('-j', type=int, default=3)
     ap.add_argument('--only', default='')
     ap.add_argument('--chapters', default='')
@@ -283,6 +297,8 @@ def main():
                     help='species 模式：单元＝页（页码标记）/段（每条图注）/整篇；auto＝章名含 caption 或 图注 按段，否则按页')
     ap.add_argument('--dry', action='store_true')
     a = ap.parse_args()
+    if a.engine is None:
+        a.engine = 'deepseek-flash' if a.mode == 'polish' else 'codex'
     B = pathlib.Path(a.book).resolve()
     global DOMAIN, FALLBACK
     DOMAIN = a.domain
@@ -296,8 +312,8 @@ def main():
         sys.exit(run_cite(a, B))
     if a.engine in DIRECT_ENGINES:
         sys.exit(run_direct(a, B, notes))
-    if a.mode == 'final':
-        sys.exit('--mode final 只支持直调模式（--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus）')
+    if a.mode in ('final', 'polish'):
+        sys.exit(f'--mode {a.mode} 只支持直调模式（--engine deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus）')
     P, L = B / '核译' / 'prompts', B / '核译' / 'logs'
     P.mkdir(parents=True, exist_ok=True)
     L.mkdir(parents=True, exist_ok=True)

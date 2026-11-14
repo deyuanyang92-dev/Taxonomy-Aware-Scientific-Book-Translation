@@ -65,6 +65,17 @@ docstore status
 docstore detect <目录> && docstore import <目录> --adapter txt_pages   # 收编库外页面库
 ```
 
+### 中文通读（定稿前）
+
+```bash
+# 终稿核译、闸口、species 之后；只给模型中文，规则读 skill/STYLE.md「## 6. 名家逻辑」；默认 deepseek-flash（闲时），--engine 可换
+python3 scripts/run_batches.py <书> --mode polish --chapters body,captions [--engine claude-sonnet] [--dry]
+python3 scripts/apply_issues.py <书> 核译/issues/body_polish.jsonl --dry   # 过闸口后去掉 --dry
+python3 scripts/run_batches.py <书> --mode cite --chapters body,captions   # 应用后复核引文/图号；再 --mode species --dry、yiku check
+```
+
+模型交回 `old -> new`（type=润色）问题单；写盘前逐条模拟应用，引证（作者, 年份）、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记、HARD 术语任一被改动的条目拒绝，记入 `核译/direct/<章>/rejected_polish.jsonl`（`scripts/polish_guard.py`）。
+
 模型协作规则见 [AGENTS.md](AGENTS.md)。
 
 ## 状态
