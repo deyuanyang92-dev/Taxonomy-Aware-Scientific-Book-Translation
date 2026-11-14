@@ -36,11 +36,13 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -128,7 +130,8 @@ class Cache:
     def __init__(self, path: str | Path | None = None):
         p = Path(path or os.environ.get("GTRANS_CACHE") or DEFAULT_CACHE).expanduser()
         p.parent.mkdir(parents=True, exist_ok=True)
-        self.con = sqlite3.connect(p)
+        self.con = sqlite3.connect(p, check_same_thread=False)
+        self.lock = threading.Lock()
         self.con.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, en TEXT, zh TEXT, ts REAL)")
         self.con.commit()
 
@@ -137,33 +140,50 @@ class Cache:
         return hashlib.sha1(text.encode("utf8")).hexdigest()
 
     def get(self, text: str) -> str | None:
-        row = self.con.execute("SELECT zh FROM cache WHERE key=?", (self.key(text),)).fetchone()
+        with self.lock:
+            row = self.con.execute("SELECT zh FROM cache WHERE key=?", (self.key(text),)).fetchone()
         return None if row is None else str(row[0])
 
     def put(self, text: str, zh: str) -> None:
-        self.con.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?,?)", (self.key(text), text, zh, time.time()))
-        self.con.commit()
+        with self.lock:
+            self.con.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?,?)", (self.key(text), text, zh, time.time()))
+            self.con.commit()
 
 
 class Google:
-    def __init__(self, cache: Cache):
+    """Google 免费端点（translate_a/single, client=gtx）。
+
+    提速（2026-11-15 实测，保→英 150 段）：逐段请求 4 线程带 0.5 s 间隔 237 段/分钟，8 线程无间隔 320 段/分钟；
+    把多段拼进一个请求反而频繁 429（21 段/分钟），故不拼段。用 urllib：同机 `requests` 库请求被 429、urllib 正常。
+    prefetch() 先并发填缓存，主流程再顺序取用；遇 429/5xx 所有线程一起冷却，避免越打越封。"""
+
+    def __init__(self, cache: Cache, sl: str = "en", tl: str = "zh-CN", pause: tuple[float, float] = (1.0, 2.0)):
         self.cache = cache
+        self.sl, self.tl, self.pause = sl, tl, pause
         self.requests = 0
         self.hits = 0
         self.chars = 0
+        self._cool_until = 0.0
+        self._lock = threading.Lock()
 
     def has(self, text: str) -> bool:
         return all(self.cache.get(c) is not None for c in split_chunks(text.strip()))
 
     def _fetch(self, q: str) -> str:
         url = GOOGLE_URL + "?" + urllib.parse.urlencode(
-            {"client": "gtx", "sl": "en", "tl": "zh-CN", "dt": "t", "q": q}, quote_via=urllib.parse.quote)
-        _sleep(random.uniform(1.0, 2.0))
+            {"client": "gtx", "sl": self.sl, "tl": self.tl, "dt": "t", "q": q}, quote_via=urllib.parse.quote)
+        if self.pause[1] > 0:
+            _sleep(random.uniform(*self.pause))
         last: Exception | None = None
+        slept_until = 0.0
         for k in range(MAX_RETRIES + 1):
+            if self._cool_until > max(slept_until, time.time()):  # 别的线程触发了冷却：一起等
+                _sleep(self._cool_until - time.time())
+                slept_until = self._cool_until
             try:
-                self.requests += 1
-                self.chars += len(q)
+                with self._lock:
+                    self.requests += 1
+                    self.chars += len(q)
                 data = json.loads(http_get(url))
                 return "".join(str(seg[0]) for seg in data[0] if seg and seg[0])
             except urllib.error.HTTPError as exc:
@@ -174,6 +194,10 @@ class Google:
                 last = exc
             if k < MAX_RETRIES:
                 wait = 5 * 2 ** k + random.uniform(0, 2)
+                if isinstance(last, urllib.error.HTTPError):  # 429/5xx：全体冷却
+                    with self._lock:
+                        self._cool_until = max(self._cool_until, time.time() + wait)
+                        slept_until = self._cool_until
                 print(f"[gtrans] Google 请求失败（{type(last).__name__}），{wait:.0f} 秒后第 {k + 2} 次尝试", file=sys.stderr)
                 _sleep(wait)
         raise GoogleError(f"Google 重试 {MAX_RETRIES} 次仍失败：{last}")
@@ -192,6 +216,27 @@ class Google:
                 self.hits += 1
             parts.append(zh)
         return "".join(parts).strip()
+
+    def prefetch(self, texts: list[str], workers: int = 8) -> int:
+        """并发预取未缓存的块（无间隔，遇 429 全体冷却）；返回新请求数。失败的块留给顺序流程重试并报错。"""
+        todo = list(dict.fromkeys(c for t in texts if t.strip() for c in split_chunks(t.strip())
+                                  if self.cache.get(c) is None))
+        if not todo:
+            return 0
+        saved, self.pause = self.pause, (0.0, 0.0)
+
+        def one(c: str) -> None:
+            try:
+                self.cache.put(c, self._fetch(c))
+            except GoogleError as exc:
+                print(f"[gtrans] 预取失败（稍后顺序重试）：{exc}", file=sys.stderr)
+
+        try:
+            with ThreadPoolExecutor(workers) as ex:
+                list(ex.map(one, todo))
+        finally:
+            self.pause = saved
+        return len(todo)
 
     def term(self, en: str) -> str:
         """术语单独的 Google 译法（缓存），去掉句末标点。"""
@@ -873,6 +918,10 @@ def run(src: Path, out_dir: Path, o: Opts, google: Google | None = None) -> str:
         msg = dry_run(units, o, g)
         print(msg)
         return msg
+    n = g.prefetch([heading_text(b) if b.kind == "heading" else b.en for u in units if u.kind != "marker"
+                    for b in u.blocks if b.kind != "marker"])
+    if n:
+        print(f"[gtrans] Google 并发预取 {n} 块", file=sys.stderr)
     runner = Runner(o, g)
     reps: list[Rep] = []
     for u in units:

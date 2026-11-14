@@ -165,6 +165,8 @@ def _codex(system: str, user: str, model: str | None = None) -> tuple[str, dict[
         cmd = ["codex", "exec", "--skip-git-repo-check", "-s", "read-only", "-o", str(out)]
         if model:
             cmd += ["-m", model]
+        if os.environ.get("YZZ_CODEX_EFFORT"):  # 如 medium；不设则用 ~/.codex/config.toml 的默认
+            cmd += ["-c", f'model_reasoning_effort="{os.environ["YZZ_CODEX_EFFORT"]}"']
         cmd += ["-C", str(work), "-"]
         r = _cli(cmd, system + "\n\n---\n\n" + user, "codex", cwd=str(work))
         text = out.read_text(encoding="utf8") if out.exists() else ""

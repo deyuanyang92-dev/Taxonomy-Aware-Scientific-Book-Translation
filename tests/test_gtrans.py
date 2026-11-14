@@ -553,3 +553,41 @@ def test_edits_mode_still_works_via_cli(net: Net, tmp_path: Path, monkeypatch: p
     assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
     assert "该谱系后来分裂" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
     assert len(eng.calls) == 2 and "采纳 1，拒绝 0" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")
+
+
+def test_prefetch_fills_cache_concurrently_and_skips_cached(tmp_path, monkeypatch):
+    import json as _json
+    calls = []
+
+    def http_get(url, timeout=30):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+        calls.append(q)
+        return _json.dumps([[[f"ZH:{q}", q]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
+    g.cache.put("cached one", "已有")
+    n = g.prefetch(["alpha", "beta", "alpha", "cached one", "  "], workers=4)
+    assert n == 2 and sorted(calls) == ["alpha", "beta"]
+    assert g.translate("alpha") == "ZH:alpha" and g.pause == (1.0, 2.0)
+    assert len(calls) == 2  # translate 命中缓存
+
+
+def test_google_uses_configured_languages_and_cools_down_on_429(tmp_path, monkeypatch):
+    import json as _json
+    seen, sleeps, state = [], [], {"n": 0}
+
+    def http_get(url, timeout=30):
+        seen.append(urllib.parse.parse_qs(urllib.parse.urlparse(url).query))
+        state["n"] += 1
+        if state["n"] == 1:
+            raise urllib.error.HTTPError(url, 429, "Too Many", {}, None)
+        return _json.dumps([[["Body short.", "x"]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", sleeps.append)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"), sl="bg", tl="en", pause=(0.0, 0.0))
+    assert g.translate("Тялото късо.") == "Body short."
+    assert seen[0]["sl"] == ["bg"] and seen[0]["tl"] == ["en"]
+    assert g._cool_until > 0 and sleeps  # 429 后设了全体冷却并等待
