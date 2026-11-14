@@ -49,6 +49,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 0. **定领域**：确认本书的 yiku 领域名，下文记作 `<D>`；确认 `domains/<D>.md` 已存在。
 1. **切章**：运行 `python3 $S/extract.py <pdf> <起页> <止页> > src_en/chNN.txt`。扫描本用 `python3 $S/ocr_rapid.py <pdf> <outdir>`，不要用 tesseract。
    **原书页码标记**（分类学书必做，种名「每页首现拉丁名」规则依赖它）：原文里每个原书页的起点单独一行 `<!-- p.13 -->`（印刷页码）。从资料库取页用 `docstore export <key> --marked --pages <PDF页范围>`（页码偏移要先登记，没登记写 `pdfNN`）；自己清洗 OCR 拼接 src_en 时用 `direct_mode.with_page_markers`。初译提示词要求译者原样保留，直调模式下丢失或不一致的块不算完成。
+1a. **切分检查**（草稿前必做，分类学书必做）：`python3 $S/split_check.py src_en/body.txt src_en/captions.txt`（或 `run_batches.py <书> --mode split --chapters body,captions`，报告写 `核译/split_check.txt`）。列出混进正文流的图注残段（段内 ≥3 个「缩写, 词;」对、Scale bar、「Fig. N.」起首）、前段以连字号结尾而后段小写起首的断词、以连字号结尾的图注、只有「Fig. N.」没有说明文字的图注；有可疑段退出码 1。逐条人工核对：图注残段移入 captions.txt，断词合并，再开始草稿，否则核译会报「漏译」并把图注残段插进正文。
 2. **术语先行**（在初译之前完成）：
    1. 运行 `yiku table src_en/chNN.txt --domain <D> [--scope <类群>] [--fallback <领域>]`，得到本章术语表。表分 **HARD**（必用：学名与本领域已核译名一致者）和 **SOFT**（多译名/多义项/候选/跨领域〔回退〕，附出处页码、层级、定义语境和中文用例，由译者按本书义项取舍）。`--fallback` 缺省：分类学书回退到进化生物学，其他领域不回退。
    2. 找出缺口：本章出现、但术语库里没有的术语。用提示词 C，按 TERMS.md 和领域包列出的权威资料逐个定向查，每条都要写书名和页码。
@@ -68,6 +69,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
    - `yiku check src zh --domain <D> [--decisions 核译/term_decisions.jsonl]`：HARD 严格检查；SOFT 按术语决策日志检查（同英文+义项必须同译名，不同义项可不同但须登记），没有日志时只给「提示」。
    - 术语决策：直调初译在译文后输出「### 术语决策」JSONL，脚本按块存 `核译/direct/<章>/decisions/` 并合并为 `核译/term_decisions.jsonl`；`yiku decide validate`（格式）→ `yiku decide review`（列出须主会话裁定的：多译名、无出处、zh 不在候选）→ `yiku decide apply --book <书>`（写回：候选，来源 `决策_<书>`；只有 `--verified` 才记已核）。
    - 种名格式（分类学书）：`run_batches.py <书> --mode species --chapters body,captions [--names 种名.tsv]`（不调模型，闸口之后、终稿核译之前跑；`--dry` 只报告）。有中文名的种按原书页规范：每页首现「中文名（*Genus species*）」，同页再现只写中文，换页再写拉丁名；图注每条算一个单元；没有中文名的种不动。名单取 yiku 的 HARD 种名，再叠加 `--names` TSV（拉丁名、中文名）。先备份 `*.bak-species` 再写回。单文件用 `species_format.py`。补拉丁名前核对 `src_en/` 对应原书页：该拉丁名（OCR 近似写法也算）不在原文那一页就不补；后接科属目…后缀或落在更长类群名里的、中文名后已带拉丁名的、已在括号里的、通名（沙蚕 ↔ sand worm）一律不动；拉丁名后的 `[OCR?]` 保留。页码标记把一句话切成两段时，先 `join_page_breaks.py <译文>`（默认只报告，`--fix` 并段、标记移到合并段之后）再跑本步。
+   - 引文与图号对照（终稿后必做）：`python3 $S/cite_diff.py --en src_en/body.txt --en src_en/captions.txt --zh 译文/body_直译初译.md --zh 译文/captions_直译初译.md --out 核译/cite_diff.tsv`（或 `run_batches.py <书> --mode cite --chapters body,captions`，自动读 `核译/cite_noise.tsv`、`核译/cite_alias.tsv`）。比较 (第一作者, 年份) 和图号的多重集，已归一 and/与/和、et al./等、1980a,b、全角括号、OCR 断词；打印真差异数，有真差异退出码 1：译文多出的引文＝疑似增补/幻觉，缺失＝漏译，年份或第二作者不同＝改错。「变体?」只提示、不计入。逐条对原文裁定后，确属 OCR 或排版噪声的写进 `cite_noise.tsv`（次数须与当前一致），不得直接放过。
    - `drift_check.py <书>`：检查科名漂移。
    - `qa.py <书>`：检查残留英文、标点、空格和 U+3000。
 6. **抽查**：每批随机抽 20 条，由裁定者判断对错。

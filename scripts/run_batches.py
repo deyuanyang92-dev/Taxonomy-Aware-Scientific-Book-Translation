@@ -16,6 +16,11 @@
   每次合并后自动对合并译文跑 yiku check（正文和图注各一章，都跑），报告在 核译/direct/<章>/yiku_check.txt。
   python3 run_batches.py <书> --mode species   --chapters body,captions [--names 种名.tsv] [--dry]   # 种名格式，闸口之后跑
   流程：translate -> review -> apply_issues.py（闸口）-> species -> final -> apply_issues.py。
+  python3 run_batches.py <书> --mode split    --chapters body,captions   # 草稿前：src_en 的正文/图注切分检查（不调模型）
+  python3 run_batches.py <书> --mode cite     --chapters body,captions   # 终稿后：英文原文 vs 合并译文的引文/图号对照（不调模型）
+  split 对 src_en/<正文章>.txt 与 src_en/<图注章>.txt（--chapters 依次给正文章、图注章）跑 split_check.py，报告写 核译/split_check.txt，有可疑段退出码 1。
+  cite 对每个 --chapters 章的 src_en/<章>.txt 与 译文/<章>_直译初译.md 合并后跑 cite_diff.py，报告写 核译/cite_diff.tsv
+  （已确认噪声放 核译/cite_noise.tsv，可选别名 核译/cite_alias.tsv），有真差异退出码 1。
   species 不调模型：对合并译文 译文/<章>_直译初译.md 按原书页规范有中文名的种（首现「中文（*拉丁*）」，同页再现只写中文；
   页码来自译文里的 <!-- p.N --> 标记；图注类章节每条图注算一个单元），先备份 *.bak-species 再写回，--dry 只报告。
 
@@ -152,6 +157,57 @@ def run_direct(a, B, notes):
     return code
 
 
+def run_split(a, B):
+    """--mode split：草稿前对 src_en 的正文章、图注章跑 split_check（不调模型）。有可疑段退出码 1。"""
+    import direct_mode as dm
+    import split_check as sc
+    chapters = [c for c in a.chapters.split(',') if c]
+    if len(chapters) != 2:
+        sys.exit('split 模式必须给 --chapters <正文章>,<图注章>（如 body,captions）')
+    body, caps = (dm.Chapter(B, c).source for c in chapters)
+    for p in (body, caps):
+        if not p.exists():
+            print(f'找不到原文 {p}')
+            return 2
+    found = sc.check_text(body.read_text(encoding='utf8'), caps.read_text(encoding='utf8'))
+    paths = {'body': body, 'captions': caps}
+    lines = [s.line_str(str(paths[s.file])) for s in found]
+    (B / '核译').mkdir(parents=True, exist_ok=True)
+    (B / '核译' / 'split_check.txt').write_text(''.join(ln + '\n' for ln in lines), encoding='utf8')
+    print('\n'.join(lines))
+    print(f'切分检查：可疑段 {len(found)} 处 -> 核译/split_check.txt' + ('；请人工核对，必要时把图注残段移入图注后再开始草稿' if found else ''))
+    return 1 if found else 0
+
+
+def run_cite(a, B):
+    """--mode cite：终稿后对英文原文与合并译文跑 cite_diff（不调模型）。有真差异退出码 1。"""
+    import cite_diff as cd
+    import direct_mode as dm
+    chapters = [c for c in a.chapters.split(',') if c]
+    if not chapters:
+        sys.exit('cite 模式必须给 --chapters body,captions')
+    en, zh = [], []
+    for chn in chapters:
+        ch = dm.Chapter(B, chn)
+        if not ch.source.exists() or not ch.merged.exists():
+            print(f'{chn}：缺 {ch.source if not ch.source.exists() else ch.merged}')
+            return 2
+        en.append(ch.source.read_text(encoding='utf8'))
+        zh.append(ch.merged.read_text(encoding='utf8'))
+    d = B / '核译'
+    d.mkdir(parents=True, exist_ok=True)
+    noise = cd.parse_noise((d / 'cite_noise.tsv').read_text(encoding='utf8')) if (d / 'cite_noise.tsv').exists() else None
+    alias = cd.parse_alias((d / 'cite_alias.tsv').read_text(encoding='utf8')) if (d / 'cite_alias.tsv').exists() else None
+    rep = cd.compare(en, zh, noise=noise, alias=alias)
+    (d / 'cite_diff.tsv').write_text(rep.tsv(), encoding='utf8')
+    print(rep.summary())
+    for r in rep.rows:
+        if r.status == 'real':
+            print(f'  [{r.kind}] {r.obj}  英{r.en}/中{r.zh}  {r.verdict}')
+    print('报告 核译/cite_diff.tsv')
+    return 1 if rep.real else 0
+
+
 def run_species(a, B):
     """--mode species：对每章合并译文跑 species_format（不调模型）。返回退出码：没有页码标记或取不到名单为 1。"""
     import direct_mode as dm
@@ -202,9 +258,10 @@ def run_species(a, B):
 def main():
     ap = argparse.ArgumentParser(description='批次调度：智能体模式（codex/claude）或直调模式（deepseek-*/claude-*），见文件头说明')
     ap.add_argument('book')
-    ap.add_argument('--mode', choices=['review', 'translate', 'final', 'species'], required=True,
+    ap.add_argument('--mode', choices=['review', 'translate', 'final', 'species', 'split', 'cite'], required=True,
                     help='translate=初译；review=核译初译原稿；final=核闸口改完后的合并终稿（仅直调模式）；'
-                         'species=按原书页规范种名拉丁名（闸口之后跑，不调模型）')
+                         'species=按原书页规范种名拉丁名（闸口之后跑，不调模型）；'
+                         'split=草稿前检查正文/图注切分（--chapters 正文章,图注章）；cite=终稿后对照英文原文与译文的引文和图号（均不调模型）')
     ap.add_argument('--engine', choices=['codex', 'claude', *DIRECT_ENGINES], default='codex',
                     help='codex/claude=智能体模式；deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus=直调模式。'
                          '默认分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）')
@@ -233,6 +290,10 @@ def main():
     notes = pathlib.Path(a.notes).read_text() if a.notes else ''
     if a.mode == 'species':
         sys.exit(run_species(a, B))
+    if a.mode == 'split':
+        sys.exit(run_split(a, B))
+    if a.mode == 'cite':
+        sys.exit(run_cite(a, B))
     if a.engine in DIRECT_ENGINES:
         sys.exit(run_direct(a, B, notes))
     if a.mode == 'final':
