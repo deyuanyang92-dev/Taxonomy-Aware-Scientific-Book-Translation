@@ -80,6 +80,7 @@ class Engine:
 
 
 def go(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replies: dict[str, str] | None = None, **kw: Any) -> tuple[Engine, Path]:
+    kw.setdefault("llm_mode", "edits")                    # 这里的旧用例测 edits 模式；rewrite 模式见 go_rw
     eng = Engine(replies or {})
     monkeypatch.setattr(gtrans, "engine_call", eng)
     src = tmp_path / "in.txt"
@@ -387,3 +388,168 @@ def test_dry_run_no_network_no_model(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert rc == 0 and not (tmp_path / "o").exists()
     out = capsys.readouterr().out
     assert "[dry]" in out and "单元 3" in out and "LLM 2 次" in out
+
+
+# ---------------------------------------------------------------- rewrite 模式（默认）：整段改写 + 意义核对
+
+DRAFT = "达尔文于1859年提出了自然选择。每个谱系都会显著进化。该世系后来分裂。"
+GOOD = "1859年，达尔文提出了自然选择。每个谱系都在显著进化，后来该谱系又发生分裂。"
+
+
+class RwEngine:
+    """假引擎：改写调用返回 rewrites[body]（图注原样返回初稿），意义核对调用返回 meaning[nothink|think]。"""
+
+    def __init__(self, rewrite: str | None = None, meaning: dict[str, str] | None = None, rewrite_exc: bool = False):
+        self.rewrite, self.meaning, self.rewrite_exc = rewrite, meaning or {}, rewrite_exc
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, engine: str, system: str, user: str, *, max_tokens: int, tag: str) -> tuple[str, dict[str, Any]]:
+        think = bool(os.environ.get("YZZ_DEEPSEEK_THINKING"))
+        self.calls.append({"engine": engine, "system": system, "user": user, "think": think, "tag": tag})
+        use = {"input_tokens": 100, "output_tokens": 10}
+        if system.startswith("你是名家译者"):
+            if self.rewrite_exc:
+                raise gtrans.le.EngineError("连不上")
+            if "Each lineage" in user and self.rewrite is not None:
+                return self.rewrite, use
+            return user.split("## 当前中文译文\n", 1)[1], use
+        assert system.startswith("你是英中译文的意义核对员") and engine == "deepseek-flash"
+        return self.meaning.get("think" if think else "nothink", "[]"), use
+
+
+def go_rw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, eng: RwEngine, **kw: Any) -> Path:
+    monkeypatch.setattr(gtrans, "engine_call", eng)
+    src = tmp_path / "in.txt"
+    src.write_text(DOC, encoding="utf8")
+    gtrans.run(src, tmp_path / "out", gtrans.Opts(cache=str(tmp_path / "cache.sqlite"), stem="in", **kw))
+    return tmp_path / "out"
+
+
+def body_calls(eng: RwEngine, kind: str) -> list[dict[str, Any]]:
+    return [c for c in eng.calls if c["tag"].split("/")[-1].startswith(kind) and "Each lineage" in c["user"]]
+
+
+def test_default_mode_is_rewrite_and_system_prompt_has_style_section():
+    assert gtrans.Opts().llm_mode == "rewrite" and gtrans.Opts().rewrite_engine is None
+    sysmsg = gtrans.rewrite_system()
+    assert sysmsg.startswith("你是名家译者，把译文改写成地道、凝练的学术中文。忠实第一")
+    assert "名家逻辑" in sysmsg and "先结论后条件" in sysmsg and sysmsg.endswith("只输出改写后的完整中文，不要解释。")
+    assert "## 7." not in sysmsg
+
+
+def test_term_lines_compact():
+    assert gtrans.term_lines(TABLE, ["x=y"]) == "natural selection=自然选择\nlineage=谱系；世系\nx=y"
+
+
+def test_rewrite_accepted(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    eng = RwEngine(rewrite=GOOD)
+    out = go_rw(tmp_path, monkeypatch, eng)
+    zh = (out / "zh.md").read_text(encoding="utf8")
+    assert GOOD in zh and "世系" not in zh and "<!-- p.14 -->" in zh
+    rw = body_calls(eng, "rewrite")[0]
+    assert rw["engine"] == "deepseek-flash" and not rw["think"]
+    assert "natural selection=自然选择" in rw["user"] and "## 英文原文" in rw["user"] and DRAFT in rw["user"]
+    assert len(body_calls(eng, "meaning")) == 1                              # 一单元一次意义核对，关思考
+    rep = (out / "report.md").read_text(encoding="utf8")
+    assert "改写：采用" in rep and "意义核对：发现 0，已修 0，未修 0" in rep
+    kinds = [json.loads(x)["status"] for x in (out / "edits.jsonl").read_text(encoding="utf8").splitlines()]
+    assert "rewrite_used" in kinds
+
+
+def test_rewrite_engine_override(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    eng = RwEngine(rewrite=GOOD)
+    go_rw(tmp_path, monkeypatch, eng, rewrite_engine="claude-sonnet")
+    assert [c["engine"] for c in eng.calls if c["tag"].endswith("/rewrite")] == ["claude-sonnet"] * 2
+    assert {c["engine"] for c in eng.calls if "/meaning" in c["tag"]} == {"deepseek-flash"}
+
+
+@pytest.mark.parametrize("bad,why", [
+    ("达尔文于1860年提出了自然选择。每个谱系都会显著进化。该谱系后来分裂。", "年份"),
+    ("达尔文提出了自然选择。每个谱系都会显著进化。该谱系后来分裂。", "年份"),                    # 丢了年份
+    ("达尔文于1859年提出了自然选择。每个谱系都会显著进化。\n\n该谱系后来分裂。", "段数改变"),      # 拆段
+    ("达尔文于1859年提出了自然演化。每个谱系都会显著进化。该谱系后来分裂。", "HARD"),
+])
+def test_rewrite_rejected_keeps_draft(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bad: str, why: str):
+    eng = RwEngine(rewrite=bad)
+    out = go_rw(tmp_path, monkeypatch, eng)
+    zh = (out / "zh.md").read_text(encoding="utf8")
+    assert DRAFT in zh                                                       # 初稿原样保留
+    assert bad not in zh
+    assert not body_calls(eng, "meaning")                                    # 改写被拒，不再做意义核对
+    rep = (out / "report.md").read_text(encoding="utf8")
+    assert "改写：拒绝，保留初稿" in rep and why in rep
+
+
+def test_rewrite_rejected_on_dropped_citation_and_latin():
+    before = "这一点见 Smith (1999) 的研究。*Nereis virens* 与 Homo sapiens 都有。"
+    assert gtrans.rewrite_violations(before, before, []) == []
+    assert any("引证" in w or "年份" in w for w in gtrans.rewrite_violations(before, "这一点见前人研究。*Nereis virens* 与 Homo sapiens 都有。", []))
+    assert any("拉丁双名" in w for w in gtrans.rewrite_violations(before, "这一点见 Smith (1999) 的研究。*Nereis virens* 与人类都有。", []))
+    assert gtrans.rewrite_violations(before, "", []) == ["改写稿为空"]
+
+
+def test_meaning_fix_applied(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    drift = "1859年，达尔文提出了自然选择。每个谱系都无须灭绝。该谱系后来分裂。"
+    fix = json.dumps([{"zh_old": "都无须灭绝", "zh_new": "都在显著进化", "why": "漏译 significantly evolves"}], ensure_ascii=False)
+    eng = RwEngine(rewrite=drift, meaning={"nothink": "```json\n" + fix + "\n```"})
+    out = go_rw(tmp_path, monkeypatch, eng)
+    zh = (out / "zh.md").read_text(encoding="utf8")
+    assert "每个谱系都在显著进化" in zh and "灭绝" not in zh
+    rep = (out / "report.md").read_text(encoding="utf8")
+    assert "意义核对：发现 1，已修 1，未修 0" in rep
+    st = [json.loads(x) for x in (out / "edits.jsonl").read_text(encoding="utf8").splitlines()]
+    assert [e["status"] for e in st if e["status"] == "applied"] == ["applied"] and st[1]["pass"] == "meaning"
+
+
+def test_meaning_fix_rejected_by_guard_or_ambiguity_stays_flagged(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fixes = json.dumps([
+        {"zh_old": "1859年", "zh_new": "1860年", "why": "x"},                  # 护栏：年份
+        {"zh_old": "谱系", "zh_new": "世系", "why": "y"},                       # 出现 2 次
+    ], ensure_ascii=False)
+    eng = RwEngine(rewrite=GOOD.replace("又发生分裂", "又分裂；谱系"), meaning={"nothink": fixes, "think": "[]"})
+    out = go_rw(tmp_path, monkeypatch, eng, think_escalate=True)
+    zh = (out / "zh.md").read_text(encoding="utf8")
+    assert "1859年" in zh and "1860" not in zh
+    rep = (out / "report.md").read_text(encoding="utf8")
+    assert "意义核对：发现 2，已修 0，未修 0" in rep                           # 思考复核返回 []，未修清零
+    think = body_calls(eng, "meaning-think")
+    assert len(think) == 1 and think[0]["think"]                              # 仍有未修警告 → 开思考再核一次
+    assert "YZZ_DEEPSEEK_THINKING" not in os.environ
+
+
+def test_no_think_escalation_when_all_flags_fixed(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fix = json.dumps([{"zh_old": "又发生分裂", "zh_new": "又分裂", "why": "z"}], ensure_ascii=False)
+    eng = RwEngine(rewrite=GOOD, meaning={"nothink": fix})
+    go_rw(tmp_path, monkeypatch, eng, think_escalate=True)
+    assert not body_calls(eng, "meaning-think")
+
+
+def test_malformed_checker_keeps_rewrite_and_flags_unit(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    eng = RwEngine(rewrite=GOOD, meaning={"nothink": "这里没有 JSON，意思都对。"})
+    out = go_rw(tmp_path, monkeypatch, eng)
+    assert GOOD in (out / "zh.md").read_text(encoding="utf8")
+    rep = (out / "report.md").read_text(encoding="utf8")
+    assert "须人工复核：意义核对返回格式错误" in rep
+
+
+def test_parse_meaning():
+    assert gtrans.parse_meaning("[]") == [] and gtrans.parse_meaning("无问题") is None
+    assert gtrans.parse_meaning("[坏") is None and gtrans.parse_meaning('["a"]') is None
+    assert gtrans.parse_meaning('x [{"zh_old":"a","zh_new":"b","why":"c"}] y') == [{"zh_old": "a", "zh_new": "b", "why": "c"}]
+
+
+def test_rewrite_engine_failure_keeps_draft(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    out = go_rw(tmp_path, monkeypatch, RwEngine(rewrite_exc=True))
+    assert "该世系后来分裂" in (out / "zh.md").read_text(encoding="utf8")
+    assert "调用失败：连不上" in (out / "report.md").read_text(encoding="utf8")
+
+
+def test_edits_mode_still_works_via_cli(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    fix = json.dumps([{"old": "该世系后来分裂", "new": "该谱系后来分裂", "type": "术语"}], ensure_ascii=False)
+    eng = Engine({"nothink:body": fix})
+    monkeypatch.setattr(gtrans, "engine_call", eng)
+    src = tmp_path / "in.txt"
+    src.write_text(DOC, encoding="utf8")
+    assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert "该谱系后来分裂" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
+    assert len(eng.calls) == 2 and "采纳 1，拒绝 0" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")

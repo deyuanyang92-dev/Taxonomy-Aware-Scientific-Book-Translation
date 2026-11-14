@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """低成本翻译流水线：Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考。
 
-  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--think-escalate] [--no-llm] [--dry]
+  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--no-llm] [--dry]
 
 输入：英文文本，空行分段；`<!-- p.N -->` 页码标记和标题（# 行、全大写短行、Title Case 单行）各自成单元，原样保留、不送 Google；
   「Fig.」开头的图注单独成单元；前一段没写完句子、页码标记之后接着写的，合并成一段，标记移到合并段之后（同 join_page_breaks）。
@@ -13,8 +13,11 @@
   c 一致性检查：同一英文术语在单元内出现 ≥2 次，译文里同时出现多种译法（yiku 定名、Google 默认译法、修正表里的错译、
     SOFT 的备选译名）→ 警告；
   d fidelity_check --fix（拉丁名、人名、数字、术语首现括注）；标题全文处理完后跑 heading_bilingual；cite_diff 只报告。
-3 LLM（除非 --no-llm）：deepseek-flash，默认关思考，每单元（正文段合并到 ≤1500 英文词）一次调用，只返回 JSON 改动。
-  改动须 old 在单元译文里恰好出现一次，并通过 polish_guard（引证、年份、数字、拉丁名、页码标记、HARD 术语不变），否则拒绝并记录。
+3 LLM（除非 --no-llm）。--llm-mode rewrite（默认）：每单元（正文段合并到 ≤1500 英文词）让名家译者整段改写（system 含 skill/STYLE.md §6），
+  引擎缺省 deepseek-flash、关思考，--rewrite-engine 可换（如 claude-sonnet）。改写稿须通过护栏（引证、年份、数字单位、拉丁名、页码标记、
+  HARD 术语不变，段数不变），否则保留初稿并记录；通过后再做一次意义核对（deepseek-flash 关思考，只报意思不一致的句子并给最小修正），
+  修正须 zh_old 恰好出现一次并过同一护栏；核对返回格式错误则保留改写稿，在 report.md 标注该单元。--think-escalate：仍有未修复意义警告的单元，开思考再核对一次。
+  --llm-mode edits（旧模式）：deepseek-flash 关思考，一次调用只返回 JSON 改动；改动须 old 在单元译文里恰好出现一次，并通过 polish_guard，否则拒绝并记录；
   --think-escalate：第一轮后仍有一致性警告或保真问题的单元，才开思考重跑一次。
 4 输出：out_dir/zh.md（带页码标记）、report.md（逐单元）、edits.jsonl（采纳与拒绝的改动）。每次 LLM 调用由 llm_engines 追加到 usage.tsv。
 DeepSeek 只在夜间（北京时间 22:00–08:00）调用，除非 LLM_SKIP_OFFPEAK=1（须用户授权）。--dry 只列计划（请求数、缓存命中、估算 token），不联网、不调模型。
@@ -37,6 +40,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -510,6 +514,80 @@ def apply_edits(zh: str, edits: list[dict[str, Any]], hard: list[str]) -> tuple[
     return zh, ok, rejected + bad
 
 
+# ---------------------------------------------------------------- 整段改写 + 意义核对
+
+REWRITE_HEAD = ("你是名家译者，把译文改写成地道、凝练的学术中文。忠实第一：不增删信息，引文、年份、数字、学名、术语不变；"
+                "概念不得替换；保持原段落划分，不拆段不并段。")
+REWRITE_TAIL = "只输出改写后的完整中文，不要解释。"
+
+MEANING_SYS = """你是英中译文的意义核对员。逐句对照英文原文与中文译文，只找中文与英文意思不一致的句子：
+极性或否定、谁主张了什么（主语与归属）、数量词、模糊限定语（may、usually、some）、因果关系、漏译或增译。不报文风问题。
+对每个不一致的句子给出最小修正，引文、年份、数字、学名、术语不得改动。
+只输出 JSON 数组，每项 {"zh_old": 中文里原样存在的短而唯一的片段, "zh_new": 改后片段, "why": 简短理由}。意思全部一致输出 []。"""
+
+_LATIN = re.compile(r"(?<![A-Za-z])[A-Z][a-z]{2,} [a-z]{3,}(?![A-Za-z])")
+_PARA_SPLIT = re.compile(r"\n\s*\n")
+_RW_LABEL = {"used": "采用", "rejected": "拒绝，保留初稿", "failed": "调用失败，保留初稿"}
+
+
+def style_section() -> str:
+    """skill/STYLE.md 的「## 6.」整节（运行时读取；找不到则空）。"""
+    for p in (ROOT / "skill" / "STYLE.md", ROOT / "STYLE.md"):
+        if p.exists():
+            m = re.search(r"^## 6\..*?(?=^## \d|\Z)", p.read_text(encoding="utf8"), re.S | re.M)
+            if m:
+                return m.group(0).strip()
+    return ""
+
+
+def rewrite_system() -> str:
+    return "\n\n".join(x for x in (REWRITE_HEAD, style_section(), REWRITE_TAIL) if x)
+
+
+def term_lines(table: str, extra: list[str] | None = None, limit: int = 60) -> str:
+    """术语表压成 `en=中文` 行（HARD 在前，SOFT 在后），再附脚本修正里带触发词的项。"""
+    hard, soft = parse_table(table)
+    rows = [f"{en}={zh}" for en, zh in [*hard, *soft]][:limit]
+    return "\n".join(dict.fromkeys(rows + list(extra or [])))
+
+
+def strip_fences(txt: str) -> str:
+    t = txt.strip()
+    m = re.match(r"^```[A-Za-z]*\n(.*?)\n?```$", t, re.S)
+    return (m.group(1) if m else t).strip()
+
+
+def para_count(text: str) -> int:
+    return len([p for p in _PARA_SPLIT.split(text.strip()) if p.strip()])
+
+
+def rewrite_violations(before: str, after: str, hard: list[str]) -> list[str]:
+    """polish_guard（引证、年份、数字单位、斜体拉丁名、页码标记、HARD 术语）+ 非斜体拉丁双名 + 段数。空列表＝通过。"""
+    if not after.strip():
+        return ["改写稿为空"]
+    why = pg.violations(before, after, hard)
+    a, b = Counter(_LATIN.findall(before.replace("*", ""))), Counter(_LATIN.findall(after.replace("*", "")))
+    if a != b:
+        why.append("拉丁双名被改动：" + "、".join(sorted(((a - b) + (b - a)).keys())))
+    if para_count(before) != para_count(after):
+        why.append(f"段数改变（{para_count(before)} -> {para_count(after)}）")
+    return why
+
+
+def parse_meaning(text: str) -> list[dict[str, Any]] | None:
+    """意义核对返回 -> 问题列表；格式错误（无 JSON 数组、解析失败、元素不是对象）返回 None。"""
+    m = re.search(r"\[.*\]", text, re.S)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list) or not all(isinstance(e, dict) for e in data):
+        return None
+    return data
+
+
 # ---------------------------------------------------------------- 主流程
 
 @dataclass
@@ -522,6 +600,8 @@ class Opts:
     fixes: str | None = None
     cache: str | None = None
     stem: str = "gtrans"
+    llm_mode: str = "rewrite"            # rewrite：整段改写 + 意义核对；edits：旧的 JSON 改动单
+    rewrite_engine: str | None = None    # 缺省 ENGINE（deepseek-flash）
 
 
 @dataclass
@@ -544,6 +624,12 @@ class Rep:
     think_out: int = 0
     thinking_used: bool = False
     note: list[str] = field(default_factory=list)
+    rewrite: str = ""                    # "" | used | rejected | failed
+    rewrite_why: list[str] = field(default_factory=list)
+    mc_status: str = ""                  # "" | ok | malformed | failed
+    mc_found: int = 0
+    mc_fixed: int = 0
+    mc_left: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Runner:
@@ -613,6 +699,64 @@ class Runner:
         rep.applied += [{**x, "pass": "think" if think else "nothink"} for x in ok]
         rep.rejected += [{**x, "pass": "think" if think else "nothink"} for x in bad]
 
+
+    # -- LLM 层（rewrite 模式）：整段改写 → 护栏 → 意义核对
+    def _tokens(self, rep: Rep, use: dict[str, Any], think: bool) -> None:
+        tin, tout = int(use.get("input_tokens") or 0), int(use.get("output_tokens") or 0)
+        if think:
+            rep.think_in, rep.think_out, rep.thinking_used = rep.think_in + tin, rep.think_out + tout, True
+        else:
+            rep.tok_in, rep.tok_out = rep.tok_in + tin, rep.tok_out + tout
+
+    def rewrite_pass(self, u: Unit, rep: Rep, table: str, hard_zh: list[str]) -> None:
+        extra = [f"{f.term}={f.right}" for f in self.fixes if f.term and any(a.startswith(f"{f.wrong}→{f.right}") for a in rep.fixes)]
+        user = f"## 术语表\n{term_lines(table, extra)}\n\n## 英文原文\n{u.en}\n\n## 当前中文译文\n{u.zh}"
+        tag = f"gtrans/{self.o.stem}/u{rep.idx}/rewrite"
+        try:
+            with thinking(False):
+                txt, use = engine_call(self.o.rewrite_engine or ENGINE, rewrite_system(), user, max_tokens=16000, tag=tag)
+        except le.EngineError as exc:
+            rep.rewrite = "failed"
+            rep.note.append(f"LLM 改写调用失败：{exc}")
+            return
+        self._tokens(rep, use, False)
+        new = strip_fences(txt)
+        why = rewrite_violations(u.zh, new, hard_zh)
+        if why:
+            rep.rewrite, rep.rewrite_why = "rejected", why
+            return
+        rep.rewrite, u.zh = "used", new
+        remaining = self.meaning_check(u, rep, hard_zh, think=False)
+        if remaining and self.o.think_escalate:
+            self.meaning_check(u, rep, hard_zh, think=True)
+
+    def meaning_check(self, u: Unit, rep: Rep, hard_zh: list[str], think: bool) -> list[dict[str, Any]]:
+        """一次意义核对：采纳 zh_old 恰好出现一次且过护栏的修正，返回未能修复的问题。"""
+        tag = f"gtrans/{self.o.stem}/u{rep.idx}/meaning-{'think' if think else 'nothink'}"
+        try:
+            with thinking(think):
+                txt, use = engine_call(ENGINE, MEANING_SYS, f"## 英文原文\n{u.en}\n\n## 中文译文\n{u.zh}",
+                                       max_tokens=32000 if think else 16000, tag=tag)
+        except le.EngineError as exc:
+            rep.mc_status = "failed"
+            rep.note.append(f"意义核对{'（思考）' if think else ''}调用失败：{exc}")
+            return []
+        self._tokens(rep, use, think)
+        flags = parse_meaning(txt)
+        if flags is None:
+            rep.mc_status = "malformed"
+            return []
+        rep.mc_status = "ok"
+        edits = [{"old": f.get("zh_old"), "new": f.get("zh_new"), "type": str(f.get("why", ""))} for f in flags]
+        u.zh, ok, bad = apply_edits(u.zh, edits, hard_zh)
+        tag2 = "meaning-think" if think else "meaning"
+        rep.applied += [{**x, "pass": tag2} for x in ok]
+        rep.rejected += [{**x, "pass": tag2} for x in bad]
+        rep.mc_found += len(flags)
+        rep.mc_fixed += len(ok)
+        rep.mc_left = bad
+        return bad
+
     def process(self, u: Unit, idx: int) -> Rep:
         rep = Rep(idx, u.kind, u.page, u.words, chars=sum(len(b.en) for b in u.blocks if b.kind != "marker"))
         self.google_unit(u)
@@ -625,13 +769,17 @@ class Runner:
         seen0 = set(self.seen)
         res = self.fidelity(u, set(seen0))
         u.zh = res.zh
+        edits_mode = self.o.llm_mode == "edits"
         if not self.o.no_llm:
-            self.llm_pass(u, rep, table, hard_zh, [], think=False)
+            if edits_mode:
+                self.llm_pass(u, rep, table, hard_zh, [], think=False)
+            else:
+                self.rewrite_pass(u, rep, table, hard_zh)
         seen = set(seen0)
         res = self.fidelity(u, seen)
         u.zh = res.zh
         warns = self.warnings(u, hard, soft, res)
-        if warns and self.o.think_escalate and not self.o.no_llm:
+        if warns and self.o.think_escalate and not self.o.no_llm and edits_mode:
             self.llm_pass(u, rep, table, hard_zh, warns, think=True)
             seen = set(seen0)
             res = self.fidelity(u, seen)
@@ -667,7 +815,19 @@ def render_report(src: str, o: Opts, reps: list[Rep], g: Google, bilingual_note:
             if items:
                 L.append(f"- {tag}：")
                 L += [f"  - {x}" for x in items]
-        if r.kind in ("body", "caption") and not o.no_llm:
+        if r.kind in ("body", "caption") and not o.no_llm and o.llm_mode == "rewrite":
+            L.append(f"- 改写：{_RW_LABEL.get(r.rewrite, '未执行')}"
+                     f"；token 入/出 {r.tok_in}/{r.tok_out}；思考：{'是，入/出 ' + str(r.think_in) + '/' + str(r.think_out) if r.thinking_used else '否'}")
+            L += [f"  - 拒绝原因：{x}" for x in r.rewrite_why]
+            if r.rewrite == "used":
+                L.append(f"- 意义核对：发现 {r.mc_found}，已修 {r.mc_fixed}，未修 {len(r.mc_left)}")
+                if r.mc_status == "malformed":
+                    L.append("  - 须人工复核：意义核对返回格式错误，已保留改写稿，意义未经核对")
+                elif r.mc_status == "failed":
+                    L.append("  - 须人工复核：意义核对调用失败，已保留改写稿，意义未经核对")
+                for x in r.mc_left:
+                    L.append(f"  - 未修：「{x.get('old', '')}」→「{x.get('new', '')}」（{x.get('orig_type', x.get('type', ''))}）：{x.get('reject', '')}")
+        elif r.kind in ("body", "caption") and not o.no_llm:
             L.append(f"- LLM：采纳 {len(r.applied)}，拒绝 {len(r.rejected)}；token 入/出 {r.tok_in}/{r.tok_out}；"
                      f"思考：{'是，入/出 ' + str(r.think_in) + '/' + str(r.think_out) if r.thinking_used else '否'}")
             for x in r.rejected:
@@ -701,7 +861,8 @@ def dry_run(units: list[Unit], o: Opts, g: Google) -> str:
     est_out = 150 * len(llm)
     return (f"[dry] 单元 {sum(u.kind != 'marker' for u in units)}（页码标记 {sum(u.kind == 'marker' for u in units)}）；"
             f"Google 新请求约 {reqs} 次 / {chars} 字符（缓存已有 {hits} 段）；术语探测另需约 {len(terms)} 次；"
-            f"LLM {0 if o.no_llm else len(llm)} 次，粗估输入 {est_in} / 输出 {est_out} token（不开思考）")
+            f"LLM {0 if o.no_llm else len(llm)} 次{'（rewrite 模式另有同数的意义核对）' if o.llm_mode == 'rewrite' and not o.no_llm else ''}，"
+            f"粗估输入 {est_in} / 输出 {est_out} token（不开思考）")
 
 
 def run(src: Path, out_dir: Path, o: Opts, google: Google | None = None) -> str:
@@ -730,6 +891,8 @@ def run(src: Path, out_dir: Path, o: Opts, google: Google | None = None) -> str:
     (out_dir / "report.md").write_text(render_report(src.name, o, reps, g, note), encoding="utf8")
     with open(out_dir / "edits.jsonl", "w", encoding="utf8") as f:
         for r in reps:
+            if r.rewrite:
+                f.write(json.dumps({"unit": r.idx, "status": f"rewrite_{r.rewrite}", "reject": "；".join(r.rewrite_why)}, ensure_ascii=False) + "\n")
             for x in r.applied:
                 f.write(json.dumps({"unit": r.idx, "status": "applied", **x}, ensure_ascii=False) + "\n")
             for x in r.rejected:
@@ -742,7 +905,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("src", help="英文文本文件")
     ap.add_argument("-o", "--out", required=True, help="输出目录（zh.md、report.md、edits.jsonl）")
     ap.add_argument("--domain", default="进化生物学", help="yiku 领域")
-    ap.add_argument("--think-escalate", action="store_true", help="仍有警告的单元才开思考重跑")
+    ap.add_argument("--llm-mode", choices=("rewrite", "edits"), default="rewrite",
+                    help="rewrite（默认）：整段改写 + 意义核对；edits：旧的 JSON 改动单")
+    ap.add_argument("--rewrite-engine", help=f"改写引擎（缺省 {ENGINE}，如 claude-sonnet）；意义核对始终用 {ENGINE}")
+    ap.add_argument("--think-escalate", action="store_true", help="仍有警告（rewrite 模式：未修复的意义警告）的单元才开思考再跑一次")
     ap.add_argument("--no-llm", action="store_true", help="只做 Google + 脚本修正")
     ap.add_argument("--dry", action="store_true", help="只列计划，不联网、不调模型")
     ap.add_argument("--max-words", type=int, default=MAX_WORDS, help="每个 LLM 单元的英文词数上限")
@@ -750,7 +916,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cache", help=f"Google 缓存 sqlite（缺省 {DEFAULT_CACHE}）")
     a = ap.parse_args(argv)
     src = Path(a.src)
-    o = Opts(a.domain, a.think_escalate, a.no_llm, a.dry, a.max_words, a.fixes, a.cache, src.stem)
+    o = Opts(a.domain, a.think_escalate, a.no_llm, a.dry, a.max_words, a.fixes, a.cache, src.stem,
+             llm_mode=a.llm_mode, rewrite_engine=a.rewrite_engine)
     try:
         run(src, Path(a.out), o)
     except GoogleError as exc:
