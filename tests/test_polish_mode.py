@@ -53,13 +53,28 @@ def book(tmp_path, monkeypatch):
     return tmp_path
 
 
-def polish(book, monkeypatch, reply, engine="deepseek-flash"):
+CHECK_MARK = "=== 待核改动 ==="
+
+
+def ok_checker(user):
+    """语义核验假回复：待核改动全部判 ok。"""
+    n = user.count("\nold: ")
+    return "".join(json.dumps({"i": i, "verdict": "ok", "why": ""}) + "\n" for i in range(1, n + 1))
+
+
+def polish(book, monkeypatch, reply, engine="deepseek-flash", check=ok_checker, check_engine="deepseek-flash"):
+    """润色请求回 reply；语义核验请求（用户消息含 CHECK_MARK）回 check。返回 (退出码, 假引擎)；假引擎 .calls 含两类请求。"""
     import llm_engines
-    fake = Fake(reply)
+
+    def route(user):
+        if CHECK_MARK in user:
+            return check(user) if callable(check) else check
+        return reply(user) if callable(reply) else reply
+    fake = Fake(route)
     monkeypatch.setattr(llm_engines, "call", fake)
     args = types.SimpleNamespace(chapters="ch05", mode="polish", domain="分类学", book_desc="", scope="Nereididae",
                                  chunk_chars=9000, dry=False, engine=engine, same_engine_ok=False, j=1, force=False,
-                                 fallback=None)
+                                 fallback=None, polish_check_engine=check_engine)
     code = run_batches.run_direct(args, book, "")
     return code, fake
 
@@ -93,6 +108,7 @@ def test_valid_polish_edit_is_kept_and_applies(book, monkeypatch):
     assert dm.page_labels(merged(book)) == ["13", "14"]
     # 模型只看到中文：用户消息里没有英文原文，系统提示词带 STYLE 第 6 节
     _engine, system, user = fake.calls[0]
+    assert len(fake.calls) == 2 and CHECK_MARK in fake.calls[1][2]      # 第二个请求是语义核验
     assert "=== 英文原文 ===" not in user and "Nereis virens (Fig. 2)" not in user and "=== 中文译文 ===" in user
     assert "先结论后条件" in system and "名家逻辑" in system and "NO_ISSUES" in system
 
@@ -162,7 +178,7 @@ def test_edit_that_changes_line_structure_is_rejected(book, monkeypatch):
 
 def test_no_issues_and_resume_skips_done_chunks(book, monkeypatch):
     code, fake = polish(book, monkeypatch, "NO_ISSUES")
-    assert code == 0 and issues_of(book) == [] and len(fake.calls) == 1
+    assert code == 0 and issues_of(book) == [] and len(fake.calls) == 1   # 没有改动就不发核验请求
     code, fake = polish(book, monkeypatch, "NO_ISSUES")
     assert code == 0 and fake.calls == []                              # 已有产物，跳过
 
@@ -178,6 +194,113 @@ def test_unparsable_model_output_fails_chunk_without_issues_file(book, monkeypat
     code, _ = polish(book, monkeypatch, "好的，已润色完毕。")
     assert code == 1 and issues_of(book) == []
     assert not (book / "核译" / "direct" / "ch05" / "polish" / "c00.jsonl").exists()   # 不写完成文件，下次续跑重做
+
+
+# ---------- 语义核验：意思反了的改动，指纹挡不住 ----------
+
+# 译文里「说话人」被改反：数字、引证、术语都不变，指纹闸口放行
+FLIP_OLD = "沙蚕的鳃很小，而 Smith 似乎认为它们并不重要"
+FLIP_NEW = "沙蚕的鳃很小，而 Smith 似乎认为它们非常重要"
+SRC_FLIP = "The gills are small, and Smith seemed to think them unimportant."
+ZH_FLIP = f"<!-- p.1 -->\n{FLIP_OLD}。\n"
+
+
+@pytest.fixture
+def flip_book(tmp_path, monkeypatch):
+    (tmp_path / "src_en").mkdir()
+    (tmp_path / "译文").mkdir()
+    (tmp_path / "src_en" / "ch05.txt").write_text("<!-- p.1 -->\n" + SRC_FLIP + "\n", encoding="utf8")
+    monkeypatch.setattr(dm, "yiku_table", lambda f, d, s: "领域：分类学\n")
+    ch = dm.Chapter(tmp_path, "ch05")
+    ids = ch.prepare("分类学", "Nereididae")
+    dm.run_translate(ch, ids, "claude-sonnet", "SYS", Fake(ZH_FLIP), 1)
+    dm.merge_translation(ch, ids)
+    return tmp_path
+
+
+def two_edits_reply(_user):
+    return issue(FLIP_OLD, FLIP_NEW) + issue("<!-- p.1 -->\n沙蚕的鳃很小", "<!-- p.1 -->\n沙蚕的鳃较小")
+
+
+def test_checker_meaning_changed_is_rejected_and_ok_is_kept(flip_book, monkeypatch):
+    def check(user):
+        assert SRC_FLIP in user and "[1]\nold: " + FLIP_OLD in user and "new: " + FLIP_NEW in user   # 英文原文和 (old,new) 都在
+        return ('{"i": 1, "verdict": "meaning_changed", "why": "unimportant 变成 非常重要"}\n'
+                '{"i": 2, "verdict": "ok", "why": ""}\n')
+    code, fake = polish(flip_book, monkeypatch, two_edits_reply, check=check)
+    assert code == 0
+    assert [c for c in fake.calls if CHECK_MARK in c[2]].__len__() == 1       # 每块只发一次核验请求
+    (kept,) = issues_of(flip_book)
+    assert kept["new"].endswith("较小")
+    (rej,) = rejected_of(flip_book)
+    assert rej["new"] == FLIP_NEW and "语义核验" in rej["reject"] and "meaning_changed" in rej["reject"] and "非常重要" in rej["reject"]
+
+
+def test_checker_ok_keeps_edit(flip_book, monkeypatch):
+    polish(flip_book, monkeypatch, issue("沙蚕的鳃很小，而", "沙蚕的鳃很小，但"))
+    assert len(issues_of(flip_book)) == 1 and rejected_of(flip_book) == []
+
+
+def test_checker_engine_may_differ_from_polish_engine(flip_book, monkeypatch):
+    _code, fake = polish(flip_book, monkeypatch, issue("沙蚕的鳃很小，而", "沙蚕的鳃很小，但"),
+                         engine="claude-sonnet", check_engine="deepseek-v4-pro")
+    assert [c[0] for c in fake.calls] == ["claude-sonnet", "deepseek-v4-pro"]
+    assert "语义核验员" in fake.calls[1][1]                                    # 核验用自己的系统提示词，不是润色的
+
+
+@pytest.mark.parametrize("garbage", [
+    "看起来都没问题。",                                                         # 非 JSON
+    "",                                                                        # 空
+    '{"i": 1, "verdict": "maybe"}',                                            # 不是 ok
+    '{"i": 1, "verdict": "OKAY"}',                                             # 不是明确的 ok
+    '{"i": 2, "verdict": "ok"}',                                               # 编号对不上（本块只有 1 条）
+    '{"verdict": "ok"}',                                                       # 缺编号
+    '{"i": "x", "verdict": "ok"}',                                             # 编号不是整数
+    '[{"i": 1, "verdict": "ok"}]',                                             # 不是逐行 JSON
+])
+def test_malformed_checker_output_fails_closed(flip_book, monkeypatch, garbage):
+    polish(flip_book, monkeypatch, issue("沙蚕的鳃很小，而", "沙蚕的鳃很小，但"), check=garbage)
+    assert issues_of(flip_book) == []
+    (rej,) = rejected_of(flip_book)
+    assert "语义核验" in rej["reject"]
+
+
+def test_checker_missing_one_item_rejects_only_that_item(flip_book, monkeypatch):
+    polish(flip_book, monkeypatch, two_edits_reply, check='```json\n{"i": 2, "verdict": "ok", "why": ""}\n```')
+    (kept,) = issues_of(flip_book)
+    assert kept["new"].endswith("较小")
+    (rej,) = rejected_of(flip_book)
+    assert rej["new"] == FLIP_NEW and "缺第 1 条" in rej["reject"]
+
+
+def test_checker_duplicate_verdict_any_not_ok_wins(flip_book, monkeypatch):
+    polish(flip_book, monkeypatch, issue("沙蚕的鳃很小，而", "沙蚕的鳃很小，但"),
+           check='{"i": 1, "verdict": "ok"}\n{"i": 1, "verdict": "meaning_changed", "why": "x"}\n')
+    assert issues_of(flip_book) == [] and len(rejected_of(flip_book)) == 1
+
+
+def test_checker_call_failure_fails_closed(flip_book, monkeypatch):
+    def boom(user):
+        raise RuntimeError("connection reset")
+    code, _ = polish(flip_book, monkeypatch, issue("沙蚕的鳃很小，而", "沙蚕的鳃很小，但"), check=boom)
+    assert issues_of(flip_book) == []
+    (rej,) = rejected_of(flip_book)
+    assert "语义核验调用失败" in rej["reject"] and "connection reset" in rej["reject"]
+
+
+def test_guard_rejected_edits_are_not_sent_to_checker(book, monkeypatch):
+    bad_new = "该种体长可达 30 mm，所以很常见。沙蚕科的学者描述了 *Nereis virens*（图 2）"
+    _code, fake = polish(book, monkeypatch, issue(SENT, bad_new))
+    assert [c for c in fake.calls if CHECK_MARK in c[2]] == []               # 指纹闸口已拒绝，不浪费核验请求
+    assert "引证" in rejected_of(book)[0]["reject"]
+
+
+def test_check_prompt_covers_the_listed_dimensions():
+    s = pg.CHECK_SYSTEM
+    for word in ("否定", "谁主张什么", "量词", "限定语", "因果", "meaning_changed", "ok", "拿不准一律判 meaning_changed"):
+        assert word in s
+    u = pg.check_user("ENG", [("甲", "乙"), ("丙", "丁")])
+    assert u.index("ENG") < u.index("[1]\nold: 甲\nnew: 乙") < u.index("[2]\nold: 丙\nnew: 丁")
 
 
 # ---------- 提示词：规则运行时从 STYLE.md 读 ----------
@@ -223,13 +346,19 @@ def test_cli_lists_polish_defaults_to_deepseek_flash_and_refuses_agent_engines(b
                         "--engine", "codex", "--chapters", "ch05"], capture_output=True, text=True)
     assert r.returncode != 0 and "直调" in (r.stdout + r.stderr)
     seen = {}
-    monkeypatch.setattr(run_batches, "run_direct", lambda a, B, notes: seen.update(engine=a.engine, mode=a.mode) or 0)
+    monkeypatch.setattr(run_batches, "run_direct",
+                        lambda a, B, notes: seen.update(engine=a.engine, mode=a.mode, check=a.polish_check_engine) or 0)
     monkeypatch.setattr(sys, "argv", ["run_batches.py", str(book), "--mode", "polish", "--chapters", "ch05"])
     with pytest.raises(SystemExit) as e:
         run_batches.main()
-    assert e.value.code == 0 and seen == {"engine": "deepseek-flash", "mode": "polish"}
+    assert e.value.code == 0 and seen == {"engine": "deepseek-flash", "mode": "polish", "check": "deepseek-flash"}
     monkeypatch.setattr(sys, "argv", ["run_batches.py", str(book), "--mode", "polish", "--chapters", "ch05",
                                       "--engine", "claude-sonnet"])
     with pytest.raises(SystemExit):
         run_batches.main()
     assert seen["engine"] == "claude-sonnet"
+    monkeypatch.setattr(sys, "argv", ["run_batches.py", str(book), "--mode", "polish", "--chapters", "ch05",
+                                      "--polish-check-engine", "deepseek-v4-pro"])
+    with pytest.raises(SystemExit):
+        run_batches.main()
+    assert seen["engine"] == "deepseek-flash" and seen["check"] == "deepseek-v4-pro"   # 核验引擎可与润色引擎不同

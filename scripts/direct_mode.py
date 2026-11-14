@@ -17,6 +17,9 @@
 中文通读（mode=polish）：终稿核译、闸口改完之后，只把合并译文（不给英文原文）交给润色模型，按 STYLE.md 第 6 节「名家逻辑」改顺，
 产物 polish/cNN.jsonl，问题单 <书>/核译/issues/<章>_polish.jsonl（type=润色），同样交给 apply_issues.py。写问题单前先过
 polish_guard：引证、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记、HARD 术语任一被改动的条目拒绝（rejected_polish.jsonl）。
+过了指纹闸口的条目再过语义核验（polish_guard.semantic_filter）：每块一次请求，把英文原文和 (old, new) 对发给核验模型
+（--polish-check-engine，默认 deepseek-flash，可与润色模型不同），查极性/否定、谁主张什么、量词、限定语、因果；
+没有明确回 ok 的一律拒绝，同样记入 rejected_polish.jsonl。
 页码标记：原文里单独成行的 `<!-- p.N -->`（原书页码，见 PAGE_MARK、with_page_markers）随块进入译文，译者须原样保留，
 丢失或不一致的块按疑似失败处理（存 cNN.suspect.md，不算完成）。species_format.py 靠它按原书页规范种名的拉丁名。
 术语检查：每次合并后自动对合并译文跑 yiku check（正文和图注各自一章，都跑），报告写 <章>/yiku_check.txt。
@@ -730,12 +733,14 @@ def merge_decisions(ch: Chapter, ids: list[str]) -> int:
     return len(rows)
 
 
-def merge_review(ch: Chapter, ids: list[str], kind: str = "review") -> tuple[int, int]:
+def merge_review(ch: Chapter, ids: list[str], kind: str = "review", check_engine: str | None = None,
+                 caller: Caller | None = None, usage_file: Path | None = None) -> tuple[int, int]:
     """合并各块问题单，写 核译/issues/<章>_direct.jsonl；old 在合并译文中不是恰好 1 次的进 rejected.jsonl。
     kind="final"：合并终稿核译的 final/cNN.jsonl，写 核译/issues/<章>_final.jsonl 与 rejected_final.jsonl
     （只认合并译文，不回退到 out/ 原稿，也不覆盖 out 阶段的问题单）。
     kind="polish"：合并中文通读的 polish/cNN.jsonl，写 <章>_polish.jsonl 与 rejected_polish.jsonl；type 一律置「润色」，
-    并逐条过 polish_guard（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语不得变），不通过的进 rejected_polish.jsonl。"""
+    并逐条过 polish_guard（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语不得变），再按块过语义核验
+    （check_engine 模型对照英文原文查意思有没有变；caller 缺省 llm_engines.call），不通过的进 rejected_polish.jsonl。"""
     if ch.merged.exists():
         target = _read(ch.merged)
     elif kind != "review":
@@ -767,6 +772,14 @@ def merge_review(ch: Chapter, ids: list[str], kind: str = "review") -> tuple[int
         hard = {c: polish_guard.hard_terms(ch.text("terms", c, "md")) for c in ids if ch.path("terms", c, "md").exists()}
         ok, more_bad = polish_guard.filter_issues(target, ok, lambda it: hard.get(str(it.get("chunk")), []))
         bad += more_bad
+        if ok:
+            if caller is None:
+                import llm_engines
+                caller = llm_engines.call
+            ok, sem_bad = polish_guard.semantic_filter(
+                ok, lambda cid: ch.text("chunks", cid, "txt"), check_engine or polish_guard.CHECK_ENGINE, caller,
+                usage_file, ch.name)
+            bad += sem_bad
     issues_file = {"review": ch.issues, "final": ch.final_issues, "polish": ch.polish_issues}[kind]
     rejected_file = {"review": "rejected.jsonl", "final": "rejected_final.jsonl", "polish": "rejected_polish.jsonl"}[kind]
     _write(issues_file, "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in ok))
@@ -779,6 +792,7 @@ def merge_final(ch: Chapter, ids: list[str]) -> tuple[int, int]:
     return merge_review(ch, ids, "final")
 
 
-def merge_polish(ch: Chapter, ids: list[str]) -> tuple[int, int]:
-    """合并中文通读的问题单并过 polish_guard，见 merge_review(kind="polish")。"""
-    return merge_review(ch, ids, "polish")
+def merge_polish(ch: Chapter, ids: list[str], check_engine: str | None = None, caller: Caller | None = None,
+                 usage_file: Path | None = None) -> tuple[int, int]:
+    """合并中文通读的问题单并过 polish_guard 与语义核验，见 merge_review(kind="polish")。"""
+    return merge_review(ch, ids, "polish", check_engine, caller, usage_file)

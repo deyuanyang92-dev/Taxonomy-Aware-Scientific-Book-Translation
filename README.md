@@ -74,7 +74,7 @@ python3 scripts/apply_issues.py <书> 核译/issues/body_polish.jsonl --dry   # 
 python3 scripts/run_batches.py <书> --mode cite --chapters body,captions   # 应用后复核引文/图号；再 --mode species --dry、yiku check
 ```
 
-模型交回 `old -> new`（type=润色）问题单；写盘前逐条模拟应用，引证（作者, 年份）、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记、HARD 术语任一被改动的条目拒绝，记入 `核译/direct/<章>/rejected_polish.jsonl`（`scripts/polish_guard.py`）。
+模型交回 `old -> new`（type=润色）问题单；写盘前逐条模拟应用，引证（作者, 年份）、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记、HARD 术语任一被改动的条目拒绝，记入 `核译/direct/<章>/rejected_polish.jsonl`（`scripts/polish_guard.py`）。指纹挡不住意思反了（否定、谁主张什么、量词、限定语、因果），所以过了指纹的条目还要过语义核验：每块一次请求，把英文原文和编号的 (old, new) 对发给 `--polish-check-engine`（默认 `deepseek-flash`，可与润色模型不同），没有明确回 `ok` 的（含缺条、乱码、调用失败）一律拒绝，理由同样写进 `rejected_polish.jsonl`。
 
 模型协作规则见 [AGENTS.md](AGENTS.md)。
 

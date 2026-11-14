@@ -8,9 +8,15 @@
 另外不许改变换行数（标题、页码标记行、段落结构不动）、不许把 old 改成空串。
 区域按段落而不是按 old 本身比较：old 只截到引证或斜体的一半，也会因整段指纹变化被发现。
 通过的改动仍要过 apply_issues.py 闸口（type=润色 不属于可丢英文/数字的类型）。
+
+指纹挡不住「意思反了」（否定、谁主张什么、量词、限定语、因果）。所以过了指纹的改动还要过语义核验 semantic_filter：
+按块把英文原文和编号的 (old, new) 对一次发给核验模型（默认 deepseek-flash，可与润色模型不同），要求逐条回 JSONL
+{"i":n,"verdict":"ok"|"meaning_changed","why":"…"}；只有明确回 "ok" 的才保留，其余（含缺条、乱码、调用失败）一律拒绝（fail closed），
+理由写进 rejected_polish.jsonl。
 """
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -21,6 +27,16 @@ import species_format as sf
 from direct_mode import PAGE_MARK, _para_spans
 
 TYPE = "润色"
+CHECK_ENGINE = "deepseek-flash"
+CHECK_SYSTEM = """你是中英译文的语义核验员。给你一段英文原文，和一组润色改动（编号，old=改前中文，new=改后中文）。
+润色只许改语序和措辞，不许改意思。逐条判断：new 与 old 是否等义，且与英文原文不矛盾。下列任一项变了，判 meaning_changed：
+1. 极性与否定（not / no / never / without；「不是……而是」的方向；肯定变否定或反之）；
+2. 谁主张什么（who claims what：谁说、谁认为、谁反对；A 主张 X 变成 A 主张非 X）；
+3. 量词与范围（some / most / all / only / many / few；一些、大多数、所有、仅）；
+4. 限定语（may / might / seem / appear / probably / usually / often；可能、似乎、通常）；
+5. 因果、条件、时间先后、比较的方向。
+拿不准一律判 meaning_changed。只输出 JSON 行，每个编号一行，不要其他文字：
+{"i": 编号, "verdict": "ok" 或 "meaning_changed", "why": "一句话"}"""
 _ITALIC = re.compile(r"(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)")
 _NOTE = re.compile(r"〔[^〕]*〕|\[OCR\?\]")
 _UNITS = ("mm|cm|µm|μm|um|km|mg|kg|ml|m(?![A-Za-z])|g(?![A-Za-z])|l(?![A-Za-z])|%|‰|°|℃|"
@@ -120,4 +136,67 @@ def filter_issues(target: str, items: list[dict[str, Any]],
             continue
         work = work[:pos] + new + work[pos + len(old):]
         ok.append({**it, "type": TYPE})
+    return ok, bad
+
+
+# ---------------------------------------------------------------- 语义核验
+
+def check_user(english: str, pairs: list[tuple[str, str]]) -> str:
+    rows = "\n\n".join(f"[{n}]\nold: {o}\nnew: {w}" for n, (o, w) in enumerate(pairs, 1))
+    return f"=== 英文原文 ===\n{english.strip()}\n\n=== 待核改动 ===\n{rows}"
+
+
+def parse_verdicts(text: str, n: int) -> dict[int, tuple[str, str]]:
+    """解析核验输出 -> {编号: (verdict, why)}。只认 JSON 行；非 JSON 行、编号越界、缺 verdict 的行忽略。
+    同一编号出现多次时，只要有一次不是 ok 就取不是 ok 的那次（宁拒勿放）。"""
+    out: dict[int, tuple[str, str]] = {}
+    for ln in text.splitlines():
+        ln = ln.strip().rstrip(",")
+        if not ln.startswith("{"):
+            continue
+        try:
+            d = json.loads(ln)
+            i = int(d["i"])
+            verdict = str(d["verdict"]).strip().lower()
+        except (ValueError, KeyError, TypeError):
+            continue
+        if not 1 <= i <= n:
+            continue
+        why = str(d.get("why", "")).strip()
+        if i not in out or out[i][0] == "ok":
+            out[i] = (verdict, why)
+    return out
+
+
+def semantic_filter(items: list[dict[str, Any]], english_of: Callable[[str], str], engine: str, caller: Callable[..., Any],
+                    usage_file: Any = None, tag: str = "") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """对已过指纹闸口的改动做语义核验，每块一次请求。返回 (通过的, 拒绝的)，拒绝的带 reject 说明。
+    只有明确回 "ok" 的通过；缺条、乱码、调用失败、找不到英文原文都拒绝（fail closed）。"""
+    ok: list[dict[str, Any]] = []
+    bad: list[dict[str, Any]] = []
+    by_chunk: dict[str, list[dict[str, Any]]] = {}
+    for it in items:
+        by_chunk.setdefault(str(it.get("chunk")), []).append(it)
+    for cid, group in by_chunk.items():
+        try:
+            english = english_of(cid)
+        except OSError as exc:
+            bad += [{**it, "reject": f"语义核验未做：读不到英文原文（{exc}）"} for it in group]
+            continue
+        pairs = [(str(it["old"]), str(it["new"])) for it in group]
+        try:
+            text, _usage = caller(engine, CHECK_SYSTEM, check_user(english, pairs), tag=f"{tag}/{cid}/polish-check",
+                                  usage_file=usage_file)
+        except Exception as exc:  # noqa: BLE001
+            bad += [{**it, "reject": f"语义核验调用失败（{engine}）：{exc}"} for it in group]
+            continue
+        verdicts = parse_verdicts(text, len(group))
+        for n, it in enumerate(group, 1):
+            verdict, why = verdicts.get(n, ("", ""))
+            if verdict == "ok":
+                ok.append(it)
+            elif not verdict:
+                bad.append({**it, "reject": f"语义核验未通过：核验输出缺第 {n} 条或无法解析（{engine}）"})
+            else:
+                bad.append({**it, "reject": f"语义核验未通过（{engine}）：{verdict}" + (f"：{why}" if why else "")})
     return ok, bad

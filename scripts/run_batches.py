@@ -25,7 +25,9 @@
   polish（直调模式，默认 --engine deepseek-flash，只在闲时跑）：终稿核译、闸口改完、species 之后，对合并译文逐块只给中文
   （不给英文原文，规则从 skill/STYLE.md「## 6. 名家逻辑」运行时读入），模型按同一 JSONL 问题单格式交回 old -> new（type=润色）。
   写问题单前自动逐条模拟应用并核验：引证（作者, 年份）、年份、图号、斜体拉丁名、数字与单位、〔译注〕、页码标记 <!-- p.N -->、
-  该块 HARD 术语，改前改后任一不同就拒绝该条，记入 核译/direct/<章>/rejected_polish.jsonl；通过的写 核译/issues/<章>_polish.jsonl，
+  该块 HARD 术语，改前改后任一不同就拒绝该条，记入 核译/direct/<章>/rejected_polish.jsonl；
+  过了这道指纹闸口的条目再过语义核验：每块一次请求，把英文原文和编号的 (old, new) 对发给 --polish-check-engine（默认 deepseek-flash，
+  可与润色模型不同），查否定/极性、谁主张什么、量词、限定语、因果；没有明确回 ok 的（含缺条、乱码、调用失败）一律拒绝，同样记入 rejected_polish.jsonl；通过的写 核译/issues/<章>_polish.jsonl，
   再 apply_issues.py --dry 过闸口。应用后依次跑 --mode cite、--mode species --dry、yiku check 复核。流程：…final -> apply_issues.py -> polish -> apply_issues.py -> cite/species。
   species 不调模型：对合并译文 译文/<章>_直译初译.md 按原书页规范有中文名的种（首现「中文（*拉丁*）」，同页再现只写中文；
   页码来自译文里的 <!-- p.N --> 标记；图注类章节每条图注算一个单元），先备份 *.bak-species 再写回，--dry 只报告。
@@ -150,8 +152,9 @@ def run_direct(a, B, notes):
         if a.mode == 'translate':
             print(f'{chn}：', dm.merge_translation(ch, ids))
         elif a.mode == 'polish':
-            ok, bad = dm.merge_polish(ch, ids)
-            print(f'{chn}：润色问题单 {ok} 条 -> {ch.polish_issues}；拒绝 {bad} 条（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语被改动者，见 {ch.dir}/rejected_polish.jsonl）')
+            check = getattr(a, 'polish_check_engine', None) or 'deepseek-flash'
+            ok, bad = dm.merge_polish(ch, ids, check, llm_engines.call, usage)
+            print(f'{chn}：润色问题单 {ok} 条 -> {ch.polish_issues}；拒绝 {bad} 条（引证/年份/图号/拉丁名/数字/页码标记/HARD 术语被改动，或语义核验（{check}）未判 ok 者，见 {ch.dir}/rejected_polish.jsonl）')
             print(f'  下一步：python3 {S}/apply_issues.py {B} 核译/issues/{ch.polish_issues.name} --dry；应用后跑 --mode cite、--mode species --dry、yiku check')
             continue   # 译文尚未改动，术语检查等问题单应用后再跑
         elif a.mode == 'final':
@@ -279,6 +282,8 @@ def main():
     ap.add_argument('--engine', choices=['codex', 'claude', *DIRECT_ENGINES], default=None,
                     help='codex/claude=智能体模式；deepseek-flash|deepseek-v4-pro|claude-sonnet|claude-opus=直调模式。'
                          '默认分配：初译 claude-sonnet，核译 deepseek-flash（初译与核译必须是不同模型）；缺省：polish 用 deepseek-flash，其余 codex')
+    ap.add_argument('--polish-check-engine', choices=list(DIRECT_ENGINES), default='deepseek-flash',
+                    help='polish 模式：语义核验（润色改动是否改了意思）用的模型，可与 --engine 不同；缺省 deepseek-flash')
     ap.add_argument('-j', type=int, default=3)
     ap.add_argument('--only', default='')
     ap.add_argument('--chapters', default='')
