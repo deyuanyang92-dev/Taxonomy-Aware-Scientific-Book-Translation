@@ -15,6 +15,7 @@ DeepSeek 调用前先 wait_offpeak()（忙时等到闲时，半价）；LLM_SKIP
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import subprocess
@@ -86,9 +87,13 @@ def _deepseek(engine: str, system: str, user: str, max_tokens: int) -> tuple[str
     last: Exception | None = None
     for k in range(RETRIES):
         try:
+            # 默认关闭 thinking：2026-11-14 实测，关闭后审校同样抓到误译，输出 token 约为开启时的 1/17；
+            # budget_tokens 不被 DeepSeek 遵守（照样长思考且可能无正文）。确需深思时设 YZZ_DEEPSEEK_THINKING=1。
+            extra: dict[str, Any] = ({} if os.environ.get("YZZ_DEEPSEEK_THINKING")
+                                     else {"thinking": {"type": "disabled"}})
             with client.messages.stream(
                 model=engine, max_tokens=max_tokens, system=system,
-                messages=[{"role": "user", "content": user}],
+                messages=[{"role": "user", "content": user}], **extra,
             ) as stream:
                 msg = stream.get_final_message()
             break
@@ -126,12 +131,29 @@ def _cli(cmd: list[str], prompt: str, name: str, cwd: str = "/tmp") -> subproces
         raise EngineError(f"{name}：超过 {CLI_TIMEOUT} 秒未返回") from exc
 
 
+# claude -p 精简参数：不加载用户/项目设置、CLAUDE.md、技能、MCP、插件钩子，系统提示词只用我们的。
+# 2026-11-14 实测：默认每次调用约 35,000 token 固定开销，精简后约 580。
+CLAUDE_LEAN = ["--tools", "", "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands",
+               "--exclude-dynamic-system-prompt-sections", "--output-format", "json"]
+
+
 def _claude(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
-    cmd = ["claude", "-p", "--model", CLAUDE_ENGINES[engine], "--tools", ""]
-    r = _cli(cmd, system + "\n\n---\n\n" + user, engine)
+    cmd = ["claude", "-p", "--model", CLAUDE_ENGINES[engine], *CLAUDE_LEAN, "--system-prompt", system]
+    r = _cli(cmd, user, engine)
     if r.returncode != 0 or not r.stdout.strip():
         raise EngineError(f"{engine} 退出码 {r.returncode}：{r.stderr[-300:].strip()}")
-    return r.stdout, {"input_tokens": None, "output_tokens": None, "cache_read_tokens": None}
+    try:
+        d = json.loads(r.stdout)
+    except json.JSONDecodeError as exc:
+        raise EngineError(f"{engine} 输出不是 JSON：{r.stdout[:200]}") from exc
+    d = d[-1] if isinstance(d, list) else d
+    if d.get("is_error") or not str(d.get("result", "")).strip():
+        raise EngineError(f"{engine} 返回错误或空正文：{str(d.get('result', ''))[:300]}")
+    u = d.get("usage") or {}
+    usage = {"input_tokens": int(u.get("input_tokens", 0) or 0) + int(u.get("cache_creation_input_tokens", 0) or 0),
+             "output_tokens": int(u.get("output_tokens", 0) or 0),
+             "cache_read_tokens": int(u.get("cache_read_input_tokens", 0) or 0)}
+    return str(d["result"]), usage
 
 
 def _codex(system: str, user: str, model: str | None = None) -> tuple[str, dict[str, Any]]:

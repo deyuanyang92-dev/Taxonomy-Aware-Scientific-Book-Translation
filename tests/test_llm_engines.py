@@ -1,4 +1,5 @@
 """llm_engines：全部用 mock，不真调 API、不真起命令行。"""
+import json
 import subprocess
 import types
 
@@ -136,18 +137,28 @@ def test_token_from_env_then_script(monkeypatch, tmp_path):
 
 def test_claude_cli_command_and_stdin(monkeypatch):
     seen = {}
+    out = json.dumps({"result": "译文", "is_error": False,
+                      "usage": {"input_tokens": 3, "cache_creation_input_tokens": 500, "output_tokens": 7}})
 
     def fake_run(cmd, **kw):
         seen.update(cmd=cmd, **kw)
-        return subprocess.CompletedProcess(cmd, 0, stdout="译文", stderr="")
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
 
     monkeypatch.setattr(le.subprocess, "run", fake_run)
     text, usage = le.call("claude-opus", "SYS", "USR")
-    assert text == "译文" and usage["input_tokens"] is None
-    assert seen["cmd"] == ["claude", "-p", "--model", "opus", "--tools", ""]
-    assert seen["cwd"] == "/tmp" and "SYS" in seen["input"] and "USR" in seen["input"]
+    assert text == "译文" and usage["input_tokens"] == 503 and usage["output_tokens"] == 7
+    assert seen["cmd"][:4] == ["claude", "-p", "--model", "opus"]
+    assert "--setting-sources" in seen["cmd"] and seen["cmd"][-2:] == ["--system-prompt", "SYS"]
+    assert seen["cwd"] == "/tmp" and seen["input"] == "USR"
     le.call("claude-sonnet", "S", "U")
     assert seen["cmd"][3] == "sonnet"
+
+
+def test_claude_cli_empty_result(monkeypatch):
+    out = json.dumps({"result": "", "is_error": True})
+    monkeypatch.setattr(le.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, out, ""))
+    with pytest.raises(le.EngineError):
+        le.call("claude-sonnet", "s", "u")
 
 
 def test_claude_cli_failure(monkeypatch):
