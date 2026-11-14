@@ -1,0 +1,8 @@
+# Google 免费翻译的固定错译修正表（gtrans.py 读取；可直接编辑，新增一行即可，不用改脚本）。
+# 列（TAB 分隔）：错<TAB>对<TAB>说明<TAB>触发词（可省）
+# 触发词是不区分大小写的正则：只有该单元的英文原文里出现它时才替换；省略则每个单元都替换。
+# 术语类修正优先写进 yiku（已核 HARD 术语会被 gtrans.py 自动替换），这里只放 yiku 之外的 Google 固有毛病。
+显着	显著	Google 常见错字
+兄弟物种	同胞种	sibling species（Futuyma 译名）	sibling species
+脑电波	灵感	brain waves 在此指「突发奇想」，不是脑电波	brain[ -]?waves?
+本质主义	本质论	essentialism（Futuyma 译名）	essentialis[mt]

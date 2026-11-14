@@ -110,3 +110,17 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 - 数字、学名、引证原样保留。原文来自 OCR：疑似排印/OCR 问题不得注〔原书…〕，标 `[OCR?]` 留给人工（RULES 第 3 节）；经页图或第二来源确证的原书笔误，订正后注〔原文作 …〕；核实不了的只注〔原书如此〕。
 - 不删除、不覆盖已有译文。一切改动都要经过 issues 文件和 `apply_issues.py` 闸口。
 - 禁用 U+3000。交付 .docx 或 .pdf 前，运行 `python3 /mnt/p/yzz-分类工作流/yzz.py zh check`。
+
+## 8. 低成本流程：gtrans.py（Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考）
+`python3 scripts/gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--think-escalate] [--no-llm] [--dry]`。适合试读、预览和不求定稿的篇幅；整书定稿仍走第 4 节的初译 + 异模型核译。
+1. 输入：空行分段；`<!-- p.N -->` 页码标记、标题、图注（`Fig.` 开头）各自成单元，标记不送 Google；被页码标记切开的半句话先合并，标记移到合并段之后。
+2. Google 免费初译（gtx 端点，每段一个请求，>4500 字符按句子边界切块，间隔 1–2 秒，429/5xx 指数退避）；结果缓存在 `~/.cache/yzz-translate/gtrans_cache.sqlite`（键 sha1(原文)），重跑零请求。
+3. 脚本修正（不调模型）：
+   - `skill/google_fixes.tsv`（错 / 对 / 说明 / 触发词）：Google 固有错译，如 显着→显著、兄弟物种→同胞种、脑电波→灵感（brain waves）、本质主义→本质论；有触发词的只在英文里出现该词时才替换。新增错译直接加一行。
+   - `yiku table` 的 HARD 术语：把 Google 对该术语单独翻译的结果换成 yiku 定名（SOFT 不自动替换）。
+   - 一致性警告：同一英文术语出现 ≥2 次而译文有多种译法。
+   - `fidelity_check --fix`（拉丁名、人名、数字、术语首现括注）、`heading_bilingual`、`cite_diff`（只报告）。
+4. DeepSeek flash 不开思考，每单元（≤1500 英文词）一次，只回 JSON 改动。改动要求 old 恰好出现一次并通过 `polish_guard`（引证、年份、数字、拉丁名、页码标记、HARD 术语不变），否则拒绝并记入 report.md 与 edits.jsonl。这道护栏也意味着模型改不了数字、年份、学名，这类问题只能由脚本修或人工处理。
+5. `--think-escalate`：第一轮之后仍有一致性警告或保真问题的单元，才开思考再跑一次（实测开思考的输出约为不开的 10 倍以上）。单个大写词的拉丁名报警多是地名（Patagonia），只记录，不触发升级。
+6. 输出：`zh.md`（带页码标记）、`report.md`（逐单元：Google 字符、采纳与拒绝的改动、警告、DeepSeek token、是否开思考）、`edits.jsonl`；每次调用同时追加到 llm_engines 的 usage.tsv。
+7. 规则：DeepSeek 只在北京时间 22:00–08:00 调用（`deepseek_offpeak`），除非用户授权才可设 `LLM_SKIP_OFFPEAK=1`；先用 `--dry` 看请求数和估算 token，再跑。Google 译文只是初译，术语和意思仍须按第 7 节铁律核对。
