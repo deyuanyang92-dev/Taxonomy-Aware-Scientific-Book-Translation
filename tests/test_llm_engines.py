@@ -221,3 +221,32 @@ def test_usage_file_argument_overrides_env(monkeypatch, tmp_path):
     target = tmp_path / "sub" / "my.tsv"
     le.call("deepseek-flash", "s", "u", usage_file=target)
     assert target.exists() and not (tmp_path / "usage.tsv").exists()
+
+
+def test_deepseek_retry_stops_when_night_window_closes(monkeypatch):
+    calls = []
+
+    class Boom(Exception):
+        pass
+
+    class FakeStream:
+        def __enter__(self):
+            calls.append(1)
+            raise ConnectionError("reset")
+
+        def __exit__(self, *a):
+            return False
+
+    class FakeClient:
+        class messages:
+            @staticmethod
+            def stream(**kw):
+                return FakeStream()
+
+    monkeypatch.setattr(le, "_make_client", lambda: FakeClient())
+    monkeypatch.setattr(le, "_retryable", lambda exc: True)
+    monkeypatch.setattr(le.time, "sleep", lambda s: None)
+    monkeypatch.setattr(le, "is_peak", lambda now=None: True)
+    with pytest.raises(le.EngineError, match="夜间窗口已结束"):
+        le._deepseek("deepseek-flash", "s", "u", 100, check_window=True)
+    assert len(calls) == 1  # 第一次失败后不再重试

@@ -219,9 +219,56 @@ def test_critical_fix_goes_to_human_queue(tmp_path, monkeypatch):
 
 
 def test_stage_draft_keeps_order_and_skips_markers(tmp_path, monkeypatch):
-    monkeypatch.setattr(at.Google, "one", lambda self, s: f"EN<{s}>")
+    import json as _json
+    import urllib.parse
+
+    import gtrans
+    calls = []
+
+    def http_get(url, timeout=30):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        calls.append((q["sl"][0], q["tl"][0]))
+        return _json.dumps([[[f"EN<{q['q'][0]}>", "x"]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
     monkeypatch.setattr(at.Path, "home", staticmethod(lambda: tmp_path))
     out = at.stage_draft(at.pages(SRC), tmp_path, "bg", "en")
     assert out[1].startswith("<!-- PDF p.1") and "EN<Тялото късо." in out[1]
     assert "EN<Дължина. 2—3 mm.>" in out[2]
     assert list(out) == [1, 2]
+    assert calls and set(calls) == {("bg", "en")}
+    n = len(calls)
+    at.stage_draft(at.pages(SRC), tmp_path, "bg", "en")   # 重跑：全部命中缓存，不再请求
+    assert len(calls) == n
+
+
+def _ns(**kw):
+    import argparse
+    base = dict(sl="bg", tl="en", glossary=None, engine="deepseek-flash", day_engine=None, verify_engine="codex-sol")
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+def test_second_model_reviews_full_text_receipt_and_extras(tmp_path, monkeypatch):
+    import json
+
+    def fake(engine, system, user, tag, usage_file):
+        if "/check/" in tag:
+            return "[]", {}
+        return ('[{"new_fix": true, "pdf_page": 1, "old": "Body short.", "new": "Body short and thin.",'
+                ' "severity": "major", "reason": "missed"}, {"receipt": true, "pages": [1]}]'), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns())
+    assert "Body short and thin." not in out                        # 单模型发现不自动落实
+    assert "Body short and thin." in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+    failed = json.loads((tmp_path / "check_failed.json").read_text(encoding="utf-8"))
+    assert any("回执缺页 [2]" in f for f in failed)                  # 回执只覆盖 p.1
+
+
+def test_same_model_for_check_and_verify_is_refused(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
+    with pytest.raises(ValueError, match="异模型"):
+        at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_engine="deepseek-flash"))

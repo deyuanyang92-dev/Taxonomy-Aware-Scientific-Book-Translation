@@ -110,7 +110,8 @@ def test_old_equal_new_rejected_and_lost_token_gate_unchanged(book):
     put(book, "Gardiner 说甲乙 12。\n")
     r = ai.apply(book, issues(book, [row("甲乙", "甲乙"), row("Gardiner 说", "他说", "语序"), row("12", "13", "语序")]))
     assert r.ok == 0 and len(r.bad) == 3 and not r.skipped
-    assert any("新旧相同" in m for _, m in r.bad) and sum("丢失英文/数字" in m for _, m in r.bad) == 2
+    assert any("新旧相同" in m for _, m in r.bad)
+    assert sum(("丢失英文/数字" in m) or ("丢失数字/学名" in m) for _, m in r.bad) == 2  # 数字改动现由更严的数字规则拒
 
 
 def test_dry_run_writes_nothing_and_counts_skips(book):
@@ -132,3 +133,30 @@ def test_cli_twice_leaves_translation_unchanged(book):
     once = read(book)
     r2 = subprocess.run(cmd, capture_output=True, text=True)
     assert read(book) == once and "应用 0，拒绝 0" in r2.stdout and "已应用" in r2.stdout
+
+
+
+def test_gated_type_cannot_drop_numbers_or_latin_names(book):
+    put(book, "身体长 25 mm，见 *Nereis zonata*。\n")
+    r1 = dict(row("长 25 mm", "很长", "误译"), en="Body 25 mm long")
+    r2 = dict(row("见 *Nereis zonata*", "见该种", "漏译"), en="see *Nereis zonata*")
+    r = ai.apply(book, issues(book, [r1, r2]))
+    assert r.ok == 0 and len(r.bad) == 2 and all("丢失数字/学名" in m for _, m in r.bad)
+
+
+def test_number_absent_from_source_may_be_removed(book):
+    put(book, "身体长 25 mm。\n")
+    r = ai.apply(book, issues(book, [dict(row("长 25 mm", "长", "增译"), en="Body long")]))
+    assert r.ok == 1 and read(book) == "身体长。\n"
+
+
+def test_cli_exit_code_nonzero_on_rejections(book):
+    put(book, "甲乙丙\n")
+    p = issues(book, [row("不存在", "x", "误译")])
+    assert ai.main([str(book), str(p), "--dry"]) == 1
+
+
+def test_decimal_comma_in_source_matches_point_in_translation(book):
+    put(book, "长 33.6 mm。\n")
+    r = ai.apply(book, issues(book, [dict(row("长 33.6 mm", "长 33.6 毫米", "术语"), en="дълъг 33,6 mm")]))
+    assert r.ok == 1

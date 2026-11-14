@@ -18,7 +18,7 @@ docstore = "docstore.cli:main"
 taxadb = "taxadb.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["docstore*", "taxadb*"]
+include = ["docstore*", "taxadb*", "transqa*"]
 
 [tool.ruff]
 line-length = 120

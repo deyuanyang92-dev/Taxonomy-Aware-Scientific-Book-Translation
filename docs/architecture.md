@@ -135,6 +135,13 @@ _资料库/
 通用检查：数字、引文、图号、结构计数、残留英文、全角空格。
 领域插件：`qa.taxonomy`（学名、命名人年份、检索表编号与跳转、陷阱表回归）。插件接口：`check(src_segments, tgt_segments, config) -> issues`。
 
+**已实现（2026-11-15）**：包 `transqa/`。`transqa.check_all(src_md, tgt_md, sl, tl, domain='taxonomy') -> list[Issue]`；
+`core.check` 通用（覆盖/页序/漏段与合段、数字双向（数词、千分位、小数逗号）、异常文字、残留原文、否定风险、禁用词，
+未知语言报 `capability_missing`）；`taxonomy.check` 插件（学名按次数与顺序、括号命名人、检索表图、图版号）。
+`Issue(code, severity=critical|major|minor|info, message, page, segment, evidence)`，critical/major 为阻断。
+语言表 `transqa/languages.py`（文字、否定词、1–20 数词；加一项即支持新语种）。调用方：`scripts/auto_translate.py`
+（护栏与全书 QA）、`scripts/apply_issues.py`（数字规则）。待接入：`run_batches.py`、`gtrans.py`、`qa.py`（英译中 CLI 保留）。
+
 ## 6. publish 出版
 
 输入：译文 md + `book.toml` + 图库。输出：docx / PDF / 传播版。

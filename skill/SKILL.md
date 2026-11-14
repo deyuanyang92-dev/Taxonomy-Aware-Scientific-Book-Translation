@@ -124,3 +124,13 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 5. `--think-escalate`：第一轮之后仍有一致性警告或保真问题的单元，才开思考再跑一次（实测开思考的输出约为不开的 10 倍以上）。单个大写词的拉丁名报警多是地名（Patagonia），只记录，不触发升级。
 6. 输出：`zh.md`（带页码标记）、`report.md`（逐单元：Google 字符、采纳与拒绝的改动、警告、DeepSeek token、是否开思考）、`edits.jsonl`；每次调用同时追加到 llm_engines 的 usage.tsv。
 7. 规则：DeepSeek 只在北京时间 22:00–08:00 调用（`deepseek_offpeak`），除非用户授权才可设 `LLM_SKIP_OFFPEAK=1`；先用 `--dry` 看请求数和估算 token，再跑。Google 译文只是初译，术语和意思仍须按第 7 节铁律核对。
+
+### 8.1 auto 档（任意语言对，2026-11-15）
+
+`python3 scripts/auto_translate.py run SRC.md -o WORK --sl bg --tl en --glossary G.md --names N.md`（或 `check SRC.md TGT.md` 只做意义核对）。
+流程：Google 免费初稿（`gtrans.Google`，8 线程预取、429 全体冷却）→ 3 页一段改写（夜间 deepseek-flash 关思考；白天 codex-luna）
+→ 共用 QA 护栏（`transqa`）→ deepseek-flash 找错 + 第二模型（默认 codex-sol，medium）**全文复核**并出覆盖回执，
+只落实两者都认可的 major/minor 改动；critical 与仅第二模型发现的问题写 `human_review_queue.csv` → 全书 QA → `report.md`。
+模型分配依据 `docs/model_bench.md` 末节（9 页盲评）：改写/找错用 DeepSeek flash 关思考（性价比最高，仅夜间）；Codex luna 流畅但会编造；
+DeepSeek 找错误报率高，**必须**第二模型裁定；Sonnet 只做 8–10 页盲评抽检。对比与取舍见 `docs/comparison.md` §7。
+

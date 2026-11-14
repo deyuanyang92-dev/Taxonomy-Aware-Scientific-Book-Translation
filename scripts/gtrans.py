@@ -166,8 +166,12 @@ class Google:
         self._cool_until = 0.0
         self._lock = threading.Lock()
 
+    def _ck(self, c: str) -> str:
+        """缓存键原文：英→中沿用旧键（已有缓存不失效）；其他语言对加前缀隔离。"""
+        return c if (self.sl, self.tl) == ("en", "zh-CN") else f"[{self.sl}>{self.tl}]{c}"
+
     def has(self, text: str) -> bool:
-        return all(self.cache.get(c) is not None for c in split_chunks(text.strip()))
+        return all(self.cache.get(self._ck(c)) is not None for c in split_chunks(text.strip()))
 
     def _fetch(self, q: str) -> str:
         url = GOOGLE_URL + "?" + urllib.parse.urlencode(
@@ -208,10 +212,10 @@ class Google:
             return ""
         parts: list[str] = []
         for c in split_chunks(text):
-            zh = self.cache.get(c)
+            zh = self.cache.get(self._ck(c))
             if zh is None:
                 zh = self._fetch(c)
-                self.cache.put(c, zh)
+                self.cache.put(self._ck(c), zh)
             else:
                 self.hits += 1
             parts.append(zh)
@@ -220,14 +224,14 @@ class Google:
     def prefetch(self, texts: list[str], workers: int = 8) -> int:
         """并发预取未缓存的块（无间隔，遇 429 全体冷却）；返回新请求数。失败的块留给顺序流程重试并报错。"""
         todo = list(dict.fromkeys(c for t in texts if t.strip() for c in split_chunks(t.strip())
-                                  if self.cache.get(c) is None))
+                                  if self.cache.get(self._ck(c)) is None))
         if not todo:
             return 0
         saved, self.pause = self.pause, (0.0, 0.0)
 
         def one(c: str) -> None:
             try:
-                self.cache.put(c, self._fetch(c))
+                self.cache.put(self._ck(c), self._fetch(c))
             except GoogleError as exc:
                 print(f"[gtrans] 预取失败（稍后顺序重试）：{exc}", file=sys.stderr)
 

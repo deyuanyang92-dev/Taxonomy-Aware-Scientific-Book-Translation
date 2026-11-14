@@ -2,7 +2,10 @@
 """核译闸口：把子代理 JSONL 问题清单精确替换进译文，并追加对照报告。
 用法: python3 apply_issues.py <书目录> <issues.jsonl> [--dry]
 行格式: {"file","old","new","type":"误译|漏译|增译|术语|语序|格式","reason","en"}
-闸口: old 在文件中恰好 1 次；old≠new；非 术语/误译/漏译/增译 类不得丢失英文词或数字。
+闸口: old 在文件中恰好 1 次；old≠new；非 术语/误译/漏译/增译 类不得丢失英文词或数字；
+  任何类型都不得丢失数字和斜体学名（2026-11-15：类型不能豁免事实保护），除非该数字/学名不在条目的 en 原文里
+  （即本条就是在删掉误加的数字或学名）；条目没有 en 时无法证明，一律拒绝。数字按共用 QA（transqa.core.numbers）
+  规则比较（千分位并合、小数逗号=小数点）。有拒绝行时退出码为 1，调度脚本据此停下。
 幂等: 问题单可重复应用。已应用的条目（new 已在 old 的位置上）跳过并注明，不再叠加；
   判据是文本本身——old 不在文中而 new 在；或 old 的每一处出现都落在某处 new 之内（加性改动：补标题、补括注、补译注，
   new 包含 old）。old 只有一部分落在 new 内（歧义）仍按「匹配 N 次」拒绝。"""
@@ -16,7 +19,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # 仓库根：transqa
+from transqa.core import numbers  # noqa: E402
+
 TOKEN = re.compile(r"[A-Za-z][A-Za-z\-]+|\d+(?:\.\d+)?")
+ITALIC = re.compile(r"\*([^*\n]+)\*")
 GATED_TYPES = ("术语", "误译", "漏译", "增译")
 
 
@@ -72,6 +79,13 @@ def apply(book: pathlib.Path, path: pathlib.Path, dry: bool = False) -> Result:
         if n != 1:
             res.bad.append((ln, f"{it['file']} 匹配 {n} 次: {old[:40]}"))
             continue
+        src = str(it.get("en") or "")
+        src_nums = set(numbers(src))
+        lost_num = [x for x in set(numbers(old)) - set(numbers(new)) if not src or x in src_nums]
+        lost_it = [x for x in set(ITALIC.findall(old)) - set(ITALIC.findall(new)) if not src or x in src]
+        if lost_num or lost_it:
+            res.bad.append((ln, f"丢失数字/学名 {sorted(lost_num + lost_it)[:5]}（任何类型都不豁免；type={it.get('type')}）"))
+            continue
         lost = set(TOKEN.findall(old)) - set(TOKEN.findall(new))
         if lost and it.get("type") not in GATED_TYPES:
             res.bad.append((ln, f"丢失英文/数字 {sorted(lost)[:5]}（type={it.get('type')}）"))
@@ -105,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  行{ln_}: {msg}")
     for ln_, msg in res.skipped:
         print(f"  行{ln_}: {msg}")
-    return 0
+    return 1 if res.bad else 0
 
 
 if __name__ == "__main__":

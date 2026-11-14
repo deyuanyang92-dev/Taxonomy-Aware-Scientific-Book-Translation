@@ -24,7 +24,7 @@ import tempfile
 import time
 from typing import Any
 
-from deepseek_offpeak import wait_offpeak
+from deepseek_offpeak import is_peak, wait_offpeak
 
 DEEPSEEK_ENGINES = ("deepseek-flash", "deepseek-v4-pro")
 CLAUDE_ENGINES = {"claude-sonnet": "sonnet", "claude-opus": "opus"}
@@ -82,10 +82,13 @@ def _retryable(exc: Exception) -> bool:
     return isinstance(exc, anthropic.APIStatusError) and (status == 429 or (status or 0) >= 500)
 
 
-def _deepseek(engine: str, system: str, user: str, max_tokens: int) -> tuple[str, dict[str, Any]]:
+def _deepseek(engine: str, system: str, user: str, max_tokens: int,
+              check_window: bool = False) -> tuple[str, dict[str, Any]]:
     client = _make_client()
     last: Exception | None = None
     for k in range(RETRIES):
+        if check_window and k and is_peak():  # 重试前再查一次：夜间窗口已过就停，任务延期而不是越界调用
+            raise EngineError("DeepSeek 夜间窗口已结束（北京时间 08:00），不再重试；任务延期到下一个夜间")
         try:
             # 默认关闭 thinking：2026-11-14 实测，关闭后审校同样抓到误译，输出 token 约为开启时的 1/17；
             # budget_tokens 不被 DeepSeek 遵守（照样长思考且可能无正文）。确需深思时设 YZZ_DEEPSEEK_THINKING=1。
@@ -223,7 +226,8 @@ def call(engine: str, system: str, user: str, *, max_tokens: int = MAX_TOKENS, t
         if offpeak and not os.environ.get("LLM_SKIP_OFFPEAK"):
             wait_offpeak()
         t0 = time.time()
-        text, usage = _deepseek(engine, system, user, max_tokens)
+        guard_window = offpeak and not os.environ.get("LLM_SKIP_OFFPEAK")
+        text, usage = _deepseek(engine, system, user, max_tokens, check_window=guard_window)
     elif engine in CODEX_ENGINES:
         text, usage = _codex(system, user, CODEX_ENGINES[engine])
     elif engine in CURSOR_ENGINES:

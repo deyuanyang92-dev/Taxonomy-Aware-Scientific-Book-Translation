@@ -36,18 +36,15 @@ import json
 import os
 import random
 import re
-import sqlite3
 import sys
-import threading
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：transqa
+
+import transqa  # noqa: E402
 
 PAGE_RE = re.compile(r'^\s*<!-- PDF p\.(\d+)\b')
 FOREIGN_RE = re.compile(r'[ऀ-ॿ؀-ۿ฀-๿가-힯֐-׿一-鿿]')
@@ -118,83 +115,41 @@ def join(pg: dict[int, str], ps: list[int]) -> str:
 
 # ---------------------------------------------------------------- Google 初稿
 class Google:
-    URL = 'https://translate.googleapis.com/translate_a/single'
+    """auto 档的 Google 初稿：底层统一用 gtrans.Google（同一缓存、并发预取、429 全体冷却、只用 urllib）。
+    失败不再抛出整书中止：记入 failed，stage_draft 见 failed 非空即中止，重跑时只补失败段。"""
 
     def __init__(self, sl: str, tl: str, cache: Path) -> None:
-        self.sl, self.tl = sl, tl
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(cache), check_same_thread=False)
-        self.db.execute('create table if not exists c(k text primary key, v text)')
-        self.lock = threading.Lock()
-        self.requests = 0
+        import gtrans
+        self._gt = gtrans
+        self.g = gtrans.Google(gtrans.Cache(cache), sl=sl, tl=tl, pause=(0.0, 0.0))
         self.failed: list[str] = []
-        self.cool_until = 0.0  # 遇 429/5xx 所有线程一起冷却（2026-11-15 实测：8 线程无间隔 320 段/分钟，拼段请求反而 429）
 
-    def _key(self, s: str) -> str:
-        return hashlib.sha1(f'{self.sl}>{self.tl}:{s}'.encode()).hexdigest()
+    @property
+    def requests(self) -> int:
+        return int(self.g.requests)
 
     def one(self, s: str) -> str:
-        k = self._key(s)
-        with self.lock:
-            r = self.db.execute('select v from c where k=?', (k,)).fetchone()
-        if r:
-            return str(r[0])
-        url = self.URL + '?' + urllib.parse.urlencode({'client': 'gtx', 'sl': self.sl, 'tl': self.tl, 'dt': 't', 'q': s})
-        for a in range(10):
-            wait = self.cool_until - time.time()
-            if wait > 0:
-                time.sleep(wait)
-            try:
-                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                d = json.load(urllib.request.urlopen(req, timeout=30))
-                v = ''.join(str(x[0]) for x in d[0] if x and x[0])
-                if v.strip():
-                    with self.lock:
-                        self.requests += 1
-                        self.db.execute('insert or replace into c values(?,?)', (k, v))
-                        self.db.commit()
-                    return v
-            except urllib.error.HTTPError:
-                with self.lock:
-                    self.cool_until = max(self.cool_until, time.time() + min(60, 5 * 2 ** a))
-                continue
-            except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError, IndexError, TypeError):
-                pass
-            time.sleep(min(60, 2 ** a) + random.random())
-        with self.lock:
+        try:
+            return str(self.g.translate(s))
+        except self._gt.GoogleError:
             self.failed.append(s[:80])
-        return s  # 失败：暂留原文；stage_draft 见 failed 非空即中止，重跑时只补失败段（成功段已缓存）
+            return s
+
+    def body(self, p: str) -> str:
+        return '\n'.join(ln for ln in p.split('\n') if not ln.lstrip().startswith('<!--')).strip()
 
     def para(self, p: str, src_re: str) -> str:
         lines = p.split('\n')
         head = [ln for ln in lines if ln.lstrip().startswith('<!--')]
-        body = '\n'.join(ln for ln in lines if not ln.lstrip().startswith('<!--')).strip()
+        body = self.body(p)
         if not body or not re.search(src_re, body):
             return p
-        if len(body) <= 4500:
-            res = self.one(body)
-        else:
-            parts, cur = [], ''
-            for s in re.split(r'(?<=[.!?;])\s+|(?<=[。．！？])', body):
-                if len(s) > 4400 and cur:
-                    parts.append(cur)
-                    cur = ''
-                while len(s) > 4400:
-                    parts.append(s[:4400])
-                    s = s[4400:]
-                if cur and len(cur) + len(s) + 1 > 4400:
-                    parts.append(cur)
-                    cur = ''
-                cur = (cur + ' ' + s).strip()
-            if cur:
-                parts.append(cur)
-            res = ' '.join(self.one(c) for c in parts)
-        return '\n'.join(head + [res])
+        return '\n'.join(head + [self.one(body)])
 
     def text(self, t: str, src_re: str, workers: int = 8) -> str:
         paras = [p.strip() for p in t.split('\n\n')]
-        with ThreadPoolExecutor(workers) as ex:
-            return '\n\n'.join(ex.map(lambda p: self.para(p, src_re), paras)) + '\n'
+        self.g.prefetch([self.body(p) for p in paras if re.search(src_re, self.body(p))], workers)
+        return '\n\n'.join(self.para(p, src_re) for p in paras) + '\n'
 
 
 # ---------------------------------------------------------------- 术语表裁剪
@@ -237,7 +192,8 @@ def _clean(t: str) -> str:
 
 
 def nums(t: str) -> collections.Counter[str]:
-    return collections.Counter(re.findall(r'\d+(?:[.,]\d+)?', _clean(t)))
+    """数字计数：与共用 QA 同一规则（千分位并合、小数逗号=小数点），保证护栏与落实改动的判断一致。"""
+    return transqa.core.numbers(t)
 
 
 def italics(t: str) -> collections.Counter[str]:
@@ -280,35 +236,8 @@ def negation_risk(src: str, tgt: str, sl: str, tl: str = 'en') -> list[int]:
 
 
 def guard(src: str, tgt: str, bad_terms: list[str] | None = None, tl: str = 'en', sl: str = '') -> list[str]:
-    """原文 vs 译文：返回问题清单（空 = 通过）。数字只查原文有而译文缺的（数词写成数字不算错）。"""
-    probs = []
-    ps, pt = pages(src), pages(tgt)
-    if sorted(p for p in ps if p) != sorted(p for p in pt if p):
-        probs.append(f'页标记不一致：原文 {sorted(ps)} 译文 {sorted(pt)}')
-    for p in sorted(ps):
-        s, t = ps[p], pt.get(p, '')
-        miss = nums(s) - nums(t)
-        if miss:
-            probs.append(f'p.{p} 缺数字 {dict(miss)}')
-        mi = italics(s) - italics(t)
-        if mi:
-            probs.append(f'p.{p} 缺学名/斜体 {dict(mi)}')
-        mc = couplets(s) - couplets(t)
-        if mc:
-            probs.append(f'p.{p} 缺检索表编号 {dict(mc)}')
-        ks, kt = key_structure(s), key_structure(t)
-        if ks != kt and not mc:
-            probs.append(f'p.{p} 检索表结构（编号/跳转）与原文不同：缺 {dict(ks - kt)} 多 {dict(kt - ks)}')
-    fre = FOREIGN_RE_ZH if tl.startswith('zh') else FOREIGN_RE
-    if fre.search(_clean(tgt)):
-        probs.append('出现异常文字（天城文/阿拉伯文/汉字/假名等）：' + ''.join(fre.findall(_clean(tgt)))[:20])
-    left = residue(tgt, sl)
-    if left:
-        probs.append(f'残留未译原文 {len(left)} 处：' + ' '.join(left[:5]))
-    for w in bad_terms or []:
-        if re.search(rf'\b{re.escape(w)}\b', tgt):
-            probs.append(f'禁用词 {w}')
-    return probs
+    """原文 vs 译文的阻断问题（critical/major）说明列表；空 = 通过。实现在共用 QA 层 transqa（通用 + 分类学插件）。"""
+    return [i.message for i in transqa.check_all(src, tgt, sl or 'und', tl, bad_terms=bad_terms) if i.blocking]
 
 
 # ---------------------------------------------------------------- 引擎选择
@@ -348,11 +277,14 @@ Rules:
    Rewrite every paragraph against the original; the Google draft is only a draft.
 4. Never write characters of any other script; translator's notes as [TN: ...] in {tl}."""
 
-VERIFY_SYS = """You are the second reviewer of proposed corrections to a {tl} translation of a {sl} taxonomic text.
-Another model proposed each fix. For every fix decide against the original: ACCEPT only if the fix makes the
-translation more faithful to the original; REJECT if it is wrong, unnecessary, merely stylistic, or "corrects" the
-original author's own misprint. Output ONLY a JSON array covering every id: [{{"id": N, "verdict": "ACCEPT"|"REJECT",
-"why": "short"}}]."""
+VERIFY_SYS = """You are the independent second reviewer of a {tl} translation of a {sl} taxonomic text.
+1. Read the WHOLE translation against the original, sentence by sentence (not only the proposed fixes).
+2. For every proposed fix (from another model) decide: ACCEPT only if it makes the translation more faithful;
+   REJECT if it is wrong, unnecessary, merely stylistic, or "corrects" the original author's own misprint.
+3. Report meaning errors the other model missed as new fixes (smallest fix; severity critical/major/minor).
+Output ONLY a JSON array of objects: one {{"id": N, "verdict": "ACCEPT"|"REJECT", "why": "short"}} per proposed id;
+{{"new_fix": true, "pdf_page": N, "old": "exact substring", "new": "...", "severity": "...", "reason": "..."}} per
+missed error; and exactly one {{"receipt": true, "pages": [all pdf pages you reviewed]}}."""
 
 CHECK_SYS = """You check a {tl} translation against its {sl} original (a taxonomic text), sentence by sentence.
 Report ONLY real meaning errors: wrong meaning, omission, addition, wrong number/name/couplet, reversed negation or
@@ -381,7 +313,9 @@ def parse_json_array(text: str) -> list[dict[str, Any]] | None:
         v = json.loads(m.group(0))
     except json.JSONDecodeError:
         return None
-    return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else None
+    if not isinstance(v, list) or not all(isinstance(x, dict) for x in v):
+        return None  # 混入非对象（如 [1, "unexpected"]）= 格式错，不能当成「无错」
+    return v
 
 
 def _page_no(p: Any) -> int | None:
@@ -459,13 +393,13 @@ def _same_pages(src: str, tgt: str, where: str) -> None:
 
 
 def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[int, str]:
-    g = Google(sl, tl, Path.home() / '.cache/yzz-translate/auto_google.sqlite')
+    g = Google(sl, tl, Path.home() / '.cache/yzz-translate/gtrans_cache.sqlite')
     src_re = SCRIPT_RE.get(sl, r'\w')
-    # 全书所有段一起并发（逐页并发时每页只有几段，线程用不满）
+    # 全书所有段先一起并发预取（gtrans.Google.prefetch），再顺序取缓存拼回
     keys = [(p, i) for p in sorted(src_pg) for i, _ in enumerate(src_pg[p].split('\n\n'))]
     paras = [src_pg[p].split('\n\n')[i].strip() for p, i in keys]
-    with ThreadPoolExecutor(8) as ex:
-        res = list(ex.map(lambda x: g.para(x, src_re), paras))
+    g.g.prefetch([g.body(x) for x in paras if re.search(src_re, g.body(x))], 8)
+    res = [g.para(x, src_re) for x in paras]
     by: dict[int, list[str]] = collections.defaultdict(list)
     for (p, _), r in zip(keys, res):
         by[p].append(r)
@@ -547,6 +481,8 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
         rec = _cached(work / f'check/{cid}.json', dg)
         if rec is None:
             engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
+            if engine == a.verify_engine:
+                raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine')
             user = f'## Glossary\n{gtab}\n\n## Original\n{src}\n\n## Translation\n{tgt}'
             if risk:
                 user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence words '
@@ -561,14 +497,16 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
         edits = [dict(e, id=i) for i, e in enumerate(rec['edits'])]
         # 2 第二模型裁定
         verdicts: dict[int, dict[str, Any]] = {}
-        if edits and a.verify_engine != 'none':
+        extra: list[dict[str, Any]] = []
+        log: list[dict[str, Any]] = []
+        if a.verify_engine != 'none':   # 第二模型逐段全文复核（即使第一模型没报错），并出覆盖回执
             vd = _digest(src, tgt, json.dumps(edits, ensure_ascii=False), vsys, a.verify_engine, PROMPT_VERSION)
             vrec = _cached(work / f'verify/{cid}.json', vd)
             if vrec is None:
                 os.environ.setdefault('YZZ_CODEX_EFFORT', 'medium')
-                user = f'## Original\n{src}\n\n## Translation\n{tgt}\n\n## Proposed fixes\n' + '\n'.join(
+                user = f'## Original\n{src}\n\n## Translation\n{tgt}\n\n## Proposed fixes\n' + ('\n'.join(
                     json.dumps({k2: e[k2] for k2 in ('id', 'pdf_page', 'old', 'new', 'reason') if k2 in e},
-                               ensure_ascii=False) for e in edits)
+                               ensure_ascii=False) for e in edits) or '(none)')
                 v = _ask_json(a.verify_engine, vsys, user, f'auto/verify/{cid}', work)
                 vrec = {'digest': vd, 'engine': a.verify_engine, 'prompt_version': PROMPT_VERSION,
                         'status': 'ok' if v is not None else 'parse_failed',
@@ -577,7 +515,15 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
             if vrec['status'] != 'ok':
                 failed.append(f'{cid} 裁定输出无法解析（本段改动全部不落实）')
             verdicts = {int(x['id']): x for x in vrec['verdicts'] if _page_no(x.get('id')) is not None}
-        keep, log = [], []
+            extra = [x for x in vrec['verdicts'] if x.get('new_fix')]
+            receipt = [x for x in vrec['verdicts'] if x.get('receipt')]
+            seen = {int(p) for r in receipt for p in r.get('pages', []) if _page_no(p) is not None}
+            if vrec['status'] == 'ok' and not set(ps) <= seen:
+                failed.append(f'{cid} 第二模型复核回执缺页 {sorted(set(ps) - seen)}（视为未复核）')
+            for x in extra:   # 第二模型独有的发现：单模型意见，不自动落实，进人工队列
+                human.append(dict(x, chunk=cid, verdict='SECOND_MODEL_ONLY', why=x.get('reason', '')))
+                log.append(dict(x, result='queued: 仅第二模型发现，须人工裁定'))
+        keep: list[dict[str, Any]] = []
         for e in edits:
             vd_ = verdicts.get(e["id"])
             ok = a.verify_engine == 'none' or (vd_ and str(vd_.get('verdict', '')).upper() == 'ACCEPT')
@@ -607,6 +553,8 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
     final = ''.join(p.rstrip('\n') + '\n' for p in parts)
     _same_pages(''.join(src_pg.values()), final, '核对合并')
     _write(work / 'checked.md', final)
+    issues = transqa.check_all(''.join(src_pg.values()), final, a.sl, a.tl)
+    _write(work / 'qa_issues.json', json.dumps([vars(x) for x in issues], ensure_ascii=False, indent=1))
     return final
 
 
@@ -650,6 +598,12 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
         rows.append(f'\n意义核对：找错 {len(logs)} 处，第二模型否决 {nv}，落实 {c["applied"]}，'
                     f'护栏拒绝 {c["rejected"] - nv}，critical 转人工 {nq}（human_review_queue.csv）；'
                     f'提示词版本 {PROMPT_VERSION}（见 check_log.jsonl）')
+    qa = work / 'qa_issues.json'
+    if qa.exists():
+        qi = json.loads(qa.read_text(encoding='utf-8'))
+        c2 = collections.Counter(x['severity'] for x in qi)
+        rows.append(f'\n全书 QA（transqa）：critical {c2["critical"]}，major {c2["major"]}，minor {c2["minor"]}，'
+                    f'info {c2["info"]}（qa_issues.json）')
     cf = work / 'check_failed.json'
     if cf.exists() and json.loads(cf.read_text(encoding='utf-8')):
         rows.append('\n**失败段（须重跑）**：' + '；'.join(json.loads(cf.read_text(encoding='utf-8'))))

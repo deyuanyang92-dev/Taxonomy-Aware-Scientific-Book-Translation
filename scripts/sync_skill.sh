@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 把仓库里的技能文件同步到技能目录（仓库为准，技能目录只是副本）。
 #
-# 复制范围：skill/*.md、skill/*.tsv、skill/domains/、scripts/（不含 __pycache__）。
+# 复制范围：skill/*.md、skill/*.tsv、skill/domains/、scripts/、transqa/（不含 __pycache__）。
 # 技能目录里仓库没有的文件（terms/、备份目录等）不动、不删，只在最后列出。
 #
 # 用法：
@@ -23,12 +23,13 @@ list_sources() {
     (cd "$REPO/skill" && find . -maxdepth 1 \( -name '*.md' -o -name '*.tsv' \) -type f | sed 's|^\./||')
     (cd "$REPO/skill" && find domains -type f)
     (cd "$REPO" && find scripts -type f ! -path '*/__pycache__/*' ! -name '*.pyc')
+    (cd "$REPO" && find transqa -type f -name '*.py' ! -path '*/__pycache__/*')   # scripts 依赖的共用 QA 层
 }
 
 # skill/ 下的文件落在技能目录根，scripts/ 下的保持 scripts/ 前缀
 src_of() {
     case "$1" in
-        scripts/*) echo "$REPO/$1" ;;
+        scripts/*|transqa/*) echo "$REPO/$1" ;;
         *) echo "$REPO/skill/$1" ;;
     esac
 }

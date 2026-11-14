@@ -84,3 +84,84 @@
 ## 6. 基准测试（计划）
 
 选一篇 15–30 页、含物种描述、比较表、二歧检索表、图注的分类学论文，由分类学家给出标准答案。每次改流程后重跑，按 7 项打分：全文覆盖、术语一致、分类学准确（计数 / 性状状态 / 比较关系）、检索表正确、学名保真、可追溯、成品质量。不用 BLEU 和模型自评。必要时用同一篇文献跑 translate-book、translation-agent 作对照。
+
+---
+
+## 7. 2026-11-15 增补：主流商用 MT / CAT、更多开源项目、Google 提速
+
+> 本节是一次完整调研的结论，**下次需要对比时先读本节和 `docs/research/2026-11-15/` 原始报告，不要重做**；只在下表「复查时机」到期或出现新产品时增补。
+> 原始报告（逐条带出处 URL、星数、日期，未核实者标「未确证」）：`commercial_mt.md`（15 个商用产品）、`opensource_projects.md`（约 40 个 GitHub 项目）、`google_speed.md`（免费端点提速与实测）、`codex_astra_review.md`（gpt-6-astra 对本系统的审查与 P0/P1/P2 方案）。
+
+### 7.1 商用机器翻译与 CAT/QA（摘要）
+
+| 产品 | 术语控制 | 翻译记忆/自适应 | QA | 保/俄/日/拉丁 | 对我们最有用的一点 |
+|---|---|---|---|---|---|
+| DeepL | 术语表（不保证命中）；context 只当语境 | TM（阈值 75） | 段级质量问题（type/severity/span） | 拉丁无术语表/TM | 段级问题单格式 |
+| Google Cloud | v3 术语表；Adaptive（取最相似 5 对）；LLM 模型 | Adaptive 数据集 | — | TLLM 无拉丁 | 检索式 few-shot |
+| Azure / Amazon | 动态词典 / 自定义术语（**官方说不保证**） | Custom Translator / Active Custom | — | 无拉丁 | 术语一律自己回检 |
+| Lara（ModernMT） | 术语表 > TM > 模型 | 自适应 TM | — | — | ModernMT **2026-12-31 停服** |
+| 百度 / 有道 / 腾讯 | 术语干预（"调优"非替换） | — | — | 有道支持拉丁 | 腾讯 TranSmart **2026-11-24 关闭** |
+| Trados / memoQ / Xbench / Verifika | 禁用词表、关键词表 | TM、上下文匹配 101/102% | 数字（按语言格式）、标签、一致性、目标=源、空译、重复词 | — | 确定性 QA 清单 |
+| Phrase / Smartcat | — | TM 优先 → 引擎路由 → QA | 质量分（QPS/TQS）阈值路由人工 | Phrase 不支持保加利亚源 | 阈值路由人工队列 |
+
+结论：**没有一家保证术语/学名命中**，拉丁语支持普遍缺失，供应商有停服风险——学名保护、术语回检和异模型核对必须在我们自己这一侧完成。
+
+### 7.2 开源项目（本节新增，§1 已有的不重复）
+
+| 项目（星数，2026-11） | 机制 | 采纳情况 |
+|---|---|---|
+| yihong0618/bilingual_book_maker（~9.9k） | plan.json 干跑 + 覆盖率守卫；局部重译；批处理半价 | 覆盖守卫已做（transqa.coverage）；干跑计划 P1 |
+| hydropix/TranslateBooksWithLLMs（~2.6k，AGPL） | 块内命中的术语才注入；术语后修只改命中句 | 只送相关术语已做（auto_translate.relevant）；定点后修 P1（只借思路，不复制 AGPL 代码） |
+| FolioLoom | 源文账本、零遗漏发布闸门、术语波次冻结 | 发布阻断部分已做（check_failed、human_review_queue）；状态账本 P0 待做 |
+| sukamenev/booktrans | 先侦察再译、盲编、双文核对 | 异模型全文复核已做 |
+| gnames/gnfinder + gnparser | 学名发现与解析 | P1：接入 transqa.taxonomy 作学名第二来源 |
+| Unbabel/COMET、google-research/metricx、GEMBA-MQM | 质量估计 | P2：只作人工队列排序信号，不作通过标准 |
+| ssut/py-googletrans、deep-translator、translators | Google 免费端点封装 | 无真批量；我们自写 urllib 客户端 |
+| kiss-translator、Traduzir-paginas-web、LDDC | translateHtml 数组批量 | 需 Google 挂件内置 key，权限策略未放行，**待用户决定** |
+| immersive-translate | 只发布 Release，**非开源** | — |
+
+### 7.3 Google 免费端点提速（实测，保→英，每组 150 段）
+
+| 方案 | 段/分钟 | 处理 |
+|---|---|---|
+| gtrans 原实现（逐段、每段停 1–2 s、顺序） | ~20 | 已淘汰 |
+| gtx 逐段，4 线程 + 0.5 s 间隔 | 237 | — |
+| **gtx 逐段，8 线程无间隔，429/5xx 全体冷却** | **320** | **已采用**：`gtrans.Google.prefetch()`，auto_translate 复用同一客户端 |
+| gtx 拼段（多段一请求） | 21（大量 429） | 不采用 |
+| translateHtml 数组批量 | 调研单样本约 4400 | 未启用（见上） |
+
+注意：同机 Python `requests` 库对 gtx 返回 429，`urllib`/`curl` 正常（原因未确证）；本项目只用 urllib。缓存键含语言对（英→中沿用旧键）。
+
+### 7.4 本次已落地（2026-11-15，668 项测试通过）
+
+| 做法 | 来源 | 位置 |
+|---|---|---|
+| 共用 QA 层：通用检查（覆盖/页序/漏段、数字双向含数词与千分位、异常文字、残留原文、否定风险、禁用词）+ 分类学插件（学名按次数与顺序、括号命名人、检索表图、图版号）；问题带 critical/major/minor/info | CAT QA、DeepL 问题格式、architecture.md §5、astra 审查 | `transqa/`、`tests/test_transqa.py` |
+| 审查发现的 5 个漏检探针成为回归用例 | astra 审查 | `tests/test_transqa.py` |
+| 异模型全文复核 + 覆盖回执；第二模型独有发现进人工队列；找错与复核同模型即拒绝 | booktrans、ISO 17100 双人原则 | `scripts/auto_translate.py` stage_check |
+| critical 改动（学名、数字、有/无、检索表）不自动落实，写 `human_review_queue.csv` | Phrase/Smartcat 阈值路由、MQM | 同上 |
+| 闸口：任何类型都不得丢数字和斜体学名；有拒绝行退出码 1 | memoQ 数字检查、astra 审查 | `scripts/apply_issues.py` |
+| DeepSeek 每次重试前重查夜间窗口 | 用户规定、astra 审查 | `scripts/llm_engines.py` |
+| Google 并发预取、全体冷却、统一客户端 | 实测 | `scripts/gtrans.py`、`scripts/auto_translate.py` |
+
+### 7.5 不采纳及理由（避免反复讨论）
+
+| 做法 | 理由 |
+|---|---|
+| TM 相似度 ≥75% 直接复用、跳过核对 | 一个数字或否定词即可改变诊断；模糊匹配只作 few-shot 范例 |
+| 只核对脚本或第一模型标出的疑点 | 两者都漏的错误发现不了；全文异模型复核保留 |
+| 只比较规范化学名集合 | 丢失重复、位置、括号命名人；比较带次数与顺序 |
+| 全量数字、地名换占位符 | 遮蔽数量关系；只锁定不可变实体（学名等，P1） |
+| COMET/MetricX/QE 分高即通过 | 对分类学与小语种未验证；只作排序信号 |
+| 让模型自动学术语 | 放大未核实译法；术语仍以 yiku（有出处）为准 |
+| 抓取、硬编码或轮换 Google 挂件 key、代理、指纹伪装 | 未获授权；不做规避 |
+
+### 7.6 待做（按 astra 审查优先级）
+
+- **P0**：段落状态机与租约续跑（从 `direct_mode.py` 提炼 `claim/commit`，按完整依赖指纹失效）；`run_batches`/`gtrans` 也改用 transqa。
+- **P1**：yiku 多语言（词形、方向、领域范围）；已批准译文的检索式 few-shot；学名占位锁定 + gnparser；干跑计划与覆盖阈值；报告区分字符、token、订阅额度、未知用量。
+- **P2**：QE 排序信号；商用 MT 适配器（只在语言覆盖与试译通过后接入）；按语言对与文本类型分层的基准，开发集与锁定测试集分离。
+
+### 7.7 复查时机
+
+商用产品价格与停服信息每 6 个月复查一次（下次 2027-05）；Google 免费端点在出现连续 429 或速度明显下降时复测；开源项目在立项新语种或新文档类型时增补。
