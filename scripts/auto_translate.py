@@ -45,6 +45,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：transqa
 
 import transqa  # noqa: E402
+from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
+from transqa.segments import render, segments_from_pages, split_template  # noqa: E402
 
 PAGE_RE = re.compile(r'^\s*<!-- PDF p\.(\d+)\b')
 FOREIGN_RE = re.compile(r'[ऀ-ॿ؀-ۿ฀-๿가-힯֐-׿一-鿿]')
@@ -107,6 +109,11 @@ def pages(text: str) -> dict[int, str]:
 def chunks_of(pg: dict[int, str], n: int = CHUNK_PAGES) -> list[list[int]]:
     ps = sorted(pg)
     return [ps[i:i + n] for i in range(0, len(ps), n)]
+
+
+def whole(pg: dict[int, str]) -> str:
+    """按页序拼回整份文本（每页以换行结尾，页标记独占一行）。"""
+    return ''.join(pg[p].rstrip('\n') + '\n' for p in sorted(pg))
 
 
 def join(pg: dict[int, str], ps: list[int]) -> str:
@@ -265,16 +272,20 @@ def llm(engine: str, system: str, user: str, tag: str, usage_file: Path) -> tupl
 
 # ---------------------------------------------------------------- 提示词
 REVISE_SYS = """You revise a Google machine translation of a scientific taxonomic text from {sl} into {tl}.
-Output ONLY the revised {tl} Markdown for the whole input, paragraph for paragraph, keeping every
-<!-- PDF p.N --> marker line exactly and the same blank-line paragraph breaks. No commentary.
+Input: segments, each introduced by an ID line like ⟦p103_s2⟧ followed by ORIGINAL: and DRAFT: lines.
+Output ONLY the revised {tl} text of every segment, each introduced by its ID on its own line:
+⟦p103_s2⟧
+revised text
+Return every ID exactly once, in the same order. Never write ⟦ or ⟧ inside a segment's text.
+No commentary, no original text, no notes about your changes.
 Rules:
 1. Faithful: nothing omitted, nothing added. Keep every number, couplet number such as 1(2), plate/figure reference,
    Latin name, author and year exactly as in the original (also the original's own misspellings and abbreviations,
-   e.g. *H. filiformis* stays abbreviated). Keep *italics* and the dotted leaders …… of keys. Keep Cyrillic
-   figure sub-labels (1а, 2б) as they are.
-2. Terminology: use the glossary given with each chunk; one source term = one rendering. Standard taxonomic usage.
+   e.g. *H. filiformis* stays abbreviated). Keep *italics*, Markdown heading marks (#) and the dotted leaders …… of keys.
+   Keep figure sub-labels (1а, 2б) in the original's letters.
+2. Terminology: use the glossary and names table below; one source term = one rendering. Standard taxonomic usage.
 3. Style: natural descriptive taxonomic {tl} (telegraphic descriptions as "Body short and thin.", not "The body short").
-   Rewrite every paragraph against the original; the Google draft is only a draft.
+   Rewrite every segment against the original; the Google draft is only a draft.
 4. Never write characters of any other script; translator's notes as [TN: ...] in {tl}."""
 
 VERIFY_SYS = """You are the independent second reviewer of a {tl} translation of a {sl} taxonomic text.
@@ -296,11 +307,43 @@ Do not "correct" the original author's own misprints. Output ONLY a JSON array (
 "severity": "critical|major|minor", "reason": "short"}}]."""
 
 
-def revise_user(src: str, draft: str, gl: list[tuple[str, str]], nm: list[tuple[str, str]], probs: list[str]) -> str:
-    u = f'## Glossary for this chunk\n{table_md(gl)}\n\n## Names\n{table_md(nm)}\n\n## Original\n{src}\n\n## Google draft\n{draft}'
+STABLE_LIMIT = 150_000  # 稳定前缀（规则+全书术语+转写表）超过此字符数时，术语表改为逐段只送相关条目
+
+
+def stable_prefix(base: str, gl: list[tuple[str, str]], nm: list[tuple[str, str]]) -> tuple[str, bool]:
+    """L1 规则 + L2 全书术语表/转写表：整本书字节不变，放在 system 最前，供 DeepSeek/OpenAI 前缀缓存命中。
+    返回 (system, 是否已含术语表)。术语表过大时只放规则与转写表，术语表退回逐段相关条目（L4）。"""
+    full = f'{base}\n\n## Glossary (whole book)\n{table_md(gl)}\n\n## Names / transliteration\n{table_md(nm)}'
+    if len(full) <= STABLE_LIMIT:
+        return full, True
+    return f'{base}\n\n## Names / transliteration\n{table_md(nm)}', False
+
+
+def revise_user(items: list[tuple[str, str, str]], extra_gl: list[tuple[str, str]] | None, probs: list[str]) -> str:
+    """L4（每段变化的部分，放在最后）：待改写段 (ID, 原文, Google 稿)。"""
+    u = ''
+    if extra_gl is not None:
+        u += f'## Glossary entries for this chunk\n{table_md(extra_gl)}\n\n'
+    u += '## Segments\n' + '\n\n'.join(f'⟦{sid}⟧\nORIGINAL: {s}\nDRAFT: {d}' for sid, s, d in items)
     if probs:
         u += '\n\n## Your previous output failed these checks; fix them\n' + '\n'.join(f'- {p}' for p in probs)
     return u
+
+
+ID_RE = re.compile(r'⟦(p\d+_s\d+)⟧')
+
+
+def parse_segments(text: str) -> tuple[dict[str, str], list[str]]:
+    """模型输出 → ({段ID: 译文}, 重复出现的 ID)。重复视为格式错误由调用方重试。"""
+    parts = ID_RE.split(text)
+    out: dict[str, str] = {}
+    dups: list[str] = []
+    for k in range(1, len(parts) - 1, 2):
+        if parts[k] in out:
+            dups.append(parts[k])
+        else:
+            out[parts[k]] = parts[k + 1].strip()
+    return out, dups
 
 
 # ---------------------------------------------------------------- 核对改动的落实
@@ -393,58 +436,107 @@ def _same_pages(src: str, tgt: str, where: str) -> None:
 
 
 def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[int, str]:
+    """Google 初稿。按 transqa 模板逐段处理，保证初稿与原文段 ID 一一对应；
+    异名录/文献/索引块不送 Google（改写阶段走确定性处理）。全书先并发预取，再顺序拼回。"""
     g = Google(sl, tl, Path.home() / '.cache/yzz-translate/gtrans_cache.sqlite')
     src_re = SCRIPT_RE.get(sl, r'\w')
-    # 全书所有段先一起并发预取（gtrans.Google.prefetch），再顺序取缓存拼回
-    keys = [(p, i) for p in sorted(src_pg) for i, _ in enumerate(src_pg[p].split('\n\n'))]
-    paras = [src_pg[p].split('\n\n')[i].strip() for p, i in keys]
-    g.g.prefetch([g.body(x) for x in paras if re.search(src_re, g.body(x))], 8)
-    res = [g.para(x, src_re) for x in paras]
-    by: dict[int, list[str]] = collections.defaultdict(list)
-    for (p, _), r in zip(keys, res):
-        by[p].append(r)
-    out = {p: '\n\n'.join(by[p]) + '\n' for p in sorted(src_pg)}
-    _write(work / 'draft_stats.json', json.dumps({'requests': g.requests, 'failed': g.failed}, ensure_ascii=False))
+    split = {p: split_template(src_pg[p]) for p in sorted(src_pg)}
+    send = [s.text for segs, _ in split.values() for s in segs
+            if classify(s.text, sl) not in PROTECTED and re.search(src_re, s.text)]
+    g.g.prefetch(send, 8)
+    out = {}
+    for p, (segs, tpl) in split.items():
+        texts = {s.id: (g.one(s.text) if s.text in send else s.text) for s in segs}
+        out[p] = render(tpl, texts).rstrip('\n') + '\n'
+    _write(work / 'draft_stats.json', json.dumps({'requests': g.requests, 'failed': g.failed,
+                                                  'segments': sum(len(x[0]) for x in split.values()),
+                                                  'sent_to_google': len(send)}, ensure_ascii=False))
     if g.failed:
         raise SystemExit(f'Google 有 {len(g.failed)} 段失败（见 draft_stats.json）；重跑即可，成功段已缓存')
-    _write(work / 'draft.md', ''.join(out[p].rstrip('\n') + '\n' for p in sorted(out)))
+    _write(work / 'draft.md', ''.join(out[p] for p in sorted(out)))
     return out
 
 
 def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
+    """3 页一段，按段 ID 改写：异名录/文献/索引走确定性处理（0 token），残留原文的才退回模型；
+    其余段带 ID 送模型，输出须逐 ID 返回。system = 规则 + 全书术语/转写表（字节不变，前缀缓存）。"""
     gl, nm = load_table(a.glossary), load_table(a.names)
+    abbr = dict(load_table(getattr(a, 'abbr', None)))
     bad = [w for w in (a.bad_terms or '').split(',') if w]
-    sysmsg = REVISE_SYS.format(sl=a.sl, tl=a.tl)
+    sysmsg, gl_in_prefix = stable_prefix(REVISE_SYS.format(sl=a.sl, tl=a.tl), gl, nm)
     issues, parts = {}, []
+    stats: collections.Counter[str] = collections.Counter()
     for k, ps in enumerate(chunks_of(src_pg)):
-        out = work / f'revise/c{k:03d}.md'
+        cid = f'c{k:03d}'
         src, draft = join(src_pg, ps), join(draft_pg, ps)
-        _same_pages(src, draft, f'c{k:03d} 初稿')
-        if out.exists():  # 续跑：已完成的段也重新过护栏，问题照样进报告
-            best = out.read_text(encoding='utf-8')
-            best_p = guard(src, best, bad, a.tl, a.sl)
-        else:
-            g2, n2 = relevant(gl, src), relevant(nm, src)
-            engine = a.engine if a.engine != 'auto' else pick_engine('revise', day_engine=a.day_engine)
-            best, best_p = draft, guard(src, draft, bad, a.tl, a.sl)
+        _same_pages(src, draft, f'{cid} 初稿')
+        segs, tpl = split_template(src)
+        dmap = {s.id: s.text for s in segments_from_pages(draft)}
+        if set(dmap) != {s.id for s in segs}:
+            raise ValueError(f'{cid} 初稿与原文段 ID 不一致（缺 {sorted({s.id for s in segs} - set(dmap))[:5]}）')
+        texts: dict[str, str] = {}
+        todo = []
+        for s in segs:
+            if classify(s.text, a.sl) in PROTECTED:
+                d = deterministic(s.text, a.sl, nm, abbr)
+                if not residue_left(d, a.sl):
+                    texts[s.id] = d
+                    stats['deterministic'] += 1
+                    continue
+                stats['fallback_to_model'] += 1
+            todo.append(s)
+        stats['segments'] += len(segs)
+        stats['sent_to_model'] += len(todo)
+        engine = a.engine if a.engine != 'auto' else pick_engine('revise', day_engine=a.day_engine)
+        dg = _digest(src, draft, sysmsg, PROMPT_VERSION, engine, ','.join(bad), json.dumps(abbr, ensure_ascii=False),
+                     '' if gl_in_prefix else table_md(relevant(gl, src)))
+        rec = _cached(work / f'revise/{cid}.json', dg)
+        if rec is None:
+            extra = None if gl_in_prefix else relevant(gl, src)
+            items = [(s.id, s.text, dmap[s.id]) for s in todo]
+            best: dict[str, str] = {s.id: dmap[s.id] for s in todo}
+            best_p = guard(src, render(tpl, {**texts, **best}), bad, a.tl, a.sl)
+            best_is_draft = True
             probs: list[str] = []
-            for attempt in range(2):
-                text, _ = llm(engine, sysmsg, revise_user(src, draft, g2, n2, probs),
-                              f'auto/revise/c{k:03d}/{attempt}', work / 'usage.tsv')
-                text = text.strip() + '\n'
-                probs = guard(src, text, bad, a.tl, a.sl)
-                if best is draft or len(probs) <= len(best_p):
-                    best, best_p = text, probs
+            attempts = 0
+            for attempt in range(2) if todo else []:
+                attempts += 1
+                out_text, _ = llm(engine, sysmsg, revise_user(items, extra, probs), f'auto/revise/{cid}/{attempt}',
+                                  work / 'usage.tsv')
+                got, dups = parse_segments(out_text)
+                want = [s.id for s in todo]
+                miss, extra_ids = [x for x in want if x not in got], [x for x in got if x not in want]
+                cand = {sid: got.get(sid, best[sid]) for sid in want}
+                probs = guard(src, render(tpl, {**texts, **cand}), bad, a.tl, a.sl)
+                if miss:
+                    probs.append(f'缺段 ID {miss[:10]}（每个 ID 都要返回）')
+                if extra_ids:
+                    probs.append(f'多出未请求的 ID {extra_ids[:10]}')
+                if dups:
+                    probs.append(f'ID 重复 {dups[:10]}')
+                complete = not miss and not dups
+                if complete and (best_is_draft or len(probs) <= len(best_p)):   # 完整的模型稿优先于 Google 初稿
+                    best, best_p, best_is_draft = cand, probs, False
                 if not probs:
                     break
-            _write(out, best)
-            print(f'revise c{k:03d} {engine} issues={len(best_p)}', flush=True)
-        if best_p:
-            issues[f'c{k:03d}'] = best_p
-        parts.append(best)
+            if todo and best_is_draft:
+                best_p = best_p + ['模型两次都未返回完整的段 ID，本段保留 Google 初稿']
+            rec = {'digest': dg, 'status': 'ok', 'engine': engine, 'attempts': attempts, 'texts': best,
+                   'issues': best_p, 'prompt_version': PROMPT_VERSION}
+            _write(work / f'revise/{cid}.json', json.dumps(rec, ensure_ascii=False, indent=1))
+            print(f'revise {cid} {engine} segs={len(segs)} model={len(todo)} attempts={attempts} issues={len(best_p)}',
+                  flush=True)
+        stats['attempts'] += int(rec.get('attempts', 0))
+        stats['chunks_reworked'] += int(rec.get('attempts', 0) > 1)
+        stats['chunks'] += 1
+        chunk = render(tpl, {**texts, **rec['texts']}).rstrip('\n') + '\n'
+        if rec['issues']:
+            issues[cid] = rec['issues']
+        parts.append(chunk)
     _write(work / 'revise_issues.json', json.dumps(issues, ensure_ascii=False, indent=1))
-    revised = ''.join(x.rstrip('\n') + '\n' for x in parts)
-    _same_pages(''.join(src_pg.values()), revised, '改写合并')
+    _write(work / 'revise_stats.json', json.dumps(dict(stats), ensure_ascii=False, indent=1))
+    revised = ''.join(parts)
+    _same_pages(whole(src_pg), revised, '改写合并')
     _write(work / 'revised.md', revised)
     return revised
 
@@ -467,14 +559,15 @@ def _ask_json(engine: str, system: str, user: str, tag: str, work: Path) -> list
 def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
     """找错（check_engine）→ 第二模型裁定（verify_engine，须不同于找错模型）→ 护栏落实。只落实两者都认可的改动。"""
     gl = load_table(a.glossary)
-    csys, vsys = CHECK_SYS.format(sl=a.sl, tl=a.tl), VERIFY_SYS.format(sl=a.sl, tl=a.tl)
+    csys, gl_in_prefix = stable_prefix(CHECK_SYS.format(sl=a.sl, tl=a.tl), gl, [])   # 全书术语表进稳定前缀
+    vsys = VERIFY_SYS.format(sl=a.sl, tl=a.tl)
     parts, logs, failed = [], [], []
     human: list[dict[str, Any]] = []
     for k, ps in enumerate(chunks_of(src_pg)):
         cid = f'c{k:03d}'
         src, tgt = join(src_pg, ps), join(tgt_pg, ps)
         _same_pages(src, tgt, f'{cid} 核对')
-        gtab = table_md(relevant(gl, src))
+        gtab = '' if gl_in_prefix else table_md(relevant(gl, src))
         # 1 找错
         risk = negation_risk(src, tgt, a.sl, a.tl)
         dg = _digest(src, tgt, gtab, csys, PROMPT_VERSION)
@@ -483,7 +576,8 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
             engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
             if engine == a.verify_engine:
                 raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine')
-            user = f'## Glossary\n{gtab}\n\n## Original\n{src}\n\n## Translation\n{tgt}'
+            user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
+                f'## Original\n{src}\n\n## Translation\n{tgt}'
             if risk:
                 user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence words '
                          'than the translation (possible present/absent reversal or omitted "without").')
@@ -551,9 +645,9 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
                     h.get('why', '')])
     _write(work / 'human_review_queue.csv', buf.getvalue())
     final = ''.join(p.rstrip('\n') + '\n' for p in parts)
-    _same_pages(''.join(src_pg.values()), final, '核对合并')
+    _same_pages(whole(src_pg), final, '核对合并')
     _write(work / 'checked.md', final)
-    issues = transqa.check_all(''.join(src_pg.values()), final, a.sl, a.tl)
+    issues = transqa.check_all(whole(src_pg), final, a.sl, a.tl)
     _write(work / 'qa_issues.json', json.dumps([vars(x) for x in issues], ensure_ascii=False, indent=1))
     return final
 
@@ -575,15 +669,29 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
                     v[i] += float(f[j] or 0)
                 except ValueError:
                     pass
-        rows.append('| 步骤 | 引擎 | 调用 | 输入 | 输出 | 缓存 | 秒 | 估算美元 |\n|---|---|---|---|---|---|---|---|')
+        npages = len([p for p in (src_pg or {}) if p]) or None
+        rows.append('| 步骤 | 引擎 | 调用 | 输入（未缓存） | 缓存命中 | 输出 | 缓存命中率 | 每页输入/输出 | 秒 | 估算美元 |\n'
+                    '|---|---|---|---|---|---|---|---|---|---|')
         for (stage, eng), v in sorted(agg.items()):
             usd = ((v[1] * DS_PRICE['in'] + v[3] * DS_PRICE['cache'] + v[2] * DS_PRICE['out']) / 1e6
                    if eng.startswith('deepseek') else 0)
-            rows.append(f'| {stage} | {eng} | {v[0]:.0f} | {v[1]:.0f} | {v[2]:.0f} | {v[3]:.0f} | {v[4]:.0f} | {usd:.3f} |')
+            hit = f'{v[3] / (v[1] + v[3]):.0%}' if v[1] + v[3] else '未知'
+            per = f'{(v[1] + v[3]) / npages:.0f}/{v[2] / npages:.0f}' if npages else '—'
+            usd_s = f'{usd:.3f}' if eng.startswith('deepseek') else '订阅额度（未计价）'
+            rows.append(f'| {stage} | {eng} | {v[0]:.0f} | {v[1]:.0f} | {v[3]:.0f} | {v[2]:.0f} | {hit} | {per} | '
+                        f'{v[4]:.0f} | {usd_s} |')
     ds = work / 'draft_stats.json'
     if ds.exists():
         d = json.loads(ds.read_text(encoding='utf-8'))
-        rows.append(f'\nGoogle：新请求 {d["requests"]}，失败 {len(d["failed"])}')
+        rows.append(f'\nGoogle：送 {d.get("sent_to_google", "?")}/{d.get("segments", "?")} 段，新请求 {d["requests"]}，'
+                    f'失败 {len(d["failed"])}')
+    rs = work / 'revise_stats.json'
+    if rs.exists():
+        s = json.loads(rs.read_text(encoding='utf-8'))
+        ch = max(1, s.get('chunks', 0))
+        rows.append(f"\n改写：段 {s.get('segments', 0)}，确定性处理（0 token）{s.get('deterministic', 0)}，"
+                    f"退回模型 {s.get('fallback_to_model', 0)}，送模型 {s.get('sent_to_model', 0)}；"
+                    f"返工率 {s.get('chunks_reworked', 0) / ch:.0%}（{s.get('chunks_reworked', 0)}/{ch} 段需重试）")
     ri = work / 'revise_issues.json'
     if ri.exists():
         iss = json.loads(ri.read_text(encoding='utf-8'))
@@ -630,6 +738,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--glossary')
     ap.add_argument('--names')
     ap.add_argument('--bad-terms', default='')
+    ap.add_argument('--abbr', help='引文缩写表（两列：原文缩写、译文），补充 transqa.blocks.ABBR')
     ap.add_argument('--engine', default='auto', help='改写与找错：auto（按时段）或 llm_engines 引擎名')
     ap.add_argument('--day-engine', default=None, help='白天用的引擎（默认 revise=codex-luna；找错等到夜间）')
     ap.add_argument('--verify-engine', default='codex-sol',

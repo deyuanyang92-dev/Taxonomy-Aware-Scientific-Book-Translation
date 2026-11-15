@@ -272,3 +272,85 @@ def test_same_model_for_check_and_verify_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
     with pytest.raises(ValueError, match="异模型"):
         at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_engine="deepseek-flash"))
+
+
+SRC2 = """<!-- PDF p.1 -->
+
+Тялото късо. 4 очи.
+
+*Ph. tuberculata* Bobretzky, 1868, стр. 15; Зернов, 1913, стр. 220
+
+<!-- PDF p.2 -->
+
+Дължина 2—3 mm.
+
+<!-- PDF p.3 -->
+
+Цвят белезникав.
+
+<!-- PDF p.4 -->
+
+Без хриле.
+"""
+
+
+def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, monkeypatch):
+    import argparse
+    import re as _re
+    g = tmp_path / "g.tsv"
+    g.write_text("хриле\tgills\nчетинка\tchaeta\n", encoding="utf-8")
+    nm = tmp_path / "n.tsv"
+    nm.write_text("Зернов\tZernov\n", encoding="utf-8")
+    calls = []
+
+    def fake(engine, system, user, tag, usage_file):
+        calls.append((tag, system, user))
+        ids = _re.findall(r"⟦(p\d+_s\d+)⟧", user)
+        en = {"p1_s1": "Body short. 4 eyes.", "p2_s1": "Length 2—3 mm.", "p3_s1": "Colour whitish.",
+              "p4_s1": "Gills absent."}
+        if tag.endswith("/0") and "p2_s1" in ids:      # 第一次漏掉一个 ID → 须重试
+            ids = [i for i in ids if i != "p2_s1"]
+        return "\n".join(f"⟦{i}⟧\n{en[i]}" for i in ids), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    a = argparse.Namespace(sl="bg", tl="en", glossary=str(g), names=str(nm), bad_terms="", engine="deepseek-flash",
+                           day_engine=None, abbr=None)
+    src_pg = at.pages(SRC2)
+    out = at.stage_revise(src_pg, src_pg, tmp_path, a)       # 初稿=原文即可
+    assert "*Ph. tuberculata* Bobretzky, 1868, p. 15; Zernov, 1913, p. 220" in out   # 确定性处理
+    assert all("Bobretzky" not in u for _, _, u in calls)                           # 异名录没送模型
+    assert len({s for _, s, _ in calls}) == 1 and "chaeta" in calls[0][1]           # system 全书一致、含全书术语
+    assert any(t.endswith("c000/1") for t, _, _ in calls)                           # 漏 ID 触发重试
+    assert "Length 2—3 mm." in out and "Gills absent." in out
+    n = len(calls)
+    at.stage_revise(src_pg, src_pg, tmp_path, a)                                    # 续跑命中缓存
+    assert len(calls) == n
+
+
+def test_stage_draft_does_not_send_synonymy_to_google(tmp_path, monkeypatch):
+    import json as _json
+    import urllib.parse
+
+    import gtrans
+    sent = []
+
+    def http_get(url, timeout=30):
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+        sent.append(q)
+        return _json.dumps([[[f"EN<{q}>", "x"]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    monkeypatch.setattr(at.Path, "home", staticmethod(lambda: tmp_path))
+    out = at.stage_draft(at.pages(SRC2), tmp_path, "bg", "en")
+    assert all("Bobretzky" not in q for q in sent) and "Bobretzky, 1868, стр. 15" in out[1]
+
+
+def test_whole_keeps_page_markers_on_own_lines():
+    pg = at.pages("<!-- PDF p.1 -->\nA\n<!-- PDF p.2 -->\nB")
+    assert sorted(at.pages(at.whole(pg))) == [1, 2]
+
+
+def test_parse_segments_reports_duplicates():
+    got, dups = at.parse_segments("⟦p1_s1⟧\nA\n⟦p1_s2⟧\nB\n⟦p1_s1⟧\nC")
+    assert got == {"p1_s1": "A", "p1_s2": "B"} and dups == ["p1_s1"]

@@ -154,3 +154,39 @@ def test_thousands_separators_equal():
         c = codes("<!-- PDF p.1 -->\n\nОколо 136 000 екз.\n", f"<!-- PDF p.1 -->\n\nAbout {en} specimens.\n")
         assert "number.missing" not in c and "number.added" not in c, en
     assert "number.missing" not in codes("<!-- PDF p.1 -->\n\n1,2 mm\n", "<!-- PDF p.1 -->\n\n1.2 mm\n")
+
+
+def test_template_round_trip_is_exact():
+    from transqa.segments import render, split_template
+    md = "<!-- PDF p.1 | x -->\n\n[图版：Таблица I]\nГлава: 1а.\n\nДруг абзац\nвтори ред.\n\n<!-- PDF p.2 -->\nТекст.\n"
+    segs, tpl = split_template(md)
+    assert render(tpl, {s.id: s.text for s in segs}) == md
+    assert [s.id for s in segs] == ["p1_s1", "p1_s2", "p2_s1"] and segs[0].text == "Глава: 1а."
+
+
+def test_block_classifier_and_deterministic_pass():
+    from transqa.blocks import classify, deterministic, residue_left
+    syn = "*Ph. tuberculata* Bobretzky, 1868, стр. 15; Зернов, 1913, стр. 220; Якубова и Маринов, 1930, стр. 86"
+    assert classify(syn, "bg") == "synonymy"
+    assert classify("Типов вид *Phyllodoce laminosa* Savigny, 1818", "bg") != "index"
+    assert classify("През 1954 и 1960 г. бяха започнати изследвания; резултатите са публикувани.", "bg") == "free"
+    assert classify("Арнольди, Л. 1948. О литорали в Черном море.", "bg") == "reference"
+    names = [("Зернов", "Zernov"), ("Якубова", "Jakubova"), ("Маринов", "Marinov")]
+    d = deterministic(syn, "bg", names)
+    assert d == "*Ph. tuberculata* Bobretzky, 1868, p. 15; Zernov, 1913, p. 220; Jakubova and Marinov, 1930, p. 86"
+    assert not residue_left(d, "bg") and residue_left("Виноградов, 1949", "bg")
+
+
+def test_classifier_edge_cases_from_review():
+    from transqa.blocks import classify, deterministic
+    assert classify("Smith, J. 1990. A paper.\nThe body is long and the eyes are many.", "en") != "reference"
+    assert classify("In 1950 and 1960 the species was found; later it disappeared.", "en") == "free"
+    assert classify("Length, 12, 15 mm", "en") != "index"
+    assert classify("abtensis, Leiochone, 194", "la") == "index"
+    assert deterministic("S. latifolia; vgl. S. 12, Taf. IV", "de") == "S. latifolia; vgl. p. 12, pl. IV"
+
+
+def test_multiline_reference_block():
+    from transqa.blocks import classify
+    block = "Арнольди, Л. 1948. О литорали в Черном море.\nБекман, М. 1952. Материалы.\nBellan, G. 1964. Contribution."
+    assert classify(block, "bg") == "reference"

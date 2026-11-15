@@ -131,6 +131,14 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 流程：Google 免费初稿（`gtrans.Google`，8 线程预取、429 全体冷却）→ 3 页一段改写（夜间 deepseek-flash 关思考；白天 codex-luna）
 → 共用 QA 护栏（`transqa`）→ deepseek-flash 找错 + 第二模型（默认 codex-sol，medium）**全文复核**并出覆盖回执，
 只落实两者都认可的 major/minor 改动；critical 与仅第二模型发现的问题写 `human_review_queue.csv` → 全书 QA → `report.md`。
+省 token 的做法（2026-11-15 第二轮）：异名录/文献/索引按转写表确定性处理、不送 Google 和模型（`transqa.blocks`）；
+送模型的段带 `⟦段ID⟧`、须逐 ID 返回；system 为「规则 + 全书术语表 + 转写表」的稳定前缀（前缀缓存）；
+`report.md` 给每页 token、缓存命中率、返工率。核对只输出 JSON，不让模型重写整段。
 模型分配依据 `docs/model_bench.md` 末节（9 页盲评）：改写/找错用 DeepSeek flash 关思考（性价比最高，仅夜间）；Codex luna 流畅但会编造；
 DeepSeek 找错误报率高，**必须**第二模型裁定；Sonnet 只做 8–10 页盲评抽检。对比与取舍见 `docs/comparison.md` §7。
+
+### 8.2 中文润色（S7，2026-11-15）
+
+译稿核对完、定稿前跑 `scripts/zh_polish.py`：按计数找出翻译腔超标的叙述段（句子过碎；「该/以及/然而/被/关于/其」欧化），
+只把这些段送模型改写，闸口保证学名、数字、引文、否定与限定语不变。规则与证据：`POLISH.md`、`docs/zh_style_evidence.md`。
 

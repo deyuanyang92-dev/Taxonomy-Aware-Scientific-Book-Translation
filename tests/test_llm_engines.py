@@ -83,6 +83,12 @@ def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
     assert waited == [1]
 
 
+@pytest.fixture(autouse=True)
+def _night(monkeypatch):
+    """测试不随真实时钟变化：默认视为夜间窗口内（重试前的窗口检查放行）；需要白天的用例自行覆盖。"""
+    monkeypatch.setattr(le, "is_peak", lambda now=None: False)
+
+
 def test_deepseek_retries_connection_error_three_times(monkeypatch):
     client, calls = make_client(conn_error(), conn_error(), make_msg("ok"))
     monkeypatch.setattr(le, "_make_client", lambda: client)
