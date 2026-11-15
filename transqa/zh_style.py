@@ -101,6 +101,25 @@ class ZhIssue:
     message: str
 
 
+# 经典著作的缩略书名 → 通行全称（2026-11-15 用户指出「连达尔文的物种起源都翻译错了」：the Origin 被译成《起源》）。
+# 只收在本领域语境下无歧义的条目；新增时补测试。
+CLASSIC_TITLES: dict[str, str] = {
+    '《起源》': '《物种起源》',
+    '《物种起源论》': '《物种起源》',
+    '《人类起源》': '《人类的由来》',
+    '《人类由来》': '《人类的由来》',
+}
+
+
+def fix_titles(text: str) -> tuple[str, int]:
+    """把缩略书名换成通行全称（确定性，0 token）。返回 (新文本, 替换次数)。"""
+    n = 0
+    for short, full in CLASSIC_TITLES.items():
+        n += text.count(short)
+        text = text.replace(short, full)
+    return text, n
+
+
 CHECKS: list[tuple[str, str, str, str]] = [
     # code, severity, 正则（逐行）, 说明
     ('dup_char', 'major', r'(具具|的的|了了|是是|在在|和和)', '衍字'),
@@ -108,6 +127,7 @@ CHECKS: list[tuple[str, str, str, str]] = [
     ('kana', 'major', r'[぀-ヿ]', '残留日文假名'),
     ('half_quote', 'minor', r'(?<=[一-鿿])"|"(?=[一-鿿])', '中文里用了半角引号'),
     ('filler', 'minor', r'值得注意的是|值得一提的是|众所周知', '译者常加的套语：原文无对应时删去'),
+    ('classic_title', 'major', '|'.join(map(re.escape, CLASSIC_TITLES)), '经典著作书名缩略或误译，应用通行全称'),
 ]
 
 

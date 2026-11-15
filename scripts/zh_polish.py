@@ -40,7 +40,7 @@ from transqa import zh_style as Z  # noqa: E402
 from transqa.blocks import classify  # noqa: E402
 from transqa.segments import render, split_template  # noqa: E402
 
-PROMPT_VERSION = '2026-11-15p2'
+PROMPT_VERSION = '2026-11-15p3'
 VERIFY_SYS = """你核对中文润色是否改变了意思。每组给出同一段落的「原」与「改」（改只应是表达调整）。
 逐组判断两者信息是否完全等价：指代对象、程度与范围（任何/所有/甚少）、时间先后、因果与转折、引号含义、限定语与否定、数字与学名。
 只输出 JSON 数组：[{"id": "段ID", "same": true|false, "why": "不等价时写出差异"}]，覆盖每个 id。有任何疑问就判 false。"""
@@ -56,6 +56,9 @@ POLISH_SYS = """你是资深的中文科学编辑，正在润色一部外文动�
 4. 「被」字句改主动或无标记被动：「被认为是」→「一般认为」「学者认为」；「被用于」→「用于」；「被发现于」→「见于」。
 5. 名词化改动词：「对……的理解/认识/研究」→「理解/认识/研究……」；「进行……」能省则省。
 6. 「一个」「它」「它们」：不需要数量或指代时省去。
+6b. 英文括注要克制：日常词、人名、已有通行译名的概念后面的英文括注删去（地方博物学家（naturalists）→地方博物学家）；
+    专业术语只在本段第一次出现时保留括注。人名不写成「雷·兰克斯特（Ray Lankester）」式双写：通行中文名的用中文，其余保留原文。
+    经典著作用通行全称（《起源》→《物种起源》）。括号里含年份的文献引注一律保留。
 7. 先说条件、背景，后说结论，符合中文语序；时间、地点状语前置。
 
 不许做的：
@@ -72,14 +75,31 @@ QUANT = r'任何|所有|全部|一切|均|皆|每|各|凡'          # 量词范�
 TIME = r'此后|此前|随后|之后|之前|最初|起初|最终|后来|曾|已|仍|尚'   # 时间先后（盲评：润色删了「此后」）
 QUAL = r'可能|或许|也许|似|约|大约|大致|通常|一般|多数|多半|少数|仅|只|偶尔|偶见|往往|常'
 ASCII = r'[A-Za-z][A-Za-z.\'\-]*|\d+(?:[.,]\d+)?'
+# 可删的英文括注：（naturalists）（morphological species concept）（Ray Lankester）——纯字母、≤5 词、不含数字。
+# STYLE.md §6 要求删日常词、人名与已译概念后的括注；引文（含年份数字）与斜体学名不在此列，仍受保护。
+GLOSS = re.compile(r'[（(]\s*[A-Za-z][A-Za-z\'\- ]{1,60}[）)]')
+
+
+def _ascii_tokens(s: str) -> collections.Counter[str]:
+    return collections.Counter(re.findall(ASCII, s))
+
+
+def _gloss_tokens(s: str) -> collections.Counter[str]:
+    out: collections.Counter[str] = collections.Counter()
+    for m in GLOSS.finditer(s):
+        if len(m.group(0).split()) <= 5 and not re.search(r'\*', m.group(0)):
+            out.update(re.findall(ASCII, m.group(0)))
+    return out
 
 
 def guard(old: str, new: str) -> list[str]:
     """改写后的段落能否替换原段。返回拒绝理由；空 = 通过。"""
     why = []
-    if collections.Counter(re.findall(ASCII, old)) != collections.Counter(re.findall(ASCII, new)):
-        a, b = collections.Counter(re.findall(ASCII, old)), collections.Counter(re.findall(ASCII, new))
-        why.append(f'ASCII 串（学名/数字/引文）变化：少 {dict(a - b)} 多 {dict(b - a)}')
+    a, b = _ascii_tokens(old), _ascii_tokens(new)
+    lost, added = a - b, b - a
+    lost = lost - _gloss_tokens(old)            # 删掉的英文括注不算丢失
+    if lost or added:
+        why.append(f'ASCII 串（学名/数字/引文）变化：少 {dict(lost)} 多 {dict(added)}')
     if collections.Counter(re.findall(r'\*[^*\n]+\*', old)) != collections.Counter(re.findall(r'\*[^*\n]+\*', new)):
         why.append('斜体内容变化')
     if (old.count('“'), old.count('”'), old.count('「')) != (new.count('“'), new.count('”'), new.count('「')):
@@ -161,6 +181,7 @@ def verify(pairs: list[tuple[Any, str]], engine: str, work: Path, k: int) -> dic
 def polish(md: str, work: Path, engine: str = 'auto', threshold: float = Z.PARA_THRESHOLD,
            dry: bool = False, verify_engine: str = 'auto') -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
+    md, n_titles = Z.fix_titles(md)            # 确定性先修：《起源》→《物种起源》等，不靠模型
     segs, tpl = split_template(md)
     texts = {s.id: s.text for s in segs}
     cand = [s for s in segs if classify(s.text) == 'free' and not s.text.lstrip().startswith(('#', '|', '!['))
@@ -176,7 +197,7 @@ def polish(md: str, work: Path, engine: str = 'auto', threshold: float = Z.PARA_
         size += len(s.text)
     if cur:
         batches.append(cur)
-    stats = {'segments': len(segs), 'candidates': len(cand), 'batches': len(batches)}
+    stats = {'segments': len(segs), 'candidates': len(cand), 'batches': len(batches), 'titles_fixed': n_titles}
     if dry:
         return stats
     system = POLISH_SYS.format(examples=examples())
