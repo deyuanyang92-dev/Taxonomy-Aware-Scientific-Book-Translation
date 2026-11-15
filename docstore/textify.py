@@ -82,6 +82,19 @@ def default_ocr_threads(workers: int) -> int:
     return max(1, cores // max(1, workers))
 
 
+# 登记语言 → Tesseract 模型。单语种模型优于混合：Hartmann-Schröder 德文 6 页金标准上词袋错误率
+# deu 2.0%、deu+eng 3.5%（变音错 10/229 vs 74/229）、PP-OCRv5 latin 6.2%、PDF 内嵌 ABBYY 层 53%（2026-11-15）。
+TESS_LANG = {"de": "deu", "fr": "fra", "es": "spa", "it": "ita", "pt": "por", "nl": "nld", "la": "lat",
+             "ru": "rus", "en": "eng", "zh": "chi_sim+eng", "ja": "jpn"}
+_USER_TESS_LANG = os.environ.get("DOCSTORE_TESS_LANG")  # 用户显式设置时始终以它为准
+
+
+def tess_lang_for(lang: str | None) -> str:
+    if _USER_TESS_LANG:
+        return _USER_TESS_LANG
+    return TESS_LANG.get((lang or "").strip(), "chi_sim+eng")
+
+
 def textify(
     store: Store,
     key: str,
@@ -107,6 +120,7 @@ def textify(
         log(f"[{key}] 原件缺失，跳过")
         return {"key": key, "skipped": True}
     by = agent(by)
+    os.environ["DOCSTORE_TESS_LANG"] = tess_lang_for(d.get("lang"))  # 子进程池继承
     have = set(store.page_numbers(key))
     with fitz.open(path) as pdf:
         npages = len(pdf)

@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：t
 
 import entities  # noqa: E402
 import transqa  # noqa: E402
+from transqa import taxoblocks  # noqa: E402
 from transqa import terms as transqa_terms  # noqa: E402
 from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
 from transqa.segments import render, segments_from_pages, split_template  # noqa: E402
@@ -60,7 +61,7 @@ SCRIPT_RE = {'bg': r'[\u0400-\u04FF]', 'ru': r'[\u0400-\u04FF]', 'uk': r'[\u0400
              'zh': r'[\u4e00-\u9fff]', 'ko': r'[\uAC00-\uD7AF]',
              'de': r'[A-Za-zÄÖÜäöüß]', 'fr': r'[A-Za-zÀ-ÿ]', 'es': r'[A-Za-zÀ-ÿ]', 'it': r'[A-Za-zÀ-ÿ]',
              'pt': r'[A-Za-zÀ-ÿ]', 'la': r'[A-Za-z]', 'nl': r'[A-Za-z]', 'en': r'[A-Za-z]'}
-PROMPT_VERSION = '2026-11-15b'  # 提示词或裁定规则改了就改这里；写进每段缓存与报告（可追溯）
+PROMPT_VERSION = '2026-11-15d'  # 提示词或裁定规则改了就改这里；写进每段缓存与报告（可追溯）
 # 否定/缺失词（按语言；只用于标出高风险页，不做判定）。新语言加一行即可。
 NEG = {
     'bg': r'\b(?:не|без|липсва|липсват|няма|отсъства|отсъстват|нито)\b',
@@ -250,10 +251,10 @@ def guard(src: str, tgt: str, bad_terms: list[str] | None = None, tl: str = 'en'
 
 
 # ---------------------------------------------------------------- 引擎选择
-def is_night(now: dt.datetime | None = None, window: tuple[int, int] = (22, 8)) -> bool:
-    h = (now or dt.datetime.now(dt.timezone.utc)).astimezone(BJ).hour
-    a, b = window
-    return a <= h or h < b if a > b else a <= h < b
+def is_night(now: dt.datetime | None = None) -> bool:
+    """DeepSeek 可调用时段（名字沿用「夜间」）：由 deepseek_offpeak 决定（默认避开官方工作日忙时）。"""
+    from deepseek_offpeak import is_peak
+    return not is_peak(now)
 
 
 def pick_engine(task: str, now: dt.datetime | None = None, day_engine: str | None = None) -> str:
@@ -311,9 +312,30 @@ Faithful means same meaning, not same form: do NOT report free restructuring, ch
 when the meaning is preserved. Ignore style. For each error give the smallest fix and a severity:
 critical = Latin name, number, specimen/plate number, present/absent reversed, key couplet or lead-to wrong;
 major = body part, count, comparison, diagnostic character mistranslated; minor = term usage without change of meaning.
-Do not "correct" the original author's own misprints. Output ONLY a JSON array (possibly empty): [{{"pdf_page": N,
+Do not "correct" the original author's own misprints.
+Procedure (every page, in order): (a) align each original sentence with its translation; (b) compare numbers, counts
+("pair(s)", "two", "half", "twice"), negation/absence, comparisons (longer/shorter, more/fewer), the body part, and which
+taxon a statement is about; (c) before reporting, confirm the meaning of each original word involved - if you are not
+sure what an original word means, do NOT report it. A false report is worse than a missed one: a second model reviews
+every page anyway.
+REAL error (report): original says "without eyes", translation says "with eyes" (negation lost).
+NON-errors (never report): sentence restructured with the same meaning; a translator's note [TN: ...]; British vs
+American spelling; a term rendered as the glossary prescribes.
+Output ONLY a JSON array (possibly empty): [{{"pdf_page": N,
 "old": "exact substring of the translation, unique on that page, at most one sentence", "new": "corrected substring",
-"severity": "critical|major|minor", "reason": "short"}}]."""
+"severity": "critical|major|minor", "reason": "short"}}] plus exactly one {{"receipt": true, "pages": [every pdf page
+you checked]}}."""
+
+JUDGE_SYS = """You check proposed corrections to a {tl} translation of a {sl} taxonomic text. You do NOT search for new
+errors. For each proposed fix answer four small questions; a script derives the verdict from your answers.
+1. "quote": copy the exact original ({sl}) words that the old text translates (verbatim from the Original section).
+2. "key": dictionary meaning of the key original word(s), e.g. "word = meaning; word2 = meaning2".
+   Judge against the ORIGINAL only - never against the rest of the translation.
+3. "old_faithful": true if the OLD text says the same as the quote (free restructuring is fine), else false.
+4. "new_faithful": true if the NEW text says the same as the quote, else false.
+If you cannot establish the meaning of a key word, set both to null.
+Output ONLY a JSON array: [{{"id": N, "quote": "...", "key": "...", "old_faithful": true|false|null,
+"new_faithful": true|false|null, "why": "short"}}]."""
 
 
 STABLE_LIMIT = 150_000  # 稳定前缀（规则+全书术语+转写表）超过此字符数时，术语表改为逐段只送相关条目
@@ -514,7 +536,19 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
             raise ValueError(f'{cid} 初稿与原文段 ID 不一致（缺 {sorted({s.id for s in segs} - set(dmap))[:5]}）')
         texts: dict[str, str] = {}
         todo = []
+        kinds = {k.strip() for k in (getattr(a, 'rewrite_kinds', '') or '').split(',') if k.strip()}
         for s in segs:
+            if kinds:   # 分类文献按块分流（transqa.taxoblocks）：只改写指定类型，其余用术语规范化后的 Google 稿（0 token）
+                tk = taxoblocks.kind(s.text, a.sl)
+                stats[f'kind_{tk}'] += 1
+                if tk == 'junk':            # 插图区 OCR 乱码：原样保留，不翻译
+                    texts[s.id] = s.text
+                    stats['junk_kept'] += 1
+                    continue
+                if tk not in kinds and classify(s.text, a.sl) not in PROTECTED:
+                    texts[s.id] = dmap[s.id]
+                    stats['google_kept'] += 1
+                    continue
             if classify(s.text, a.sl) in PROTECTED:
                 d = deterministic(s.text, a.sl, nm, abbr)
                 if not residue_left(d, a.sl):
@@ -527,6 +561,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
         stats['sent_to_model'] += len(todo)
         engine = a.engine if a.engine != 'auto' else pick_engine('revise', day_engine=a.day_engine)
         dg = _digest(src, '\n'.join(dmap.values()), sysmsg, PROMPT_VERSION, engine, ','.join(bad), json.dumps(abbr, ensure_ascii=False),
+                     ','.join(sorted(kinds)),
                      '' if gl_in_prefix else table_md(relevant(gl, src)))
         rec = _cached(work / f'revise/{cid}.json', dg)
         if rec is None:
@@ -600,83 +635,179 @@ def _ask_json(engine: str, system: str, user: str, tag: str, work: Path) -> list
     return None
 
 
-def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
-    """找错（check_engine）→ 第二模型裁定（verify_engine，须不同于找错模型）→ 护栏落实。只落实两者都认可的改动。"""
-    gl = load_table(a.glossary)
-    csys, gl_in_prefix = stable_prefix(CHECK_SYS.format(sl=a.sl, tl=a.tl), gl, [])   # 全书术语表进稳定前缀
-    vsys = VERIFY_SYS.format(sl=a.sl, tl=a.tl)
-    parts, logs, failed = [], [], []
+def load_pitfalls(sl: str, tl: str, path: str | None = None) -> str:
+    """语言对陷阱表（skill/pitfalls/{sl}-{tl}.md）+ 项目自定（--pitfalls）。给廉价模型的「已知会错的地方」与正反示例。
+
+    来源：已被两模型或人工判定的真实误报 / 漏报（例：bg 的 чифт/цифт = pair，廉价模型曾把 12 处「pairs」删掉）。"""
+    out = []
+    default = Path(__file__).resolve().parent.parent / 'skill' / 'pitfalls' / f'{sl}-{tl}.md'
+    for f in (default, Path(path) if path else None):
+        if f and f.exists():
+            out.append(f.read_text(encoding='utf-8').strip())
+    return '\n\n'.join(out)
+
+
+_QUOTES = {'"': '["“”„«»]', '“': '["“”„«»]', '”': '["“”„«»]', "'": "['‘’]", '‘': "['‘’]", '’': "['‘’]"}
+
+
+def fit_old(seg: str, old: str) -> str | None:
+    """模型引用的 old 与页面原文只差引号样式或空白时，找回页面上的真实子串（唯一才算）。"""
+    if seg.count(old) == 1:
+        return old
+    pat = ''.join(_QUOTES.get(ch, r'\s+' if ch.isspace() else re.escape(ch)) for ch in old.strip())
+    pat = re.sub(r'(\\s\+)+', r'\\s+', pat)
+    hits = re.findall(pat, seg) if pat else []
+    return hits[0] if len(hits) == 1 else None
+
+
+def _norm_ws(t: str) -> str:
+    return re.sub(r'\s+', ' ', re.sub(r'[„“”"«»‘’\'*]', '', t)).strip().lower()
+
+
+def judge_verdict(v: dict[str, Any] | None, src: str) -> str:
+    """judge 模式：模型只答原子问题（引原文、释词、旧/新是否忠实），裁定由脚本推出。
+    引文不在原文 → UNSURE（没找对句子）；新忠实且旧不忠实 → ACCEPT；旧忠实 → REJECT（不必改）；其余 → UNSURE。"""
+    if not v:
+        return ''
+    q = _norm_ws(str(v.get('quote', '')))
+    if len(q) < 3 or q not in _norm_ws(src):
+        return 'UNSURE'
+    old_ok, new_ok = v.get('old_faithful'), v.get('new_faithful')
+    if new_ok is True and old_ok is False:
+        return 'ACCEPT'
+    if old_ok is True:
+        return 'REJECT'
+    return 'UNSURE'
+
+
+def _prefilter(tgt: str, edits: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """复核前的确定性过滤（0 token）：old 必须在该页唯一出现（容忍引号样式、空白差异）、且与 new 不同；
+    不合格的不送第二模型。"""
+    pt = pages(tgt)
+    good, bad = [], []
+    for e in edits:
+        pn = _page_no(e.get('pdf_page'))
+        seg = pt.get(pn) if pn is not None else None
+        real = fit_old(seg, str(e.get('old', ''))) if seg and e.get('old') else None
+        if real:
+            e = dict(e, old=real)
+        old = str(e.get('old', ''))
+        if not old or old == str(e.get('new', '')):
+            bad.append(dict(e, result='rejected: old 为空或无变化（预过滤）'))
+        elif not real:
+            bad.append(dict(e, result=f'rejected: old 不在第 {pn} 页或不唯一（预过滤，未送复核）'))
+        else:
+            good.append(e)
+    return good, bad
+
+
+def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path,
+                 a: argparse.Namespace, csys: str, vsys: str, gl: list[tuple[str, str]],
+                 gl_in_prefix: bool) -> dict[str, Any]:
+    cid = f'c{k:03d}'
+    src, tgt = join(src_pg, ps), join(tgt_pg, ps)
+    _same_pages(src, tgt, f'{cid} 核对')
+    gtab = '' if gl_in_prefix else table_md(relevant(gl, src))
+    failed: list[str] = []
     human: list[dict[str, Any]] = []
-    for k, ps in enumerate(chunks_of(src_pg)):
-        cid = f'c{k:03d}'
-        src, tgt = join(src_pg, ps), join(tgt_pg, ps)
-        _same_pages(src, tgt, f'{cid} 核对')
-        gtab = '' if gl_in_prefix else table_md(relevant(gl, src))
-        # 1 找错
-        risk = negation_risk(src, tgt, a.sl, a.tl)
-        dg = _digest(src, tgt, gtab, csys, PROMPT_VERSION)
-        rec = _cached(work / f'check/{cid}.json', dg)
-        if rec is None:
-            engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
-            if engine == a.verify_engine:
-                raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine')
-            user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
-                f'## Original\n{src}\n\n## Translation\n{tgt}'
-            if risk:
-                user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence words '
-                         'than the translation (possible present/absent reversal or omitted "without").')
-            edits = _ask_json(engine, csys, user, f'auto/check/{cid}', work)
-            rec = {'digest': dg, 'engine': engine, 'prompt_version': PROMPT_VERSION, 'risk_pages': risk,
-                   'status': 'ok' if edits is not None else 'parse_failed',
-                   'edits': edits or []}
-            _write(work / f'check/{cid}.json', json.dumps(rec, ensure_ascii=False, indent=1))
-        if rec['status'] != 'ok':
-            failed.append(f'{cid} 找错输出无法解析')
-        edits = [dict(e, id=i) for i, e in enumerate(rec['edits'])]
-        # 2 第二模型裁定
-        verdicts: dict[int, dict[str, Any]] = {}
-        extra: list[dict[str, Any]] = []
-        log: list[dict[str, Any]] = []
-        if a.verify_engine != 'none':   # 第二模型逐段全文复核（即使第一模型没报错），并出覆盖回执
-            vd = _digest(src, tgt, json.dumps(edits, ensure_ascii=False), vsys, a.verify_engine, PROMPT_VERSION)
-            vrec = _cached(work / f'verify/{cid}.json', vd)
-            if vrec is None:
-                os.environ.setdefault('YZZ_CODEX_EFFORT', 'medium')
-                user = f'## Original\n{src}\n\n## Translation\n{tgt}\n\n## Proposed fixes\n' + ('\n'.join(
-                    json.dumps({k2: e[k2] for k2 in ('id', 'pdf_page', 'old', 'new', 'reason') if k2 in e},
-                               ensure_ascii=False) for e in edits) or '(none)')
-                v = _ask_json(a.verify_engine, vsys, user, f'auto/verify/{cid}', work)
-                vrec = {'digest': vd, 'engine': a.verify_engine, 'prompt_version': PROMPT_VERSION,
-                        'status': 'ok' if v is not None else 'parse_failed',
-                        'verdicts': v or []}
-                _write(work / f'verify/{cid}.json', json.dumps(vrec, ensure_ascii=False, indent=1))
-            if vrec['status'] != 'ok':
-                failed.append(f'{cid} 裁定输出无法解析（本段改动全部不落实）')
-            verdicts = {int(x['id']): x for x in vrec['verdicts'] if _page_no(x.get('id')) is not None}
-            extra = [x for x in vrec['verdicts'] if x.get('new_fix')]
-            receipt = [x for x in vrec['verdicts'] if x.get('receipt')]
-            seen = {int(p) for r in receipt for p in r.get('pages', []) if _page_no(p) is not None}
-            if vrec['status'] == 'ok' and not set(ps) <= seen:
-                failed.append(f'{cid} 第二模型复核回执缺页 {sorted(set(ps) - seen)}（视为未复核）')
-            for x in extra:   # 第二模型独有的发现：单模型意见，不自动落实，进人工队列
-                human.append(dict(x, chunk=cid, verdict='SECOND_MODEL_ONLY', why=x.get('reason', '')))
-                log.append(dict(x, result='queued: 仅第二模型发现，须人工裁定'))
-        keep: list[dict[str, Any]] = []
-        for e in edits:
-            vd_ = verdicts.get(e["id"])
-            ok = a.verify_engine == 'none' or (vd_ and str(vd_.get('verdict', '')).upper() == 'ACCEPT')
-            if ok and str(e.get('severity', '')).lower() == 'critical':
-                human.append(dict(e, chunk=cid, verdict='ACCEPT', why=(vd_ or {}).get('why', '')))
-                log.append(dict(e, result='queued: critical，须人工对照扫描件'))
-            elif ok:
-                keep.append(e)
-            else:
-                log.append(dict(e, result='rejected: 第二模型未认可' + (f"（{vd_.get('why', '')}）" if vd_ else '（无裁定）')))
-        new, alog = apply_edits(src, tgt, keep)
-        parts.append(new)
-        logs += [dict(x, chunk=cid) for x in log + alog]
-        n_ok = sum(x['result'] == 'applied' for x in alog)
-        print(f'check {cid} proposed={len(edits)} accepted={len(keep)} applied={n_ok}', flush=True)
+    # 1 找错
+    risk = negation_risk(src, tgt, a.sl, a.tl)
+    engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
+    dg = _digest(src, tgt, gtab, csys, engine, PROMPT_VERSION)   # 换模型必须重跑，不得复用别的模型的结果
+    rec = _cached(work / f'check/{cid}.json', dg)
+    if rec is None:
+        if engine == a.verify_engine:
+            raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine')
+        user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
+            f'## Original\n{src}\n\n## Translation\n{tgt}'
+        if risk:
+            user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence words '
+                     'than the translation (possible present/absent reversal or omitted "without").')
+        edits = _ask_json(engine, csys, user, f'auto/check/{cid}', work)
+        rec = {'digest': dg, 'engine': engine, 'prompt_version': PROMPT_VERSION, 'risk_pages': risk,
+               'status': 'ok' if edits is not None else 'parse_failed',
+               'edits': edits or []}
+        _write(work / f'check/{cid}.json', json.dumps(rec, ensure_ascii=False, indent=1))
+    if rec['status'] != 'ok':
+        failed.append(f'{cid} 找错输出无法解析')
+    raw = [e for e in rec['edits'] if isinstance(e, dict)]
+    f_receipt = {int(p) for r in raw if r.get('receipt') for p in r.get('pages', []) if _page_no(p) is not None}
+    edits, pre_bad = _prefilter(tgt, [dict(e, id=i) for i, e in enumerate(x for x in raw if not x.get('receipt'))])
+    judge = getattr(a, 'verify_mode', 'review') == 'judge'
+    if judge and rec['status'] == 'ok' and not set(ps) <= f_receipt:
+        failed.append(f'{cid} 找错模型回执缺页 {sorted(set(ps) - f_receipt)}（judge 模式下视为未核对）')
+    # 2 第二模型裁定
+    verdicts: dict[int, dict[str, Any]] = {}
+    log: list[dict[str, Any]] = list(pre_bad)
+    if a.verify_engine != 'none' and not (judge and not edits):
+        # review：第二模型逐段全文复核（即使第一模型没报错）并出覆盖回执；judge：只逐条裁定（窄任务，给廉价模型）
+        pit_at = vsys.find('\n\n## Known pitfalls')
+        vsys_ = (JUDGE_SYS.format(sl=a.sl, tl=a.tl) + (vsys[pit_at:] if pit_at >= 0 else '')) if judge else vsys
+        vd = _digest(src, tgt, json.dumps(edits, ensure_ascii=False), vsys_, a.verify_engine, PROMPT_VERSION)
+        vrec = _cached(work / f'verify/{cid}.json', vd)
+        if vrec is None:
+            user = f'## Original\n{src}\n\n## Translation\n{tgt}\n\n## Proposed fixes\n' + ('\n'.join(
+                json.dumps({k2: e[k2] for k2 in ('id', 'pdf_page', 'old', 'new', 'reason') if k2 in e},
+                           ensure_ascii=False) for e in edits) or '(none)')
+            v = _ask_json(a.verify_engine, vsys_, user, f'auto/verify/{cid}', work)
+            vrec = {'digest': vd, 'engine': a.verify_engine, 'prompt_version': PROMPT_VERSION,
+                    'status': 'ok' if v is not None else 'parse_failed',
+                    'verdicts': v or []}
+            _write(work / f'verify/{cid}.json', json.dumps(vrec, ensure_ascii=False, indent=1))
+        if vrec['status'] != 'ok':
+            failed.append(f'{cid} 裁定输出无法解析（本段改动全部不落实）')
+        verdicts = {int(x['id']): x for x in vrec['verdicts'] if _page_no(x.get('id')) is not None}
+        extra = [x for x in vrec['verdicts'] if x.get('new_fix')]
+        receipt = [x for x in vrec['verdicts'] if x.get('receipt')]
+        seen = {int(p) for r in receipt for p in r.get('pages', []) if _page_no(p) is not None}
+        if vrec['status'] == 'ok' and not judge and not set(ps) <= seen:
+            failed.append(f'{cid} 第二模型复核回执缺页 {sorted(set(ps) - seen)}（视为未复核）')
+        for x in extra:   # 第二模型独有的发现：单模型意见，不自动落实，进人工队列
+            human.append(dict(x, chunk=cid, verdict='SECOND_MODEL_ONLY', why=x.get('reason', '')))
+            log.append(dict(x, result='queued: 仅第二模型发现，须人工裁定'))
+    keep: list[dict[str, Any]] = []
+    for e in edits:
+        vd_ = verdicts.get(e["id"])
+        verdict = judge_verdict(vd_, src) if judge else str((vd_ or {}).get('verdict', '')).upper()
+        ok = a.verify_engine == 'none' or verdict == 'ACCEPT'
+        if verdict == 'UNSURE':
+            human.append(dict(e, chunk=cid, verdict='UNSURE', why=f"{(vd_ or {}).get('key', '')}; {(vd_ or {}).get('why', '')}"))
+            log.append(dict(e, result='queued: 裁定模型没把握，须人工'))
+        elif ok and str(e.get('severity', '')).lower() == 'critical':
+            human.append(dict(e, chunk=cid, verdict='ACCEPT', why=(vd_ or {}).get('why', '')))
+            log.append(dict(e, result='queued: critical，须人工对照扫描件'))
+        elif ok:
+            keep.append(e)
+        else:
+            log.append(dict(e, result='rejected: 第二模型未认可' + (f"（{vd_.get('why', '')}）" if vd_ else '（无裁定）')))
+    new, alog = apply_edits(src, tgt, keep)
+    n_ok = sum(x['result'] == 'applied' for x in alog)
+    print(f'check {cid} proposed={len(edits) + len(pre_bad)} prefiltered_out={len(pre_bad)} '
+          f'accepted={len(keep)} applied={n_ok}', flush=True)
+    return {'new': new, 'log': [dict(x, chunk=cid) for x in log + alog], 'failed': failed, 'human': human}
+
+
+def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
+    """找错（check_engine）→ 确定性预过滤 → 第二模型裁定（verify_engine，须不同于找错模型）→ 护栏落实。
+    只落实两者都认可的改动。各块互相独立，--workers 并行（结果按块序合并，断点续跑照旧）。"""
+    from concurrent.futures import ThreadPoolExecutor
+    gl = load_table(a.glossary)
+    base = CHECK_SYS.format(sl=a.sl, tl=a.tl)
+    pit = load_pitfalls(a.sl, a.tl, getattr(a, 'pitfalls', None))
+    if pit:
+        base += f'\n\n## Known pitfalls for this language pair (verified; obey them)\n{pit}'
+    csys, gl_in_prefix = stable_prefix(base, gl, [])   # 全书术语表进稳定前缀
+    vsys = VERIFY_SYS.format(sl=a.sl, tl=a.tl) + (f'\n\n## Known pitfalls for this language pair (verified)\n{pit}'
+                                                  if pit else '')
+    os.environ.setdefault('YZZ_CODEX_EFFORT', 'medium')
+    jobs = list(enumerate(chunks_of(src_pg)))
+    with ThreadPoolExecutor(max_workers=max(1, getattr(a, 'workers', 1))) as ex:
+        res = list(ex.map(lambda kp: _check_chunk(kp[0], kp[1], src_pg, tgt_pg, work, a, csys, vsys, gl,
+                                                  gl_in_prefix), jobs))
+    parts = [r['new'] for r in res]
+    logs = [x for r in res for x in r['log']]
+    failed = [x for r in res for x in r['failed']]
+    human = [x for r in res for x in r['human']]
     _write(work / 'check_log.jsonl', ''.join(json.dumps(x, ensure_ascii=False) + '\n' for x in logs))
     _write(work / 'check_failed.json', json.dumps(failed, ensure_ascii=False, indent=1))
     import csv
@@ -744,12 +875,15 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
     cl = work / 'check_log.jsonl'
     if cl.exists():
         logs = [json.loads(x) for x in cl.read_text(encoding='utf-8').splitlines() if x.strip()]
-        c = collections.Counter(x['result'].split(':')[0] for x in logs)
-        nv = sum('第二模型' in x['result'] for x in logs)
-        nq = sum(x['result'].startswith('queued') for x in logs)
-        rows.append(f'\n意义核对：找错 {len(logs)} 处，第二模型否决 {nv}，落实 {c["applied"]}，'
-                    f'护栏拒绝 {c["rejected"] - nv}，critical 转人工 {nq}（human_review_queue.csv）；'
-                    f'提示词版本 {PROMPT_VERSION}（见 check_log.jsonl）')
+        def n(*keys: str) -> int:
+            return sum(all(k in x['result'] for k in keys) for x in logs)
+        n_pre, n_veto, n_crit, n_only = n('预过滤'), n('第二模型未认可'), n('queued', 'critical'), n('仅第二模型')
+        n_unsure = n('queued', '没把握')
+        n_app = n('applied')
+        n_guard = n('rejected') - n_pre - n_veto
+        rows.append(f'\n意义核对：找错模型提出 {len(logs) - n_only}（预过滤 {n_pre}，第二模型否决 {n_veto}，'
+                    f'落实 {n_app}，护栏拒绝 {n_guard}，critical 转人工 {n_crit}，裁定没把握转人工 {n_unsure}）；'
+                    f'第二模型另报 {n_only}（转人工）；见 human_review_queue.csv；提示词版本 {PROMPT_VERSION}')
     qa = work / 'qa_issues.json'
     if qa.exists():
         qi = json.loads(qa.read_text(encoding='utf-8'))
@@ -790,6 +924,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--day-engine', default=None, help='白天用的引擎（默认 revise=codex-luna；找错等到夜间）')
     ap.add_argument('--verify-engine', default='codex-sol',
                     help='第二模型裁定找错结果（须不同于找错模型；none = 不裁定，不推荐）')
+    ap.add_argument('--verify-mode', choices=['review', 'judge'], default='review',
+                    help='review：第二模型全文复核+裁定（第二模型须强于或等于找错模型）；judge：第二模型只逐条裁定'
+                         '（窄任务，适合廉价模型；覆盖由找错模型回执保证）')
+    ap.add_argument('--workers', type=int, default=4, help='check 阶段并行块数（各块独立；Codex 建议 4–6）')
+    ap.add_argument('--pitfalls', help='项目陷阱表（追加在 skill/pitfalls/{sl}-{tl}.md 之后）')
+    ap.add_argument('--rewrite-kinds', default='',
+                    help='分类文献：只把这些块类型交模型改写（如 narrative,remarks），其余用术语规范化后的 Google 稿；'
+                         '意义核对仍覆盖全文。类型见 transqa/taxoblocks.py；空 = 全部改写（旧行为）')
+    ap.add_argument('--stop-after', choices=['draft', 'revise'], default=None,
+                    help='只做到这一步（例：白天用 Codex 改写，夜间再 check 让 DeepSeek 找错、Codex 复核）')
     a = ap.parse_args(argv)
     if a.cmd == 'report':
         print(report(Path(a.src)))
@@ -799,7 +943,12 @@ def main(argv: list[str] | None = None) -> None:
     if a.cmd == 'run':
         dfile = work / 'draft.md'
         draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl)
+        if a.stop_after == 'draft':
+            return
         revised = stage_revise(src_pg, draft_pg, work, a)
+        if a.stop_after == 'revise':
+            print(f'改写完成：{work / "revised.md"}；之后 check {a.src} {work / "revised.md"} -o {work}')
+            return
         final = stage_check(src_pg, pages(revised), work, a)
     else:
         if not a.tgt:

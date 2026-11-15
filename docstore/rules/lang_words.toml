@@ -1,0 +1,30 @@
+# docstore lang 的功能词表（按文字系统分组）。只放高频、跨语言少重叠的功能词。
+# 脚本判不准（und 或置信度低）的样本经模型或人工确认语言后，把该语言在样本里的高频功能词补进来，
+# 再跑 tests/test_docstore_langid.py；这样下次同类文件不再需要模型。
+
+[latin]
+en = ["the", "and", "of", "with", "from", "which", "this", "that", "are", "is", "was", "were", "not", "or",
+      "by", "as", "be", "have", "has", "than", "into", "between", "each", "also", "both", "these", "its"]
+de = ["der", "die", "das", "und", "des", "den", "dem", "nicht", "ist", "sind", "mit", "von", "auf", "auch",
+      "eine", "einer", "einem", "eines", "ein", "bis", "nur", "wird", "werden", "zwischen", "sowie", "jedoch",
+      "beim", "vom", "zum", "zur", "aus", "bei", "nach", "über", "ueber", "oder", "wie", "sich", "noch"]
+fr = ["le", "la", "les", "des", "du", "et", "est", "sont", "une", "dans", "pour", "par", "sur", "avec", "qui",
+      "que", "pas", "au", "aux", "ces", "cette", "peu", "très", "chez", "entre"]
+es = ["el", "los", "las", "del", "y", "es", "son", "una", "para", "por", "con", "que", "en", "muy", "entre",
+      "sus", "como", "pero", "este", "esta"]
+it = ["il", "gli", "della", "delle", "dei", "degli", "e", "è", "sono", "una", "per", "con", "che", "nel",
+      "nella", "non", "molto", "questa", "questo"]
+pt = ["o", "os", "da", "das", "do", "dos", "e", "é", "são", "uma", "para", "com", "não", "em", "na", "no",
+      "muito", "entre", "também"]
+nl = ["het", "een", "en", "van", "zijn", "niet", "met", "op", "voor", "wordt", "worden", "ook", "deze", "bij"]
+la = ["et", "est", "sunt", "cum", "ad", "in", "ab", "ex", "non", "sive", "vel", "quae", "qui", "nec",
+      "segmentis", "setis", "corpore", "parte"]
+
+[cyrillic]
+ru = ["и", "в", "не", "на", "что", "с", "по", "это", "как", "из", "для", "от", "до", "при", "или", "его",
+      "также", "который", "которые", "был", "были", "чем", "но", "более", "менее", "которых", "только", "очень",
+      "между", "через", "без", "под", "над", "всех", "этого", "длины", "почти"]
+bg = ["и", "на", "от", "за", "се", "е", "са", "да", "с", "по", "като", "при", "до", "или", "този", "които",
+      "така", "има", "няма", "към", "отколкото", "между", "без", "под", "над", "почти", "много", "тези", "след",
+      "когато", "само", "още"]
+uk = ["і", "й", "та", "не", "на", "що", "з", "по", "це", "як", "із", "для", "від", "до", "або", "також"]

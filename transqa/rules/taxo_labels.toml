@@ -1,0 +1,26 @@
+# 分类文献段首标签词（按语言）→ 块类型。taxoblocks.kind() 用它把段分到 locality / ecology / distribution / remarks 等。
+# 新语言或新书遇到新标签：加进对应列表即可（判不准的段先看 analyze 输出，再补词，不需要模型）。
+# 依据：Hartmann-Schröder 德文论文 5 份 25 万词的段首统计（2026-11-15）。
+
+[de]
+locality = ["Locus typicus", "Weitere Fundorte", "Weiterer Fundort", "Fundorte", "Fundort", "Material", "Holotypus",
+            "Paratypoide", "Paratypoid", "Typus", "Stationen", "Untersuchtes Material"]
+ecology = ["Ökologie", "Okologie", "Biologie", "Vorkommen", "Lebensweise"]
+distribution = ["Verbreitung", "Geographische Verbreitung"]
+remarks = ["Taxonomische Bemerkung", "Systematische Bemerkung", "Bemerkungen", "Bemerkung", "Diskussion", "Beziehungen"]
+other = ["Färbung", "Diagnose", "Beschreibung", "Synonymie"]
+rank = ["Familie", "Unterfamilie", "Gattung", "Untergattung", "Tribus"]
+caption = ["Abb", "Fig", "Taf", "Tafel"]
+narrative_words = ["ist", "sind", "war", "waren", "wurde", "wurden", "habe", "hat", "haben", "kann", "können", "ich",
+                   "wir", "man", "dass", "daß", "zeigt", "zeigen", "scheint", "wird", "werden", "möchte", "sollen"]
+
+[en]
+locality = ["Type locality", "Material examined", "Material", "Holotype", "Paratypes", "Paratype", "Stations"]
+ecology = ["Ecology", "Habitat", "Biology"]
+distribution = ["Distribution"]
+remarks = ["Remarks", "Discussion", "Taxonomic remarks", "Systematic remarks", "Comparison"]
+other = ["Colour", "Color", "Diagnosis", "Description", "Synonymy", "Etymology"]
+rank = ["Family", "Subfamily", "Genus", "Subgenus"]
+caption = ["Fig", "Figs", "Plate", "Pl"]
+narrative_words = ["is", "are", "was", "were", "has", "have", "had", "can", "could", "we", "i", "that", "seems",
+                   "appears", "would", "should", "shows"]

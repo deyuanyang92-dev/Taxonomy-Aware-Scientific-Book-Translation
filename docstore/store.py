@@ -70,6 +70,31 @@ def quality(text: str, conf: float | None = None) -> dict:
     return q
 
 
+def reflow(text: str) -> str:
+    """OCR 页文本 → 段落：段内换行接成空格；行末「小写-」后接小写的连字符断词接回（Eusyl-/linae → Eusyllinae），
+    后接大写（Hartmann-/Schröder）或数字保留连字符；空行分段。"""
+    import re as _re
+
+    paras = []
+    for block in _re.split(r"\n\s*\n", text.strip()):
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        out = ""
+        for ln in lines:
+            if not out:
+                out = ln
+            elif out.endswith("-") and _re.match(r"(?:und|oder|bis|sowie|als|and|or|to|et|ou)\b", ln):
+                out += " " + ln  # 省略连字符：Vorder- und Hinterende
+            elif _re.search(r"[a-zäöüß]-$", out) and _re.match(r"[a-zäöüß]", ln):
+                out = out[:-1] + ln
+            elif out.endswith("-"):
+                out += ln
+            else:
+                out += " " + ln
+        if out:
+            paras.append(out)
+    return "\n\n".join(paras)
+
+
 def make_version(text: str, method: str, *, producer: str, engine: str = "", dpi: int | None = None,
                  level: str | None = None, source: str = "", conf: float | None = None,
                  time: str | None = None, extra: dict | None = None) -> dict:
@@ -496,6 +521,14 @@ class Store:
         if fmt == "md":
             parts.append(f"# {d['title'] or key}\n")
         want = None if pages is None else set(pages)
+        if fmt == "translate":
+            # auto_translate.py 的输入：每页 <!-- PDF p.N -->；段内接行、接回行末连字符断词；空行分段
+            for p in self.pages(key):
+                if want is not None and p["page"] not in want:
+                    continue
+                pr = f" printed {p['printed_page']}" if p["printed_page"] is not None else ""
+                parts.append(f"<!-- PDF p.{p['page']}{pr} -->\n\n{reflow(p.get('text') or '')}\n\n")
+            return "".join(parts).rstrip("\n") + "\n"
         if fmt == "marked":
             for p in self.pages(key):
                 if want is not None and p["page"] not in want:

@@ -123,7 +123,7 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 4. 默认 `--llm-mode rewrite`：每单元让名家译者（`STYLE.md` §6 入 system，引擎缺省 deepseek-flash 关思考，`--rewrite-engine` 可换）整段改写；改写稿过 `polish_guard`（引证、年份、数字单位、拉丁名、页码标记、HARD 术语、段数不变）才采用，否则保留初稿；采用后再做一次意义核对（flash 关思考，只报意思不一致的句子并给最小修正，修正过同一护栏；返回格式错误则保留改写稿并在 report.md 标注），`--think-escalate` 对仍有未修意义警告的单元开思考再核一次。2 段试验（Mayr）显示整段改写的可读性远高于逐条改，但可能意义漂移，故必须配意义核对。旧模式 `--llm-mode edits`：DeepSeek flash 不开思考，每单元（≤1500 英文词）一次，只回 JSON 改动。改动要求 old 恰好出现一次并通过 `polish_guard`（引证、年份、数字、拉丁名、页码标记、HARD 术语不变），否则拒绝并记入 report.md 与 edits.jsonl。这道护栏也意味着模型改不了数字、年份、学名，这类问题只能由脚本修或人工处理。
 5. `--think-escalate`：第一轮之后仍有一致性警告或保真问题的单元，才开思考再跑一次（实测开思考的输出约为不开的 10 倍以上）。单个大写词的拉丁名报警多是地名（Patagonia），只记录，不触发升级。
 6. 输出：`zh.md`（带页码标记）、`report.md`（逐单元：Google 字符、采纳与拒绝的改动、警告、DeepSeek token、是否开思考）、`edits.jsonl`；每次调用同时追加到 llm_engines 的 usage.tsv。
-7. 规则：DeepSeek 只在北京时间 22:00–08:00 调用（`deepseek_offpeak`），除非用户授权才可设 `LLM_SKIP_OFFPEAK=1`；先用 `--dry` 看请求数和估算 token，再跑。Google 译文只是初译，术语和意思仍须按第 7 节铁律核对。
+7. 规则：DeepSeek 避开官方忙时（工作日北京时间 09–12、14–18 点；晚上与周末全天可用，用户 2026-11-15 改定）（`deepseek_offpeak`），除非用户授权才可设 `LLM_SKIP_OFFPEAK=1`；先用 `--dry` 看请求数和估算 token，再跑。Google 译文只是初译，术语和意思仍须按第 7 节铁律核对。
 
 ### 8.1 auto 档（任意语言对，2026-11-15）
 

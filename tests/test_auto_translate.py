@@ -93,8 +93,8 @@ def test_parse_json_array_tolerates_wrapping():
 
 
 def test_engine_router_by_beijing_time():
-    night = dt.datetime(2026, 11, 14, 15, 0, tzinfo=dt.timezone.utc)  # 23:00 北京
-    day = dt.datetime(2026, 11, 14, 3, 0, tzinfo=dt.timezone.utc)  # 11:00 北京
+    night = dt.datetime(2026, 11, 16, 15, 0, tzinfo=dt.timezone.utc)  # 周一 23:00 北京（闲时）
+    day = dt.datetime(2026, 11, 16, 3, 0, tzinfo=dt.timezone.utc)  # 周一 11:00 北京（官方忙时）
     assert at.is_night(night) and not at.is_night(day)
     assert at.pick_engine("revise", night) == "deepseek-flash"
     assert at.pick_engine("revise", day) == "codex-luna"
@@ -367,3 +367,104 @@ def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
     draft = at.pages("<!-- PDF p.1 -->\n\nBody short. 4 peepers.\n")
     out = at.stage_revise(src, draft, tmp_path, a)
     assert "4 eyes." in out
+
+
+def test_prefilter_drops_edits_whose_old_is_not_on_page_before_verify(tmp_path, monkeypatch):
+    sent = []
+
+    def fake(engine, system, user, tag, usage_file):
+        if "/check/" in tag:
+            return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
+                    ' {"pdf_page": 1, "old": "not in text", "new": "x"},'
+                    ' {"pdf_page": 2, "old": "Body short.", "new": "y"}]'), {}
+        sent.append(user)
+        return '[{"id": 0, "verdict": "ACCEPT"}, {"receipt": true, "pages": [1, 2]}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns())
+    assert "Body short and thin." in out
+    assert "not in text" not in sent[0] and '"id": 2' not in sent[0]   # 预过滤掉的不送复核
+    log = (tmp_path / "check_log.jsonl").read_text(encoding="utf-8")
+    assert log.count("预过滤") == 2
+
+
+def test_parallel_check_keeps_chunk_order(tmp_path, monkeypatch):
+    import time as _t
+    src = "".join(f"<!-- PDF p.{i} | x -->\n\nТекст {i}.\n\n" for i in range(1, 10))
+    tgt = "".join(f"<!-- PDF p.{i} | x -->\n\nText {i}.\n\n" for i in range(1, 10))
+
+    def fake(engine, system, user, tag, usage_file):
+        _t.sleep(0.05 if "c000" in tag else 0)     # 第一块最慢：并行时最后返回
+        if "/check/" in tag:
+            return "[]", {}
+        pg = [int(x) for x in __import__("re").findall(r"PDF p\.(\d+)", user)]
+        return '[{"receipt": true, "pages": %s}]' % sorted(set(pg)), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    monkeypatch.setattr(at, "CHUNK_PAGES", 3)
+    out = at.stage_check(at.pages(src), at.pages(tgt), tmp_path, _ns(workers=3))
+    assert [int(p) for p in __import__("re").findall(r"PDF p\.(\d+)", out)] == list(range(1, 10))
+
+
+def test_pitfalls_loaded_into_both_prompts(tmp_path, monkeypatch):
+    systems = []
+    pf = tmp_path / "pf.md"
+    pf.write_text("- PROJECT-TRAP: foo = bar", encoding="utf-8")
+
+    def fake(engine, system, user, tag, usage_file):
+        systems.append(system)
+        return ("[]" if "/check/" in tag else '[{"receipt": true, "pages": [1, 2]}]'), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(pitfalls=str(pf)))
+    assert all("PROJECT-TRAP" in s for s in systems) and len(systems) == 2
+    assert all("чифт" in s for s in systems)                       # 语言对默认陷阱表 skill/pitfalls/bg-en.md
+
+
+def test_fit_old_tolerates_quote_style_and_whitespace():
+    seg = "the so-called “the edge of constant warming”  zone"
+    assert at.fit_old(seg, '"the edge of constant warming" zone') == "“the edge of constant warming”  zone"
+    assert at.fit_old(seg, "absent text") is None
+
+
+def test_check_cache_depends_on_engine(tmp_path, monkeypatch):
+    calls = []
+
+    def fake(engine, system, user, tag, usage_file):
+        calls.append(engine)
+        return ("[]" if "/check/" in tag else '[{"receipt": true, "pages": [1, 2]}]'), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(engine="codex-luna"))
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(engine="deepseek-flash"))
+    assert calls.count("codex-luna") == 1 and calls.count("deepseek-flash") == 1   # 换找错模型：不复用旧结果
+
+
+def test_judge_mode_narrow_verdicts_unsure_to_human(tmp_path, monkeypatch):
+    systems = {}
+
+    def fake(engine, system, user, tag, usage_file):
+        systems[tag.split("/")[1]] = system
+        if "/check/" in tag:
+            return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
+                    ' {"pdf_page": 1, "old": "4 eyes", "new": "four eyes"},'
+                    ' {"receipt": true, "pages": [1, 2]}]'), {}
+        return ('[{"id": 0, "quote": "Тялото късо", "key": "късо = short", "old_faithful": false,'
+                ' "new_faithful": true}, {"id": 1, "quote": "4 очи", "old_faithful": null, "new_faithful": null}]'), {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_mode="judge", engine="codex-sol",
+                                                                    verify_engine="codex-luna"))
+    assert "Body short and thin." in out and "four eyes" not in out
+    assert "four eyes" in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+    assert "do NOT search for new" in systems["verify"]
+    assert (tmp_path / "check_failed.json").read_text(encoding="utf-8").strip() == "[]"
+
+
+def test_judge_verdict_is_derived_by_script():
+    src = "Дорзалните четинки са винаги прости, а вентралните — прости и сложни."
+    q = "вентралните — прости и сложни"
+    assert at.judge_verdict({"quote": q, "old_faithful": False, "new_faithful": True}, src) == "ACCEPT"
+    assert at.judge_verdict({"quote": q, "old_faithful": True, "new_faithful": True}, src) == "REJECT"
+    assert at.judge_verdict({"quote": q, "old_faithful": False, "new_faithful": False}, src) == "UNSURE"
+    assert at.judge_verdict({"quote": "не е в оригинала", "old_faithful": False, "new_faithful": True}, src) == "UNSURE"

@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix"}
 
 
 def _by(args) -> str:
@@ -198,7 +198,7 @@ def cmd_cite(st: Store, a) -> None:
 
 
 def cmd_export(st: Store, a) -> None:
-    fmt = "marked" if a.marked else "md" if a.md else "txt"
+    fmt = "translate" if a.translate else "marked" if a.marked else "md" if a.md else "txt"
     txt = st.export(a.key, fmt, _parse_pages(a.pages))
     if a.out:
         Path(a.out).write_text(txt, encoding="utf-8")
@@ -250,6 +250,77 @@ def cmd_set(st: Store, a) -> None:
     fields = dict(kv.split("=", 1) for kv in a.fields)
     st.update_doc(a.key, **fields)
     print(st.doc(a.key))
+
+
+def cmd_lang(st: Store, a) -> None:
+    """语言识别（纯脚本）：参数可为 PDF、目录或已登记 key；--set 把结果写回登记表（lang，及 kind 英文原著/外文原著）。"""
+    from . import langid
+
+    by_path = {str(Path(d["path"]).resolve()): d["key"] for d in st.docs() if d.get("path")}
+    targets: list[tuple[str | None, Path]] = []
+    for x in a.items:
+        if Path(x).exists():
+            for f in _iter_files([x]):
+                targets.append((by_path.get(str(f.resolve())), f))
+        else:
+            targets.append((x, Path(st.doc(x)["path"])))
+    for key, pdf in targets:
+        r = langid.detect_pdf(pdf, k=a.k, ocr=not a.no_ocr)
+        low = [s for s in r["sampled"] if s["chars"] >= 300 and (s["lang"] == "und" or s["conf"] < 0.7)]
+        share = " ".join(f"{k}:{v}" for k, v in r["share"].items())
+        flag = f"  需复核 {len(low)} 页" if low else ""
+        print(f"{r['lang']}\t{share}\t{key or '-'}\t{pdf.name}{flag}")
+        if a.json:
+            print(json.dumps(r, ensure_ascii=False))
+        if a.set and key and r["lang"] != "und":
+            d = st.doc(key)
+            fields = {"lang": r["lang"]}
+            if d.get("kind") in ("英文原著", "外文原著"):
+                fields["kind"] = "英文原著" if r["lang"] == "en" else "外文原著"
+            st.update_doc(key, **fields)
+
+
+def cmd_postfix(st: Store, a) -> None:
+    """拉丁字母语种 OCR 后处理（latinfix，零 token）：词表取同语种全部资料的主版本页文本。
+    改过的页写新版本（producer=latinfix，成为主版本），旧版本留在 alternates；改动逐条记 _audit/latinfix_<key>.jsonl。"""
+    from . import latinfix
+    from .store import make_version
+
+    vocabs: dict[str, object] = {}
+    audit = st.root / "_audit"
+    audit.mkdir(exist_ok=True)
+    for key in a.keys:
+        d = st.doc(key)
+        lang = d.get("lang") or ""
+        if lang not in vocabs:
+            same = [x["key"] for x in st.docs() if (x.get("lang") or "") == lang]
+            vocabs[lang] = latinfix.build_vocab(p.get("text") or "" for k in same for p in st.pages(k))
+        vocab = vocabs[lang]
+        n_pages = n_changes = 0
+        stats: dict[str, int] = {}
+        with open(audit / f"latinfix_{key}.jsonl", "a", encoding="utf-8") as log:
+            for n in st.page_numbers(key):
+                pg = st.read_page(key, n) or {}
+                if not (pg.get("text") or "").strip():  # 规则幂等：已改过的页再跑只会应用新加的规则
+                    continue
+                new, ch = latinfix.fix_page(pg["text"], vocab)  # type: ignore[arg-type]
+                if not ch:
+                    continue
+                n_pages += 1
+                n_changes += len(ch)
+                for rule, old, rep in ch:
+                    stats[rule] = stats.get(rule, 0) + 1
+                    log.write(json.dumps({"page": n, "rule": rule, "old": old, "new": rep, "dry": a.dry},
+                                         ensure_ascii=False) + "\n")
+                if a.dry:
+                    continue
+                base = pg.get("producer") if not str(pg.get("producer") or "").startswith("latinfix") else \
+                    (pg.get("extra") or {}).get("latinfix", {}).get("base_producer")
+                v = make_version(new, "ocr", producer="latinfix", engine=f"{pg.get('engine') or ''} + latinfix",
+                                 dpi=pg.get("dpi"), level=pg.get("verify_level"), source=f"{d['path']}#latinfix",
+                                 extra={"latinfix": {"changes": len(ch), "base_producer": base}})
+                st.put_version(key, n, v, promote=True)
+        print(f"{key}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
 
 
 def cmd_rename(st: Store, a) -> None:
@@ -380,6 +451,8 @@ def main(argv: list[str] | None = None) -> int:
     g = s.add_mutually_exclusive_group()
     g.add_argument("--txt", action="store_true")
     g.add_argument("--md", action="store_true")
+    g.add_argument("--translate", action="store_true",
+                   help="auto_translate.py 输入：<!-- PDF p.N --> 页标记、段内接行、接回连字符断词")
     g.add_argument("--marked", action="store_true",
                    help="翻译用原文：每页前一行 <!-- p.N -->（印刷页码），供种名按页规范（species_format.py）")
     s.add_argument("--pages", help="只导出这些 PDF 页（1 起），如 24-30,32")
@@ -423,6 +496,19 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("pdf")
     s.add_argument("--check", action="store_true", help="抽页比对 PDF 与已有页文本，核页码偏移")
     s.set_defaults(fn=cmd_attach)
+
+    s = sub.add_parser("postfix", help="拉丁字母语种 OCR 后处理（♂♀、小型大写、µm、全库词频纠错；零 token）")
+    s.add_argument("keys", nargs="+")
+    s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本")
+    s.set_defaults(fn=cmd_postfix)
+
+    s = sub.add_parser("lang", help="识别资料语言（纯脚本：文本层或快速 OCR + 功能词，零 token）")
+    s.add_argument("items", nargs="+", help="PDF、目录或已登记 key")
+    s.add_argument("--k", type=int, default=8, help="抽样页数（默认 8）")
+    s.add_argument("--no-ocr", action="store_true", help="无文本层也不 OCR")
+    s.add_argument("--set", action="store_true", help="结果写回登记表 lang/kind")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(fn=cmd_lang)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")

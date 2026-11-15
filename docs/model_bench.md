@@ -112,7 +112,7 @@ refcompare.py aggregate D/refcompare.json pub_vs_ours2 pub_vs_ours3 ours2_vs_our
 | Codex gpt-6-luna low | 5 | 19 | 4.5 | 7 | 1.5–4.5 min | 一段输入达 1.4M | 每段约 1% |
 | Codex gpt-5.6-luna medium | 2 | 23 | 4.0 | 1 | 2–3 min | 输入 140–470k | <1% |
 
-DeepSeek 价格取自官方定价页（2026-11-14 查）：flash 闲时输入未命中 $0.15/M、命中 $0.003/M、输出 $0.6/M，忙时翻倍；周末全天闲时。用户规定 DeepSeek 只在北京时间 22:00–08:00 调用。
+DeepSeek 价格取自官方定价页（2026-11-14 查）：flash 闲时输入未命中 $0.15/M、命中 $0.003/M、输出 $0.6/M，忙时翻倍；周末全天闲时。用户规定（2026-11-15 改）：DeepSeek 避开官方忙时即可（工作日北京时间 09–12、14–18 点）。
 
 ### 读法
 
