@@ -190,3 +190,21 @@ def test_multiline_reference_block():
     from transqa.blocks import classify
     block = "Арнольди, Л. 1948. О литорали в Черном море.\nБекман, М. 1952. Материалы.\nBellan, G. 1964. Contribution."
     assert classify(block, "bg") == "reference"
+
+
+def test_toc_crosscheck_catches_genus_initial_and_page():
+    from transqa.taxonomy import toc_crosscheck
+    md = ("<!-- PDF p.6 | 印刷页 5 -->\n\n| Contents | Printed page |\n| --- | --- |\n"
+          "| 2. Genus *Lagisca* Malmgren | 73 |\n| *I. extenuata* (Grube) | 73 |\n| *H. imbricata* (Linnaeus) | 90 |\n\n"
+          "<!-- PDF p.80 | 印刷页 73 -->\n\n## 2. Genus *Lagisca* Malmgren\n\n### 1. *Lagisca extenuata* (Grube, 1840)\n\n"
+          "### 1. *Harmothoe imbricata* (Linnaeus, 1767)\n")
+    codes = {i.code for i in toc_crosscheck(md)}
+    assert "toc.genus_initial" in codes and "toc.page" in codes
+    good = md.replace("*I. extenuata*", "*L. extenuata*").replace("| 90 |", "| 73 |")
+    assert toc_crosscheck(good) == []
+
+
+def test_placeholder_count_mismatch_is_critical():
+    src = "<!-- PDF p.1 -->\n\n[图版：Таблица I]\n\nТекст.\n\n<!-- PDF p.2 -->\n\n[图版：Таблица II]\n\nТекст.\n"
+    tgt = "<!-- PDF p.1 -->\n\n[[PLATE I]]\n\nText.\n\n<!-- PDF p.2 -->\n\nText.\n"
+    assert codes(src, tgt)["coverage.placeholder"].severity == "critical"

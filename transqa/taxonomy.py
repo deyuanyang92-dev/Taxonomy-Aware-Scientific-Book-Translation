@@ -89,3 +89,59 @@ def check(src: list[Segment], tgt: list[Segment], config: dict[str, Any]) -> lis
         if ps_ - pt_:
             out.append(Issue('ref.plate_missing', 'major', f'p.{p} 图版号缺失/变动 {dict(ps_ - pt_)}', p))
     return out
+
+
+def _printed_pages(md: str) -> dict[int, int]:
+    out = {}
+    for m in re.finditer(r'<!-- PDF p\.(\d+)[^>]*?(?:印刷页|printed p\.)\s*(\d+)', md):
+        out[int(m.group(1))] = int(m.group(2))
+    return out
+
+
+def toc_crosscheck(md: str, toc_pages: range | None = None) -> list[Issue]:
+    """目录 ↔ 正文标题交叉核对（2026-11-15 Marinov 目录错误后加的自动检查）：
+    目录表格里每个带斜体学名的条目，正文须有含同一种加词/属名的标题；属名缩写首字母须与正文全名一致；
+    目录页码与正文标题所在印刷页相差 >1 报 major。toc_pages 缺省 = 含「目录/Contents」表格的页。"""
+    from .segments import PAGE_RE
+    pages: dict[int, str] = {}
+    cur = 0
+    for ln in md.split('\n'):
+        m = PAGE_RE.match(ln)
+        if m:
+            cur = int(m.group(1))
+        pages[cur] = pages.get(cur, '') + ln + '\n'
+    printed = _printed_pages(md)
+    if toc_pages is None:
+        toc_pages = range(0)
+        hits = [p for p, t in pages.items() if re.search(r'^\|\s*(?:Contents|目录|Съдържание)\s*\|', t, re.M)]
+        if hits:
+            toc_pages = range(min(hits), max(hits) + 1)
+    heads = [(printed.get(p), re.sub(r'[*#]', '', ln).strip()) for p, t in pages.items() if p not in toc_pages
+             for ln in t.split('\n') if ln.startswith('#')]
+    out: list[Issue] = []
+    for p in toc_pages:
+        for ln in pages.get(p, '').split('\n'):
+            cells = [c.strip() for c in ln.strip().strip('|').split('|')] if ln.startswith('|') else []
+            if len(cells) < 2 or not re.match(r'\d+', cells[-1]):
+                continue
+            noted = '[TN:' in cells[0]      # 已用译注说明的原书印刷问题：降为 info，不再当错误
+            ital = re.findall(r'\*([^*]+)\*', re.sub(r'\[TN:[^\]]*\]', '', cells[0]))
+            words = [w for x in ital for w in re.findall(r'[A-Za-z][a-z]+\.?|[A-Z]\.', x)]
+            if not words:
+                continue
+            key = words[-1].rstrip('.')
+            cand = [h for h in heads if re.search(rf'\b{re.escape(key)}\b', h[1])]
+            if not cand:
+                out.append(Issue('toc.no_heading', 'info' if noted else 'major', f'p.{p} 目录条目「{cells[0][:50]}」在正文找不到对应标题', p))
+                continue
+            page = int(re.match(r'\d+', cells[-1]).group(0))  # type: ignore[union-attr]
+            hp = sorted({h[0] for h in cand if h[0]})
+            if hp and all(abs(page - x) > 1 for x in hp):
+                out.append(Issue('toc.page', 'info' if noted else 'major', f'p.{p} 目录「{cells[0][:40]}」页码 {page}，正文标题在 {hp[:3]}', p))
+            ini = re.match(r'([A-Z])[a-z]?\.$', words[0]) if len(words) > 1 else None
+            if ini:
+                full = {m.group(1) for h in cand for m in re.finditer(rf'\b([A-Z][a-z]+)\s+(?:\([A-Za-z]+\)\s+)?{re.escape(key)}', h[1])}
+                if full and all(not f.startswith(ini.group(1)) for f in full):
+                    out.append(Issue('toc.genus_initial', 'info' if noted else 'critical',
+                                     f'p.{p} 目录「{cells[0][:40]}」属名缩写 {words[0]} 与正文 {sorted(full)} 不符', p))
+    return out

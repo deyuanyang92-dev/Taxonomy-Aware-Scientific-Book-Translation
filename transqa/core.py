@@ -49,6 +49,10 @@ def coverage(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> lis
         if common != [p for p in so if p in set(to)]:
             out.append(Issue('coverage.page_order', 'critical', '页序与原文不同（页被调换）',
                              evidence={'src': so[:50], 'tgt': to[:50]}))
+    ps_, pt_ = cfg.get('src_placeholders', 0), cfg.get('tgt_placeholders', 0)
+    if ps_ != pt_:   # 2026-11-15：一版译稿只放进 13/41 幅图版（占位行写法不一）
+        out.append(Issue('coverage.placeholder', 'critical', f'图版/插图占位行数不一致：原文 {ps_}，译文 {pt_}',
+                         evidence={'src': ps_, 'tgt': pt_}))
     for p in sorted(set(sp) & set(tp)):
         ns, nt = len(sp[p]), len(tp[p])
         if nt < ns:
