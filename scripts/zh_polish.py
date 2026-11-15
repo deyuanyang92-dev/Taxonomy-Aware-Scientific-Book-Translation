@@ -40,13 +40,14 @@ from transqa import zh_style as Z  # noqa: E402
 from transqa.blocks import classify  # noqa: E402
 from transqa.segments import render, split_template  # noqa: E402
 
-PROMPT_VERSION = '2026-11-15p3'
+PROMPT_VERSION = '2026-11-15p4'
 VERIFY_SYS = """你核对中文润色是否改变了意思。每组给出同一段落的「原」与「改」（改只应是表达调整）。
 逐组判断两者信息是否完全等价：指代对象、程度与范围（任何/所有/甚少）、时间先后、因果与转折、引号含义、限定语与否定、数字与学名。
 只输出 JSON 数组：[{"id": "段ID", "same": true|false, "why": "不等价时写出差异"}]，覆盖每个 id。有任何疑问就判 false。"""
 BATCH_CHARS = 3500
 
 POLISH_SYS = """你是资深的中文科学编辑，正在润色一部外文动物学专著的中译稿。译稿意思已经核对过，你只改中文表达，让它读起来像中国学者直接用中文写的。
+忠实指意思等价而非字面对应：语序、句子切分、词性、主动被动都可以按中文习惯重组，但信息、逻辑关系、论证方向、强调、断言强度、指代对象不能变。
 输入是若干段，每段以 ⟦段ID⟧ 开头一行；按同样格式逐段输出改写后的段落（每个 ID 都要返回、顺序不变、段内不许出现 ⟦ ⟧），不要任何说明。
 
 要改的（据本土教科书与我方译稿的计数，这些是我方译稿与本土写法差得最多的地方）：
@@ -181,7 +182,6 @@ def verify(pairs: list[tuple[Any, str]], engine: str, work: Path, k: int) -> dic
 def polish(md: str, work: Path, engine: str = 'auto', threshold: float = Z.PARA_THRESHOLD,
            dry: bool = False, verify_engine: str = 'auto') -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
-    md, n_titles = Z.fix_titles(md)            # 确定性先修：《起源》→《物种起源》等，不靠模型
     segs, tpl = split_template(md)
     texts = {s.id: s.text for s in segs}
     cand = [s for s in segs if classify(s.text) == 'free' and not s.text.lstrip().startswith(('#', '|', '!['))
@@ -197,7 +197,7 @@ def polish(md: str, work: Path, engine: str = 'auto', threshold: float = Z.PARA_
         size += len(s.text)
     if cur:
         batches.append(cur)
-    stats = {'segments': len(segs), 'candidates': len(cand), 'batches': len(batches), 'titles_fixed': n_titles}
+    stats = {'segments': len(segs), 'candidates': len(cand), 'batches': len(batches)}
     if dry:
         return stats
     system = POLISH_SYS.format(examples=examples())

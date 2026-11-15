@@ -44,6 +44,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：transqa
 
+import entities  # noqa: E402
 import transqa  # noqa: E402
 from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
 from transqa.segments import render, segments_from_pages, split_template  # noqa: E402
@@ -58,7 +59,7 @@ SCRIPT_RE = {'bg': r'[\u0400-\u04FF]', 'ru': r'[\u0400-\u04FF]', 'uk': r'[\u0400
              'zh': r'[\u4e00-\u9fff]', 'ko': r'[\uAC00-\uD7AF]',
              'de': r'[A-Za-zÄÖÜäöüß]', 'fr': r'[A-Za-zÀ-ÿ]', 'es': r'[A-Za-zÀ-ÿ]', 'it': r'[A-Za-zÀ-ÿ]',
              'pt': r'[A-Za-zÀ-ÿ]', 'la': r'[A-Za-z]', 'nl': r'[A-Za-z]', 'en': r'[A-Za-z]'}
-PROMPT_VERSION = '2026-11-15a'  # 提示词或裁定规则改了就改这里；写进每段缓存与报告（可追溯）
+PROMPT_VERSION = '2026-11-15b'  # 提示词或裁定规则改了就改这里；写进每段缓存与报告（可追溯）
 # 否定/缺失词（按语言；只用于标出高风险页，不做判定）。新语言加一行即可。
 NEG = {
     'bg': r'\b(?:не|без|липсва|липсват|няма|отсъства|отсъстват|нито)\b',
@@ -278,8 +279,13 @@ Output ONLY the revised {tl} text of every segment, each introduced by its ID on
 revised text
 Return every ID exactly once, in the same order. Never write ⟦ or ⟧ inside a segment's text.
 No commentary, no original text, no notes about your changes.
+Faithful means the SAME MEANING, not the same form: information, logical relations, argument direction, emphasis,
+degree of certainty and reference must match the original; word order, sentence division, parts of speech and voice
+should be rearranged freely so the result reads like a native scientific text. Word-for-word renderings are not faithful.
+Proper names with established renderings (book titles, people, institutions, places, named theories) use those renderings,
+never a word-by-word translation; if none exists keep the original.
 Rules:
-1. Faithful: nothing omitted, nothing added. Keep every number, couplet number such as 1(2), plate/figure reference,
+1. Nothing omitted, nothing added. Keep every number, couplet number such as 1(2), plate/figure reference,
    Latin name, author and year exactly as in the original (also the original's own misspellings and abbreviations,
    e.g. *H. filiformis* stays abbreviated). Keep *italics*, Markdown heading marks (#) and the dotted leaders …… of keys.
    Keep figure sub-labels (1а, 2б) in the original's letters.
@@ -299,7 +305,9 @@ missed error; and exactly one {{"receipt": true, "pages": [all pdf pages you rev
 
 CHECK_SYS = """You check a {tl} translation against its {sl} original (a taxonomic text), sentence by sentence.
 Report ONLY real meaning errors: wrong meaning, omission, addition, wrong number/name/couplet, reversed negation or
-comparison, mistranslated technical term. Ignore style. For each error give the smallest fix and a severity:
+comparison, mistranslated technical term, proper name translated word by word instead of its established rendering.
+Faithful means same meaning, not same form: do NOT report free restructuring, changed word order or sentence division
+when the meaning is preserved. Ignore style. For each error give the smallest fix and a severity:
 critical = Latin name, number, specimen/plate number, present/absent reversed, key couplet or lead-to wrong;
 major = body part, count, comparison, diagnostic character mistranslated; minor = term usage without change of meaning.
 Do not "correct" the original author's own misprints. Output ONLY a JSON array (possibly empty): [{{"pdf_page": N,
@@ -319,9 +327,12 @@ def stable_prefix(base: str, gl: list[tuple[str, str]], nm: list[tuple[str, str]
     return f'{base}\n\n## Names / transliteration\n{table_md(nm)}', False
 
 
-def revise_user(items: list[tuple[str, str, str]], extra_gl: list[tuple[str, str]] | None, probs: list[str]) -> str:
-    """L4（每段变化的部分，放在最后）：待改写段 (ID, 原文, Google 稿)。"""
+def revise_user(items: list[tuple[str, str, str]], extra_gl: list[tuple[str, str]] | None, probs: list[str],
+                names: str = '') -> str:
+    """L4（每段变化的部分，放在最后）：待改写段 (ID, 原文, Google 稿)；本段专名表（entities.py 解析）。"""
     u = ''
+    if names and names != '（无）':
+        u += f'## Proper names in this chunk (use these established renderings; never translate them word by word)\n{names}\n\n'
     if extra_gl is not None:
         u += f'## Glossary entries for this chunk\n{table_md(extra_gl)}\n\n'
     u += '## Segments\n' + '\n\n'.join(f'⟦{sid}⟧\nORIGINAL: {s}\nDRAFT: {d}' for sid, s, d in items)
@@ -457,6 +468,26 @@ def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[in
     return out
 
 
+def chunk_entities(src: str, cid: str, work: Path, a: argparse.Namespace) -> list[dict[str, Any]]:
+    """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。--no-entities 关闭。"""
+    if not getattr(a, 'entities', True):
+        return []
+    f = work / f'entities/{cid}.json'
+    dg = _digest(src, a.tl, entities.EXTRACT_SYS)
+    if f.exists():
+        rec = json.loads(f.read_text(encoding='utf-8'))
+        if rec.get('digest') == dg:
+            return list(rec['entities'])
+    try:
+        eng = 'codex-luna' if not is_night() else 'deepseek-flash'
+        res = entities.resolve(entities.extract(src, eng, work), getattr(a, 'domain', '进化生物学'))
+    except Exception as exc:  # noqa: BLE001 - 专名解析失败不阻断改写，只记入报告
+        print(f'[auto] {cid} 专名解析失败：{str(exc)[-120:]}', flush=True)
+        return []
+    _write(f, json.dumps({'digest': dg, 'entities': res}, ensure_ascii=False, indent=1))
+    return res
+
+
 def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
     """3 页一段，按段 ID 改写：异名录/文献/索引走确定性处理（0 token），残留原文的才退回模型；
     其余段带 ID 送模型，输出须逐 ID 返回。system = 规则 + 全书术语/转写表（字节不变，前缀缓存）。"""
@@ -499,15 +530,19 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
             best_is_draft = True
             probs: list[str] = []
             attempts = 0
+            ents = chunk_entities(src, cid, work, a) if todo else []
+            names = entities.table_md(ents) if ents else ''
             for attempt in range(2) if todo else []:
                 attempts += 1
-                out_text, _ = llm(engine, sysmsg, revise_user(items, extra, probs), f'auto/revise/{cid}/{attempt}',
+                out_text, _ = llm(engine, sysmsg, revise_user(items, extra, probs, names), f'auto/revise/{cid}/{attempt}',
                                   work / 'usage.tsv')
                 got, dups = parse_segments(out_text)
                 want = [s.id for s in todo]
                 miss, extra_ids = [x for x in want if x not in got], [x for x in got if x not in want]
                 cand = {sid: got.get(sid, best[sid]) for sid in want}
                 probs = guard(src, render(tpl, {**texts, **cand}), bad, a.tl, a.sl)
+                probs += [x['message'] for x in entities.check(src, render(tpl, {**texts, **cand}), ents)
+                          if x['severity'] == 'major']
                 if miss:
                     probs.append(f'缺段 ID {miss[:10]}（每个 ID 都要返回）')
                 if extra_ids:
@@ -739,6 +774,9 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--names')
     ap.add_argument('--bad-terms', default='')
     ap.add_argument('--abbr', help='引文缩写表（两列：原文缩写、译文），补充 transqa.blocks.ABBR')
+    ap.add_argument('--no-entities', dest='entities', action='store_false',
+                    help='不做专名解析（默认：每段抽取专名，查 yiku/Wikidata 通行中文名，注入提示词并核对）')
+    ap.add_argument('--domain', default='进化生物学', help='yiku 领域（专名与术语查询）')
     ap.add_argument('--engine', default='auto', help='改写与找错：auto（按时段）或 llm_engines 引擎名')
     ap.add_argument('--day-engine', default=None, help='白天用的引擎（默认 revise=codex-luna；找错等到夜间）')
     ap.add_argument('--verify-engine', default='codex-sol',

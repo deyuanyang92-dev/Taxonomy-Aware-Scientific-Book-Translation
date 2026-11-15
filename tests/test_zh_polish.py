@@ -114,10 +114,3 @@ def test_guard_allows_dropping_english_gloss_but_not_citation():
     assert zp.guard(old, "地方博物学家发现物种之间隔着鸿沟（Stresemann, 1975），见 *Nereis zonata*。") == []
     assert any("ASCII" in w for w in zp.guard(old, "地方博物学家（naturalists）发现物种之间隔着鸿沟，见 *Nereis zonata*。"))
 
-
-def test_classic_title_flagged_and_fixed(tmp_path, monkeypatch):
-    assert any(i.code == "classic_title" for i in Z.check_lines("《起源》的问世使物种研究者陷入两难。"))
-    monkeypatch.setattr(zp, "examples", lambda n=3: "")
-    st = zp.polish("<!-- PDF p.1 -->\n\n《起源》的问世使物种研究者陷入两难。\n", tmp_path, threshold=99)
-    assert st["titles_fixed"] == 1
-    assert "《物种起源》" in (tmp_path / "polished.md").read_text(encoding="utf-8")

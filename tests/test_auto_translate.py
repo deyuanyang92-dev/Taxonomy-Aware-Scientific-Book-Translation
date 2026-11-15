@@ -314,7 +314,7 @@ def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, mo
 
     monkeypatch.setattr(at, "llm", fake)
     a = argparse.Namespace(sl="bg", tl="en", glossary=str(g), names=str(nm), bad_terms="", engine="deepseek-flash",
-                           day_engine=None, abbr=None)
+                           day_engine=None, abbr=None, entities=False)
     src_pg = at.pages(SRC2)
     out = at.stage_revise(src_pg, src_pg, tmp_path, a)       # 初稿=原文即可
     assert "*Ph. tuberculata* Bobretzky, 1868, p. 15; Zernov, 1913, p. 220" in out   # 确定性处理
