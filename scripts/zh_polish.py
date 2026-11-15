@@ -87,6 +87,10 @@ def guard(old: str, new: str) -> list[str]:
     for name, rx in (('否定词', NEG), ('限定语', QUAL), ('范围词', QUANT), ('时间词', TIME)):
         if len(re.findall(rx, new)) < len(re.findall(rx, old)):
             why.append(f'{name}减少（{len(re.findall(rx, old))}→{len(re.findall(rx, new))}）')
+    import difflib
+    keep = difflib.SequenceMatcher(None, old, new, autojunk=False).ratio()
+    if keep < 0.5:   # 改动率上限（借 shuorenhua 留存率、im-not-ai 改动率闸口；阈值按中文自校前先取 0.5）
+        why.append(f'改动过大（字符相似度 {keep:.2f} < 0.5，疑似重写而非润色）')
     na, nb = Z.han_count(old), Z.han_count(new)
     if na and not 0.8 <= nb / na <= 1.25:
         why.append(f'篇幅变化过大（{na}→{nb} 字）')

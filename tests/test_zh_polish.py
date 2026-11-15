@@ -101,3 +101,9 @@ def test_engine_failure_keeps_original_and_continues(tmp_path, monkeypatch):
     st = zp.polish(MD, tmp_path, threshold=1.0, verify_engine="cursor-composer")
     assert st["applied"] == 0 and st["rejected"] == 1
     assert "调用失败" in (tmp_path / "polish_report.md").read_text(encoding="utf-8")
+
+
+def test_guard_rejects_wholesale_rewrite():
+    old = "阿尔文虫科是发现较晚的类群，仅见于太平洋与印度洋深海热液口，研究得相当充分。"
+    new = "深海热液口才有这类较晚发现的动物，太平洋、印度洋两处皆可寻获，相关工作做得颇为扎实。"
+    assert any("改动过大" in w for w in zp.guard(old, new))
