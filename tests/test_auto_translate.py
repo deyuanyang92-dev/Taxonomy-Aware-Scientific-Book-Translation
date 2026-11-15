@@ -354,3 +354,16 @@ def test_whole_keeps_page_markers_on_own_lines():
 def test_parse_segments_reports_duplicates():
     got, dups = at.parse_segments("⟦p1_s1⟧\nA\n⟦p1_s2⟧\nB\n⟦p1_s1⟧\nC")
     assert got == {"p1_s1": "A", "p1_s2": "B"} and dups == ["p1_s1"]
+
+
+def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
+    import argparse
+    g = tmp_path / "g.tsv"
+    g.write_text("очи\teyes\tpeepers=eyes\n", encoding="utf-8")
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM in tier 0")))
+    a = argparse.Namespace(sl="bg", tl="en", glossary=str(g), names=None, bad_terms="", engine="none",
+                           day_engine=None, abbr=None, entities=False)
+    src = at.pages("<!-- PDF p.1 -->\n\nТялото късо. 4 очи.\n")
+    draft = at.pages("<!-- PDF p.1 -->\n\nBody short. 4 peepers.\n")
+    out = at.stage_revise(src, draft, tmp_path, a)
+    assert "4 eyes." in out

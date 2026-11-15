@@ -22,11 +22,16 @@
 1. 用户判断对：**真正需要模型认真改写的是叙述（约 41%）和图注（4%）**；异名录、标题基本不用改；描述、标签段、检索表 Google 初稿七八成可用，**主要错在术语**（setae/bristles、parapods、palpi、Bionomy、Table for determining）。
 2. 图注最差（术语最密、子图字母被 Google 改成拉丁字母），应当和叙述一样认真处理。
 
-## 2. Google 的错是否成系统（能否「零成本」修掉）
+## 2. Google 稿与终稿的差异是否成系统（能否「零成本」处理）
+
+**更正（用户 2026-11-15）**：下面这些差异大多不是 Google 的「错」，而是**本项目的用语约定**（setae 与 chaetae 都是合法英文，老文献常用 setae）；
+原文作者自己的用语（旧术语、旧体系）更不能当错误改掉——忠实原文是翻译的基本准则。所以修正只能依据**本地库**（项目术语表 / yiku）
+登记的定名与异写，并**以原文为锚**：原文这一段出现库里的源术语，才规范译法（`transqa/terms.py`）。
 
 逐词比对 Google 初稿与终稿：17,984 处改动中，**同一短替换出现 ≥5 次的 269 组覆盖了 29%**（setae→chaetae 225 次，cirrus→cirri 224，Bionomy→Bionomics 104，Color→Colour 103，Table for determining→Key to 94，parapod→parapodium 81，palpi→palps 44，branch→ramus 58，front→anterior 66，子图字母 a→а 202 等）。
 但能**不看上下文直接替换**的（该写法出现时 ≥80% 被改成同一写法）只有 29 组、622 处（`work/qc2/google_fix_table_bg_en.json`）；setae、bristles、parapods 这类大头随单复数和搭配变化（hair-like setae → capillary chaetae），须按术语表的「禁用译名」规则替换，不能用一张死表。
-→ 零成本档的术语修正走通用机制：yiku 术语表的「其他译名（不用）」作为禁用变体，按词形替换（`gtrans.py` 英→中已有同类 HARD 术语替换），再由 transqa 禁用词检查兜底。
+→ 零成本档的术语修正走通用机制：本地库的「异写」列（`源术语 | 定名 | 异写`，`setae=chaetae; seta`），以原文为锚替换（`transqa.terms.normalize`，已接入 `auto_translate.stage_revise`）；
+`--engine none` 即档 0：不调模型，只用 Google 初稿 + 确定性处理 + 本地库术语 + transqa 检查。挖出的替换对只作为**候选**交人工确认后进库，不直接使用。
 
 ## 3. 分档方案（成本以 265 页、约 70 万原文字符的书估算）
 

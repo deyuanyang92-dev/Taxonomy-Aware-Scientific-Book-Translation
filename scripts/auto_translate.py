@@ -46,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：t
 
 import entities  # noqa: E402
 import transqa  # noqa: E402
+from transqa import terms as transqa_terms  # noqa: E402
 from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
 from transqa.segments import render, segments_from_pages, split_template  # noqa: E402
 
@@ -492,6 +493,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
     """3 页一段，按段 ID 改写：异名录/文献/索引走确定性处理（0 token），残留原文的才退回模型；
     其余段带 ID 送模型，输出须逐 ID 返回。system = 规则 + 全书术语/转写表（字节不变，前缀缓存）。"""
     gl, nm = load_table(a.glossary), load_table(a.names)
+    lib = transqa_terms.load(a.glossary) if a.glossary else []
     abbr = dict(load_table(getattr(a, 'abbr', None)))
     bad = [w for w in (a.bad_terms or '').split(',') if w]
     sysmsg, gl_in_prefix = stable_prefix(REVISE_SYS.format(sl=a.sl, tl=a.tl), gl, nm)
@@ -503,6 +505,11 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
         _same_pages(src, draft, f'{cid} 初稿')
         segs, tpl = split_template(src)
         dmap = {s.id: s.text for s in segments_from_pages(draft)}
+        smap = {s.id: s.text for s in segs}
+        for sid in list(dmap):            # 本地库术语规范化（以原文为锚，只换登记的异写；0 token）
+            if sid in smap:
+                dmap[sid], tlog = transqa_terms.normalize(smap[sid], dmap[sid], lib)
+                stats['term_fixes'] += sum(n for _, _, n in tlog)
         if set(dmap) != {s.id for s in segs}:
             raise ValueError(f'{cid} 初稿与原文段 ID 不一致（缺 {sorted({s.id for s in segs} - set(dmap))[:5]}）')
         texts: dict[str, str] = {}
@@ -519,7 +526,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
         stats['segments'] += len(segs)
         stats['sent_to_model'] += len(todo)
         engine = a.engine if a.engine != 'auto' else pick_engine('revise', day_engine=a.day_engine)
-        dg = _digest(src, draft, sysmsg, PROMPT_VERSION, engine, ','.join(bad), json.dumps(abbr, ensure_ascii=False),
+        dg = _digest(src, '\n'.join(dmap.values()), sysmsg, PROMPT_VERSION, engine, ','.join(bad), json.dumps(abbr, ensure_ascii=False),
                      '' if gl_in_prefix else table_md(relevant(gl, src)))
         rec = _cached(work / f'revise/{cid}.json', dg)
         if rec is None:
@@ -532,6 +539,8 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
             attempts = 0
             ents = chunk_entities(src, cid, work, a) if todo else []
             names = entities.table_md(ents) if ents else ''
+            if engine == 'none':          # 档 0：不调模型，只用 Google 初稿 + 确定性处理 + 本地库术语
+                todo = []
             for attempt in range(2) if todo else []:
                 attempts += 1
                 out_text, _ = llm(engine, sysmsg, revise_user(items, extra, probs, names), f'auto/revise/{cid}/{attempt}',
