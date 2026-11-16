@@ -173,7 +173,7 @@ booklayout qa \
 | 审次 | 检查内容 | 失败示例 |
 |---|---|---|
 | 一审 结构 | 未译内容块、缺裁剪图、图注无图号、超长标题、缩写表混入正文、全大写正文 | `untranslated_content_blocks > 0` |
-| 二审 版式 | PDF 空白页、图注贴图、回退字体、两端对齐造成的超宽词距、文字越出版心、目录/索引页码指错页 | `wide_spacing`、`overflow_words`、`wrong_page_refs` |
+| 二审 版式 | PDF 空白页、图注贴图、回退字体、两端对齐造成的超宽词距、文字越出版心、目录/索引页码指错页、检索表目标未右对齐/目标被拆行、图注把一个词拆到下一行 | `wide_spacing`、`overflow_words`、`wrong_page_refs`、`key_layout`、`caption_word_breaks` |
 | 三审 文字 | 同页重复段落、引文/条目块混入描述性长文、译文过短、句末截断、附录条目缺源文年份、西班牙语状态语残留 | `role_suspects`、`truncated_endings`、`entry_year_missing`、`spanish_residue` |
 
 三校对应三次确定性关口：一校对齐数据（`normalize` 报告逐条复核）；二校 PDF 版式（`qa` 二审）；三校文字（`qa` 三审）。任一审不为 `ok`，先修数据再重排，不直接改 DOCX/PDF。
@@ -181,6 +181,8 @@ booklayout qa \
 一审把"会印进书里的页"上缺译的图注判为内容缺失：构建器遇到空译图注会省略图注、只印图，因此这种图注不能按语言中性块放行。`body_start_page` 之前的前置页、`skip_after_page` 之后和索引章不印，空图注不计。文献引证（`citation`）一般语言中性，原样保留；若引证以大写西班牙语字段名开头（如 `ESPECIE TIPO:`），字段名仍需翻译，一审同样判缺失。
 
 排版本身已固定：正文 10.5 pt 两端对齐，启用 `w:autoHyphenation`、`w:consecutiveHyphenLimit=2`、`w:hyphenationZone=357`，并写入 `w:proofState spelling="clean" grammar="clean"`。LibreOffice 需要 `hyphen-en-us` 词典；缺词典时 PDF 会出现超宽词距，二审会报 `wide_spacing`。二审以 9 pt 为词距上限（10.5 pt 字号、134 mm 版心中约 3.5 个正常空格），超过才判失败；8–9 pt 属正常两端对齐伸缩，不阻断交付。
+
+检索表单独排版：编号/圆点缩进 4 mm，行末用右对齐点线制表位把目标（下一条目号、种名或页码）拉到版心右缘；过长的条目把目标整体移到下一行，仍右对齐，不再把目标留在省略号后面。图注改为左对齐（与原书一致）并禁止自动断词，避免 `Re-drawn` 一类把单词拆到下一行。`qa` 的 `key_layout` 逐行核对检索表目标是否贴右缘、是否出现只有引导点没有目标的行；`caption_word_breaks` 只报短前缀（自动断词）造成的小写续行，`narrow-hooded` 这类原有连字符不算错误。两项都在 `check` 中再次执行。
 
 原书索引偶尔排错：属名写错（`arietina, Apomatus` 实际是 *Ditrupa arietina*）、漏字母（`cristaventalis` 实际是 *cristaventralis*）、大小写变体（`(LEICHONINI)` 实际是 Leiochonini）。这类条目用元数据 `index_entry_fixes` 声明改正，索引按改正后的名字重映射页码并接受 `qa` 核对；改正后重复的行只印一次。原书正文的连字（`ﬂ`）由 `match_text` 做 NFKC 折叠，斜体标记 `*...*` 在页映射前去掉，否则带斜体的条目会漏掉块页码。
 

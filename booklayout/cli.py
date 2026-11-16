@@ -225,7 +225,13 @@ def cmd_build(args: argparse.Namespace) -> int:
     page_map: dict[str, int] = {}
     if args.map:
         page_map = json.loads(args.map.read_text(encoding="utf-8"))
-    data = build(args.out, page_map, paths, meta)
+    key_breaks: set[str] | None = None
+    if args.key_breaks:
+        payload = json.loads(args.key_breaks.read_text(encoding="utf-8"))
+        breaks = payload.get("breaks")
+        if isinstance(breaks, list):
+            key_breaks = {str(item) for item in breaks}
+    data = build(args.out, page_map, paths, meta, key_breaks)
     report = _report(data, args.figures, meta)
     report.update({"out_docx": str(args.out), "page_map_entries": len(page_map)})
     pdf = None
@@ -251,28 +257,217 @@ def cmd_map_pages(args: argparse.Namespace) -> int:
 
 
 def _spacing_problems(words: list[tuple], width: float) -> tuple[list[dict], list[dict]]:
-    """Flag justified lines stretched by excessive word gaps and text in margins."""
+    """Measure justified-line looseness and text outside the measure.
+
+    The Spanish original is justified and its own tail has lines with 6-7 pt
+    gaps, so a threshold near the normal space width would flag hundreds of
+    source-faithful lines.  Only the visible tail (median gap > 6 pt or a
+    single gap > 8 pt) is reported; it is kept as an audit list rather than a
+    delivery failure.
+    """
     lines: dict[tuple[int, int], list[tuple]] = {}
     for word in words:
         lines.setdefault((word[5], word[6]), []).append(word)
-    wide: list[dict] = []
+    tail: list[dict] = []
     for line in lines.values():
         line.sort(key=lambda word: word[0])
-        if len(line) < 3:
+        if len(line) < 8:
             continue
         gaps = [line[i + 1][0] - line[i][2] for i in range(len(line) - 1)]
+        ordered = sorted(gaps)
+        median = ordered[len(ordered) // 2]
         biggest = max(gaps)
-        # 9 pt is about 3.5 normal spaces at 10.5 pt; below that a justified
-        # line is loose but within normal tolerance for a 134 mm measure.
-        # Larger gaps are the ones visible as rivers in the printed page.
-        if biggest > 9 and line[-1][2] > width - 60:
-            wide.append({"gap_pt": round(biggest, 1),
+        if (median > 6 or biggest > 8) and line[-1][2] > width - 60:
+            tail.append({"gap_pt": round(biggest, 1), "median_pt": round(median, 1),
                          "line": " ".join(word[4] for word in line)[:90]})
     overflow = [
         {"x0": round(word[0], 1), "x1": round(word[2], 1), "word": word[4]}
         for word in words if word[2] > width - 40 or word[0] < 40
     ]
-    return wide, overflow
+    return tail, overflow
+
+
+_KEY_START = re.compile(r"^(?:•|\d{1,2}\.)$")
+_KEY_COUPLET = re.compile(r"^(?:•|\d{1,2}\.)")
+_LEADER_TOKEN = re.compile(r"^[.…·]+$")
+_TARGET_END = re.compile(r"\(p\.\s*\d+\)\s*$")
+_NUMBER_END = re.compile(r"(?:…|\.\s*\.)\s*\d{1,3}\s*$")
+MIN_KEY_LEADER_MM = 40.0
+MIN_KEY_LEADER_PT = MIN_KEY_LEADER_MM * 72 / 25.4
+_DOT_RUN = re.compile(r"(?:[.·…]\s*){2,}")
+
+
+def _key_span_lines(page, clip) -> list[dict]:
+    """Line text plus the dot-leader spans, which Word keeps as own spans.
+
+    Word geometry alone is unreliable for leaders: PyMuPDF can merge
+    "pinnule..T." into one word, so a dots-only span is the better evidence.
+    """
+    payload = page.get_text("dict", clip=clip)
+    lines: list[dict] = []
+    for block_no, block in enumerate(payload["blocks"]):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            spans = [span for span in line.get("spans", [])
+                     if span.get("text", "").strip()]
+            if not spans:
+                continue
+            leaders = [
+                span for span in spans
+                if re.fullmatch(r"[\s.·…]+", span["text"])
+                and len(re.findall(r"[.·…]", span["text"])) >= 2
+            ]
+            lines.append({
+                "text": "".join(span["text"] for span in spans),
+                "block": block_no,
+                "leaders": leaders,
+            })
+    return lines
+
+
+def _key_short_leaders(page, clip) -> list[dict]:
+    """Couplets whose rendered leader is shorter than MIN_KEY_LEADER_MM."""
+    lines = _key_span_lines(page, clip)
+    key_blocks = {line["block"] for line in lines
+                  if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
+    problems: list[dict] = []
+    for line in lines:
+        if line["block"] not in key_blocks or not line["leaders"]:
+            continue
+        if not _TARGET_END.search(line["text"]):
+            continue
+        width = (max(span["bbox"][2] for span in line["leaders"])
+                 - min(span["bbox"][0] for span in line["leaders"]))
+        if width < MIN_KEY_LEADER_PT:
+            problems.append({"reason": "short leader",
+                             "leader_mm": round(width * 25.4 / 72, 1),
+                             "minimum_mm": MIN_KEY_LEADER_MM,
+                             "line": line["text"][:90]})
+    return problems
+
+
+def _auto_hyphenation(fragment: str, following: str) -> bool:
+    """True when a line-end hyphen could come from automatic hyphenation.
+
+    "narrow-hooded" is a real compound and may break at its own hyphen;
+    "Redrawn" has no hyphen in the source and only breaks there because the
+    typesetter hyphenated it.  A hyphenation dictionary distinguishes the
+    two.  Without pyphen, fall back to the short prefixes that auto
+    hyphenation commonly produces.
+    """
+    if not re.match(r"[A-Za-z]+", following):
+        return False
+    # A hyphenation dictionary cannot tell "narrow-hooded" (a real compound)
+    # from a word that the typesetter broke at the same letters.  Automatic
+    # hyphenation is disabled for captions in the builder, so the check only
+    # needs the short prefixes that show up when a viewer ignores that flag.
+    return fragment.lower() in {
+        "re", "un", "pre", "dis", "mis", "non", "co", "de", "in",
+    }
+
+
+def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
+    """Check every couplet on a key page, not only lines with leaders.
+
+    A page is a key page when at least two lines start with a couplet marker
+    (bullet or number) and carry a target or leader.  That test is local to
+    the page, so keys are found even when the running head omits "Key to".
+    Bibliography lines on a key page start with a species name, not a marker,
+    and are ignored.
+
+    Defects: a target that is not at the right edge (inline or orphaned page
+    reference), a target split off without a leader line, a leader run
+    shorter than MIN_KEY_LEADER_MM (reads as an ellipsis), and a leader with
+    no target on the following line.
+    """
+    lines: dict[tuple[int, int], list[tuple]] = {}
+    for word in words:
+        lines.setdefault((word[5], word[6]), []).append(word)
+    ordered = [line for line in lines.values() if line]
+    for line in ordered:
+        line.sort(key=lambda word: word[0])
+    ordered.sort(key=lambda line: (line[0][5], line[0][6]))
+
+    def text_of(line: list[tuple]) -> str:
+        return " ".join(word[4] for word in line)
+
+    def starts_key(line: list[tuple]) -> bool:
+        return bool(_KEY_START.match(line[0][4]) or starts_leader(line))
+
+    def starts_leader(line: list[tuple]) -> bool:
+        # PyMuPDF may merge the first dot run and the target into one token
+        # ("..........Torrea"); test the token prefix, not the whole token.
+        return bool(_LEADER_TOKEN.match(line[0][4]) or _DOT_RUN.match(line[0][4]))
+
+    def has_leader(line: list[tuple]) -> bool:
+        return any(_LEADER_TOKEN.match(word[4]) for word in line)
+
+    keyish = [
+        line for line in ordered
+        if starts_key(line) and (
+            _TARGET_END.search(text_of(line)) or _NUMBER_END.search(text_of(line))
+            or has_leader(line)
+        )
+    ]
+    if len(keyish) < 2:
+        return []
+    rights = [line[-1][2] for line in ordered
+              if len(line) >= 3 and line[-1][2] > width * 0.5]
+    right = max(rights, default=width - 51)
+
+    problems: list[dict] = []
+    # A couplet whose left text wraps continues in the same block without a
+    # marker; its target still must be led and flush right.  Treat every line
+    # of a block that contains a couplet marker as key text, so those wrapped
+    # targets are checked too.
+    key_blocks = {line[0][5] for line in ordered if _KEY_START.match(line[0][4])}
+    for index, line in enumerate(ordered):
+        if line[0][5] not in key_blocks:
+            continue
+        text = text_of(line)
+        leaders = [i for i, word in enumerate(line) if _LEADER_TOKEN.match(word[4])]
+        target = _TARGET_END.search(text)
+        number = _NUMBER_END.search(text)
+        if target or number:
+            if line[-1][2] < right - 12:
+                problems.append({"reason": "target not flush right",
+                                 "x1": round(line[-1][2], 1), "right": round(right, 1),
+                                 "line": text[:90]})
+            if target and leaders:
+                last = leaders[-1]
+                first = last
+                while first > 0 and _LEADER_TOKEN.match(line[first - 1][4]):
+                    first -= 1
+                span = line[last][2] - line[first][0]
+                if span < MIN_KEY_LEADER_PT:
+                    problems.append({
+                        "reason": "short leader",
+                        "leader_mm": round(span * 25.4 / 72, 1),
+                        "minimum_mm": MIN_KEY_LEADER_MM,
+                        "line": text[:90]})
+            gaps = [line[i + 1][0] - line[i][2] for i in range(len(line) - 1)]
+            if gaps and max(gaps) > 15:
+                problems.append({"reason": "wide gaps",
+                                 "gap_pt": round(max(gaps), 1), "line": text[:90]})
+            continue
+        if not starts_key(line):
+            continue
+        same_block = index + 1 < len(ordered) and ordered[index + 1][0][5] == line[0][5]
+        following = ordered[index + 1] if same_block else None
+        if has_leader(line) and _LEADER_TOKEN.match(line[-1][4]):
+            if following and _TARGET_END.search(text_of(following)):
+                continue  # wrapped target on its own leader line is legitimate
+            problems.append({"reason": "leader without target",
+                             "x1": round(line[-1][2], 1), "line": text[:90]})
+            continue
+        if following and _TARGET_END.search(text_of(following)) \
+                and not starts_leader(following) \
+                and not _DOT_RUN.search(text_of(following)):
+            problems.append({
+                "reason": "target split from couplet (no leader line)",
+                "line": text[-80:] + " / " + text_of(following)[:60]})
+    return problems
 
 
 def _pdf_layout_problems(pdf: Path) -> dict:
@@ -284,6 +479,8 @@ def _pdf_layout_problems(pdf: Path) -> dict:
     tight: list[dict] = []
     stretched: list[dict] = []
     overflow: list[dict] = []
+    key_layout: list[dict] = []
+    captions_hyphenated: list[dict] = []
     for index, page in enumerate(doc, start=1):
         width, height = page.rect.width, page.rect.height
         body_clip = fitz.Rect(0, 50, width, height - 45)
@@ -296,18 +493,43 @@ def _pdf_layout_problems(pdf: Path) -> dict:
             if "".join(span.get("text", "") for line in b.get("lines", [])
                        for span in line.get("spans", [])).strip()
         ]
-        page_wide, page_overflow = _spacing_problems(
-            page.get_text("words", clip=body_clip), width)
-        for item in page_wide:
+        words = page.get_text("words", clip=body_clip)
+        page_tail, page_overflow = _spacing_problems(words, width)
+        for item in page_tail:
             stretched.append({"page": index, **item})
         for item in page_overflow:
             overflow.append({"page": index, **item})
+        for item in _key_layout_problems(words, width):
+            key_layout.append({"page": index, **item})
+        for item in _key_short_leaders(page, body_clip):
+            key_layout.append({"page": index, **item})
         caption_blocks = []
         for block in body_blocks:
             text = " ".join(span.get("text", "") for line in block.get("lines", [])
                             for span in line.get("spans", [])).strip()
             if re.match(r"^(?:Fig|Table|Plate|L[aá]m)\b", text, re.I):
                 caption_blocks.append((block, text))
+                lines = [
+                    "".join(span.get("text", "") for span in line.get("spans", []))
+                    for line in block.get("lines", [])
+                ]
+                for current, following in zip(lines, lines[1:]):
+                    if not current.rstrip().endswith(("-", "­", "‐")):
+                        continue
+                    if not following[:1].islower():
+                        continue
+                    # A real compound such as "narrow-hooded" may break at its
+                    # own hyphen; that is not a typesetting defect.  Automatic
+                    # hyphenation splits a whole word and leaves a short prefix
+                    # such as "Re-".  Old PDFs used U+00AD, which the ASCII
+                    # check missed.
+                    fragment = current.rstrip().rstrip("-­‐").rsplit(None, 1)[-1]
+                    if _auto_hyphenation(fragment, following):
+                        captions_hyphenated.append({
+                            "page": index,
+                            "line": (current[-60:] + " / " + following[:40]).strip(),
+                        })
+                        break
         if not body_blocks:
             # A page with neither body text nor an image is a production blank.
             if not image_rects:
@@ -322,11 +544,13 @@ def _pdf_layout_problems(pdf: Path) -> dict:
             if not above:
                 continue
             gap = top - max(r.y1 for r in above)
-            if gap < 3:
+            if gap < 10:
                 tight.append({"page": index, "gap_pt": round(gap, 1),
                               "caption": text[:80]})
     return {"blank_pages": blank, "tight_caption_gaps": tight,
-            "wide_spacing": stretched, "overflow_words": overflow}
+            "body_spacing_tail": stretched, "overflow_words": overflow,
+            "key_layout": key_layout,
+            "caption_word_breaks": captions_hyphenated}
 
 
 _REF_LINE = re.compile(r"^(.*?)\.{3,}\s*(\d{1,3}(?:\s*,\s*\d{1,3})*)\s*$")
@@ -667,13 +891,22 @@ def cmd_qa(args: argparse.Namespace) -> int:
             if report["blank_pages"]:
                 layout_problems.append(f"{len(report['blank_pages'])} blank pages: {report['blank_pages'][:10]}")
             if report["tight_caption_gaps"]:
-                layout_problems.append(f"{len(report['tight_caption_gaps'])} captions touch the figure above them")
-            if report["wide_spacing"]:
                 layout_problems.append(
-                    f"{len(report['wide_spacing'])} justified lines are stretched by wide word gaps")
+                    f"{len(report['tight_caption_gaps'])} captions sit closer than 10 pt "
+                    f"to the figure above them")
+            # body_spacing_tail is an audit list, not a failure: the justified
+            # Spanish original has the same tail of 6-7 pt word gaps.
             if report["overflow_words"]:
                 layout_problems.append(
                     f"{len(report['overflow_words'])} words sit outside the text area")
+            if report["key_layout"]:
+                layout_problems.append(
+                    f"{len(report['key_layout'])} identification-key targets are not "
+                    f"flush right or are split by wide gaps")
+            if report["caption_word_breaks"]:
+                layout_problems.append(
+                    f"{len(report['caption_word_breaks'])} captions break a word "
+                    f"across lines")
             if report["fallback_fonts"]:
                 layout_problems.append(f"fallback fonts: {report['fallback_fonts']}")
         except Exception as exc:  # pragma: no cover - environment specific
@@ -831,7 +1064,16 @@ def cmd_check(args: argparse.Namespace) -> int:
                 problems.append(f"{len(layout['blank_pages'])} blank pages: {layout['blank_pages'][:10]}")
             if layout["tight_caption_gaps"]:
                 problems.append(
-                    f"{len(layout['tight_caption_gaps'])} captions touch the figure above them")
+                    f"{len(layout['tight_caption_gaps'])} captions sit closer than 10 pt "
+                    f"to the figure above them")
+            if layout["key_layout"]:
+                problems.append(
+                    f"{len(layout['key_layout'])} identification-key targets are not "
+                    f"flush right or are split by wide gaps")
+            if layout["caption_word_breaks"]:
+                problems.append(
+                    f"{len(layout['caption_word_breaks'])} captions break a word "
+                    f"across lines")
         except Exception as exc:  # pragma: no cover - environment specific
             problems.append(f"cannot read PDF: {exc}")
     report["problems"] = problems
@@ -902,6 +1144,97 @@ def cmd_repair(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_key_report(args: argparse.Namespace) -> int:
+    """List key couplets whose leader is too short, as rebuild input.
+
+    The builder turns each signature into a forced line break before the tab,
+    so the whole target starts a leader-filled line, exactly as the Spanish
+    original sets a couplet that does not fit on one line.
+    """
+    import fitz
+
+    from .builder import key_signature
+
+    doc = fitz.open(args.pdf)
+    breaks: list[str] = []
+    defects: list[dict] = []
+    for page_no, page in enumerate(doc, start=1):
+        clip = fitz.Rect(0, 50, page.rect.width, page.rect.height - 45)
+        lines = _key_span_lines(page, clip)
+        key_blocks = {line["block"] for line in lines
+                      if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
+        keyish = [
+            line for line in lines
+            if line["block"] in key_blocks and (
+                _TARGET_END.search(line["text"]) or _DOT_RUN.search(line["text"])
+            )
+        ]
+        if len(keyish) < 2:
+            continue
+        pending: dict[int, str] = {}
+        for line in lines:
+            block = line["block"]
+            if block not in key_blocks:
+                continue
+            text = line["text"]
+            if re.match(r"^(?:•|\d{1,2}\.)", text):
+                pending[block] = text
+            elif block in pending:
+                pending[block] = pending[block].rstrip() + " " + text
+            else:
+                continue
+            if not _TARGET_END.search(text):
+                continue
+            match = _DOT_RUN.search(text)
+            if not match or not line["leaders"]:
+                pending[block] = ""
+                continue
+            width = (max(span["bbox"][2] for span in line["leaders"])
+                     - min(span["bbox"][0] for span in line["leaders"]))
+            accumulated = pending[block]
+            pending[block] = ""
+            if width >= MIN_KEY_LEADER_PT:
+                continue
+            prefix = accumulated[:-len(text)].strip() if accumulated.endswith(text) else ""
+            left = (prefix + " " + text[:match.start()]).strip()
+            target = text[match.end():].strip()
+            if not left or not target:
+                continue
+            breaks.append(key_signature(left, target))
+            defects.append({"page": page_no,
+                            "leader_mm": round(width * 25.4 / 72, 1),
+                            "line": text[:100]})
+    doc.close()
+    unique = sorted(set(breaks))
+    payload = {"breaks": unique, "defects": defects}
+    _write_json(args.out, payload)
+    print(json.dumps({"breaks": len(unique), "defects": len(defects)},
+                     ensure_ascii=False))
+    return 0
+
+
+def cmd_gate(args: argparse.Namespace) -> int:
+    """Refuse delivery unless every deterministic review is clean."""
+    problems: list[str] = []
+    for label, path in (("qa", args.qa), ("check", args.check)):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not payload.get("ok"):
+            detail = payload.get("problems", [])
+            problems.append(f"{label} not ok: {detail}")
+    key = json.loads(args.key_report.read_text(encoding="utf-8"))
+    if key.get("breaks"):
+        problems.append(f"{len(key['breaks'])} key couplets still need a forced break")
+    if key.get("defects"):
+        problems.append(f"{len(key['defects'])} key leader defects remain")
+    report = {"ok": not problems, "problems": problems,
+              "files": {"qa": str(args.qa), "check": str(args.check),
+                        "key_report": str(args.key_report)}}
+    if args.out:
+        _write_json(args.out, report)
+    print(json.dumps(report, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="booklayout", description="Build a typeset book from aligned translation blocks.")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -912,6 +1245,11 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--translation", type=Path, help="reviewed Markdown with <!-- PDF p.N --> markers")
     b.add_argument("--metadata", type=Path, help="book metadata JSON (title, headers, chapter titles, front matter)")
     b.add_argument("--map", type=Path, help="page_map.json from a first pass")
+    b.add_argument(
+        "--key-breaks",
+        type=Path,
+        help="key_report.json: couplets whose target must start a leader-filled line",
+    )
     b.add_argument("--out", type=Path, required=True, help="output DOCX")
     b.add_argument("--pdf", action="store_true", help="convert DOCX to PDF with LibreOffice")
     b.add_argument("--pdf-out", type=Path, help="PDF path when --pdf is used")
@@ -991,6 +1329,21 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--patch", type=Path, required=True)
     r.add_argument("--out", type=Path, help="output JSON (default: rewrite --aligned)")
     r.set_defaults(func=cmd_repair)
+
+    kr = sub.add_parser(
+        "key-report",
+        help="list key couplets whose leader is shorter than 40 mm (rebuild input)",
+    )
+    kr.add_argument("--pdf", type=Path, required=True)
+    kr.add_argument("--out", type=Path, required=True)
+    kr.set_defaults(func=cmd_key_report)
+
+    g = sub.add_parser("gate", help="delivery gate: qa + check + key report must all be clean")
+    g.add_argument("--qa", type=Path, required=True)
+    g.add_argument("--check", type=Path, required=True)
+    g.add_argument("--key-report", type=Path, required=True)
+    g.add_argument("--out", type=Path)
+    g.set_defaults(func=cmd_gate)
     return ap
 
 

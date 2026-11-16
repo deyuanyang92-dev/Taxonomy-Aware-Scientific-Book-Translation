@@ -31,7 +31,29 @@ _CJK = re.compile(r"[⺀-鿿＀-￯]")
 TEXT_W = 134.0  # mm
 PAGE_W, PAGE_H = 170.0, 240.0
 
-LEADER_RE = re.compile(r"\s*(?:\.\s*){3,}\s*")
+# Dot leaders reach the builder in three forms: the source's spaced dots
+# (". . . ."), a run of periods ("......"), and the ellipsis that the key
+# aligner writes ("…").  Missing the third form made every identification-key
+# line fall through to a plain paragraph: the target stayed inline instead of
+# being pulled to the right margin with leaders.
+LEADER_RE = re.compile(r"\s*(?:(?:\.\s*){2,}|…+|�+)\s*")
+# OCR sometimes leaves a single dot before a couplet number ("... setigers . 8").
+_SINGLE_DOT_TARGET = re.compile(r"\s+\.\s+(?=\d{1,3}\s*$)")
+# Some translated key lines lost their leader entirely and end with a plain
+# species/family target such as "L. collaris (p. 136)".
+_TARGET_SUFFIX = re.compile(
+    r"\s+((?:[A-Z][A-Za-z.-]*)(?:\s+[a-z][a-z.-]*)?\s*\(p\.\s*\d+\))\s*$"
+)
+_STRAY_DOT = re.compile(
+    r"\s+\.(?=[A-Z][A-Za-z.-]*(?:\s+[a-z][a-z.-]*)?\s*\(p\.\s*\d+\)\s*$)"
+)
+# Two key couplets caught in one block: the first ends with a dot leader and a
+# couplet number, and the next couplet number starts right after it
+# ("… lobe …… 5 3. Collar completely surrounding …").  Upstream line joining
+# once produced this, and the builder then set the whole remainder as one
+# right-aligned target, leaving a 1 mm leader and the second couplet glued to
+# the first.  Split it here so stale aligned data cannot reproduce the defect.
+_MERGED_COUPLET = re.compile(r"(?:[.…]\s*)+(?P<num>\d{1,3})\s+(?=\d{1,3}[.)]\s)")
 FIG_RE = re.compile(r"\bFig(?:s)?\.\s*(\d+[′']?)")
 
 
@@ -303,31 +325,100 @@ def heading(doc, text, level, genera, chapter_start=False):
     return p
 
 
-def tabbed(doc, left, right, size, left_indent=5.0, genera=None, bold_left=False):
+def _atomic_target(p, start: int) -> None:
+    """Make every word of a key target non-breaking.
+
+    The target is one address ("L. torquata (p. 133)"); a break inside it
+    leaves "L." at the end of the couplet and "torquata (p. 133)" at the left
+    margin of the next line.  The tab would then be consumed on the first
+    line, so the remainder is neither flush right nor led.  Non-breaking
+    spaces keep the address whole; when it does not fit, Word/LibreOffice move
+    all of it to the next line and the right tab fills that line with leaders,
+    which is exactly how the Spanish original sets long couplets.
+    """
+    for run in p.runs[start:]:
+        if " " in run.text:
+            # U+202F NARROW NO-BREAK SPACE, not U+00A0: both are glue in
+            # Unicode line breaking, but U+00A0 shows as a degree-like mark
+            # in Word and is rejected by the workspace zh-check gate, while
+            # U+202F passes it and renders as an ordinary space.
+            run.text = run.text.replace(" ", " ")
+
+
+def tabbed(doc, left, right, size, left_indent=4.0, genera=None, bold_left=False,
+           force_break=False):
+    """One key line: marker indented, target flush right behind dot leaders.
+
+    The Spanish original indents the couplet number/bullet by about 4 mm and
+    returns wrapped lines to the left margin (it does *not* hang the whole
+    line under the text after the marker).  The right tab at the text width
+    pulls the target to the margin; a target that does not fit moves to the
+    next line as a whole instead of staying inline after an ellipsis.
+    """
     p = doc.add_paragraph()
     pf = p.paragraph_format
-    pf.left_indent = Mm(left_indent)
-    pf.first_line_indent = Mm(-left_indent)
+    pf.left_indent = Mm(0)
+    pf.first_line_indent = Mm(left_indent)
     pf.space_before, pf.space_after = Pt(0), Pt(0)
     pf.line_spacing = 1.0
-    pf.tab_stops.add_tab_stop(Mm(TEXT_W - left_indent), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf.tab_stops.add_tab_stop(
+        Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS
+    )
     add_runs(p, left, size, bold=bold_left, genera=genera)
+    if force_break:
+        # A couplet whose leader would be shorter than MIN_KEY_LEADER_MM gets
+        # the same treatment as an over-long target: the whole address moves
+        # to a leader-filled line.  A two-dot leader reads as an ellipsis.
+        p.add_run().add_break()
     p.add_run('\t')
+    target_start = len(p.runs)
     add_runs(p, right, size, genera=genera)
+    _atomic_target(p, target_start)
+    _suppress_hyphenation(p)
     return p
 
 
-def key_para(doc, text, genera):
+def key_signature(left: str, right: str) -> str:
+    """Stable identity of a key couplet, shared by the builder and the audit.
+
+    PDF extraction leaves a space after a hyphen that fell at a line break
+    ("4- 5"), while the aligned text has "4-5"; remove it on both sides.
+    """
+    def norm(text: str) -> str:
+        return re.sub(r"(?<=[A-Za-z0-9])-\s+(?=[a-z0-9])", "-", match_text(text))
+
+    return norm(left) + "\t" + norm(right)
+
+
+def key_para(doc, text, genera, key_breaks: set[str] | None = None):
     text = re.sub(r'\ufffd+', ' …… ', text)
     text = clean_text(text)
+    text = _STRAY_DOT.sub(" ", text)
+    merged = _MERGED_COUPLET.search(text)
+    if merged:
+        first = text[: merged.end("num")].strip()
+        rest = text[merged.end():].strip()
+        if first and rest:
+            key_para(doc, first, genera, key_breaks)
+            return key_para(doc, rest, genera, key_breaks)
     m = LEADER_RE.search(text)
-    if m and text[m.end():].strip():
+    if m is None:
+        m = _SINGLE_DOT_TARGET.search(text)
+    if m is None:
+        m = _TARGET_SUFFIX.search(text)
+    if m:
         left = text[:m.start()].strip()
-        right = text[m.end():].strip()
-        if len(left) > 92:
-            return para(doc, left + ' ' + right, size=9.5, left=5.0, first=-5.0, line=1.0, genera=genera)
-        return tabbed(doc, left, right, 9.5, 5.0, genera)
-    return para(doc, text, size=9.5, left=5.0, first=-5.0, line=1.0)
+        right = m.group(1).strip() if m.re is _TARGET_SUFFIX else text[m.end():].strip()
+        if left and right:
+            force = key_breaks is not None and key_signature(left, right) in key_breaks
+            return tabbed(doc, left, right, 9.5, 4.0, genera, force_break=force)
+    # Headings, introductory notes and footnotes inside a key carry no target:
+    # set them ragged-right like the source, with the same 4 mm first-line
+    # indent as a couplet marker.  Justifying them would reintroduce the wide
+    # word gaps the keys are meant to avoid.
+    return para(doc, text, size=9.5, first=4.0, line=1.0,
+                align=WD_ALIGN_PARAGRAPH.LEFT, genera=genera)
 
 
 def image_para(doc, path: Path, max_w=118.0, max_h=150.0):
@@ -353,13 +444,41 @@ def image_para(doc, path: Path, max_w=118.0, max_h=150.0):
     return p
 
 
+def _suppress_hyphenation(p) -> None:
+    """Keep a short paragraph from breaking a word across lines.
+
+    LibreOffice hyphenates "Redrawn" as "Re-drawn" in a justified caption;
+    the break looks like an accidental hyphen in the printed book.  Captions
+    and key lines are short enough that moving the whole word is preferable.
+    """
+    pPr = p._p.get_or_add_pPr()
+    element = OxmlElement("w:suppressAutoHyphens")
+    element.set(qn("w:val"), "true")
+    # Word's schema fixes the child order inside w:pPr; appending at the end
+    # after w:jc makes Word repair the document on open.
+    pPr.insert_element_before(
+        element,
+        "w:kinsoku", "w:wordWrap", "w:overflowPunct", "w:topLinePunct",
+        "w:autoSpaceDE", "w:autoSpaceDN", "w:bidi", "w:adjustRightInd",
+        "w:snapToGrid", "w:spacing", "w:ind", "w:contextualSpacing",
+        "w:mirrorIndents", "w:suppressOverlap", "w:jc", "w:textDirection",
+        "w:textAlignment", "w:textboxTightWrap", "w:outlineLvl", "w:divId",
+        "w:cnfStyle", "w:rPr", "w:sectPr", "w:pPrChange",
+    )
+
+
 def caption(doc, text, genera):
     # Source captions are set at 9.5 pt (ITC Garamond Light Italic); 8.8 pt
     # rendered visibly smaller in Word/LibreOffice.
-    p = para(doc, text, size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-             before=4, after=7, line=1.05, genera=genera)
+    # The Spanish original sets captions ragged-right beside the figure.  A
+    # justified caption has to hyphenate long words ("Re-drawn") to fill the
+    # measure; ragged-right keeps the caption readable and avoids those
+    # accidental-looking hyphens in the printed book.
+    p = para(doc, text, size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.LEFT,
+             before=12, after=7, line=1.05, genera=genera)
     # A caption that splits over a page break reads as two unrelated fragments.
     p.paragraph_format.keep_together = True
+    _suppress_hyphenation(p)
     return p
 
 
@@ -483,7 +602,8 @@ def iter_pages(data, meta: BookMeta):
         yield p
 
 
-def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Path):
+def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Path,
+                key_breaks: set[str] | None = None):
     current_chapter = None
     for p in iter_pages(data, meta):
         if meta.skip_after_page is not None and p["page"] >= meta.skip_after_page:
@@ -602,7 +722,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 para(doc, text, size=9.2, left=4, first=-4, before=1, line=1.0, genera=genera)
                 prev_body = None
             elif role == "key":
-                key_para(doc, text, genera)
+                key_para(doc, text, genera, key_breaks)
                 prev_body = None
             elif role == "ref":
                 para(doc, text, size=8.8, left=4, first=-4, after=2.5, line=0.98, genera=genera)
@@ -824,7 +944,8 @@ def remap_refs(right: str, page_map: dict[str, int | str],
     return re.sub(r'\b\d{1,3}\b', repl, right)
 
 
-def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: BookMeta) -> dict:
+def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: BookMeta,
+          key_breaks: set[str] | None = None) -> dict:
     data = load_aligned(paths.aligned)
     genera = build_genus_set(data)
     figs: dict[int, list[dict]] = {}
@@ -837,7 +958,7 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
     setup(doc)
     set_header_footer(doc.sections[0], meta)
     front_matter(doc, data, genera, page_map, meta, paths.translation)
-    render_body(doc, data, genera, figs, page_map, meta, paths.figures_dir)
+    render_body(doc, data, genera, figs, page_map, meta, paths.figures_dir, key_breaks)
     out_docx.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_docx))
     return data

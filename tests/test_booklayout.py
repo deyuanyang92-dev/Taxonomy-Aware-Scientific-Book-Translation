@@ -7,6 +7,7 @@ from pathlib import Path
 import fitz
 import pytest
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml.ns import qn
 
 from booklayout.builder import (
@@ -16,12 +17,16 @@ from booklayout.builder import (
     build,
     index_entry_key,
     caption,
+    key_para,
+    key_signature,
     make_page_map,
     match_text,
     page_break,
     remap_refs,
+    setup,
 )
 from booklayout.cli import (
+    _key_layout_problems,
     _pdf_layout_problems,
     _reference_problems,
     _report,
@@ -438,6 +443,8 @@ def test_caption_does_not_split_across_pages() -> None:
     doc = Document()
     p = caption(doc, "Fig. 1. A long caption that must stay in one piece.", None)
     assert p.paragraph_format.keep_together is True
+    assert p.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert p._p.pPr.find(qn("w:suppressAutoHyphens")) is not None
 
 
 def test_caption_strips_trailing_panel_letters(tmp_path: Path) -> None:
@@ -644,7 +651,8 @@ def test_translator_preface_chinese_name_gets_eastasia_hint(tmp_path: Path) -> N
 def test_caption_has_space_above_it() -> None:
     doc = Document()
     p = caption(doc, "Fig. 1. A caption.", None)
-    assert p.paragraph_format.space_before.pt >= 4
+    # The Spanish original keeps at least 10.88 pt between figure and caption.
+    assert p.paragraph_format.space_before.pt >= 10
 
 
 def test_page_break_does_not_add_a_second_break() -> None:
@@ -710,6 +718,162 @@ def test_check_flags_heading_and_acknowledgment_layout(tmp_path: Path) -> None:
     assert payload["inline_acknowledgments"]
 
 
+def test_key_para_pulls_ellipsis_target_to_right_margin() -> None:
+    """Ellipsis leaders must produce the same layout as spaced/period leaders."""
+    doc = Document()
+    setup(doc)
+    for text in (
+        "1. Gills present from setiger 1 … 2",
+        "• Gills present from setiger 5, simple (with a single branchial filament) … O. farensis (p. 76)",
+    ):
+        key_para(doc, text, set())
+    for paragraph in doc.paragraphs:
+        pf = paragraph.paragraph_format
+        assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+        assert pf.first_line_indent.mm == pytest.approx(4.0, abs=0.01)
+        assert pf.left_indent.mm == pytest.approx(0.0)
+        stops = list(pf.tab_stops)
+        assert len(stops) == 1
+        assert stops[0].alignment == WD_TAB_ALIGNMENT.RIGHT
+        assert stops[0].leader == WD_TAB_LEADER.DOTS
+        # The target is a separate run after a tab, not left inline behind "…".
+        assert paragraph.runs[1].text == "\t"
+        assert "…" not in paragraph.text
+
+
+def test_key_para_recovers_target_without_a_leader() -> None:
+    """Some translated lines end with a plain species target and no leader."""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "4. Falcigerous setae with blunt hood, without mucro (fig. 42D) .E. vittata (p. 123)",
+        set(),
+    )
+    key_para(
+        doc,
+        "2. Eyes reniform. Antennae reaching the anterior margin; body brown "
+        "(fig. 47A) L. collaris (p. 136)",
+        set(),
+    )
+    first, second = doc.paragraphs
+    assert first.runs[-1].text.replace(" ", " ") == "E. vittata (p. 123)"
+    assert first.runs[-2].text == "\t"
+    assert second.runs[-1].text.replace(" ", " ") == "L. collaris (p. 136)"
+    assert second.runs[-2].text == "\t"
+
+
+def test_key_para_accepts_single_dot_before_couplet_number() -> None:
+    """OCR occasionally leaves one dot instead of a leader run."""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "7. Dorsal crests from setigers 6 or 7 and continuing on subsequent setigers . 8",
+        set(),
+    )
+    paragraph = doc.paragraphs[0]
+    assert paragraph.runs[-2].text == "\t"
+    assert paragraph.runs[-1].text == "8"
+
+
+def test_key_para_keeps_long_couplet_as_one_tabbed_line() -> None:
+    """A long couplet must still end at the right tab, not inline the target."""
+    doc = Document()
+    setup(doc)
+    left = "3. Pseudocompound hooks bi-, tri- and quadricentate " * 3
+    key_para(doc, left + " ......... O. anadonae (p. 69)", set())
+    paragraph = doc.paragraphs[0]
+    assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert paragraph.runs[-1].text.replace(" ", " ") == "O. anadonae (p. 69)"
+    assert paragraph.runs[-2].text == "\t"
+
+
+def test_key_target_is_non_breaking() -> None:
+    """A target address must never split between 'L.' and 'torquata'."""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "• Body coloration uniform, posterior setigers with long cirri ......... "
+        "L. torquata (p. 133)",
+        set(),
+    )
+    paragraph = doc.paragraphs[0]
+    target = paragraph.runs[-1].text
+    assert " " not in target
+    assert target.replace(" ", " ") == "L. torquata (p. 133)"
+    # The workspace zh-check gate rejects U+00A0; U+202F must not leak in.
+    assert " " not in target
+
+
+def test_key_para_inserts_requested_break_before_target() -> None:
+    """A couplet whose leader would be very short starts a new leader line."""
+    doc = Document()
+    setup(doc)
+    left = "3. Pseudocompound hooks bi-, tri- and quadricentate"
+    right = "O. anadonae (p. 69)"
+    key_para(doc, left + " ......... " + right, set(),
+             {key_signature(left, right)})
+    paragraph = doc.paragraphs[0]
+    breaks = list(paragraph._element.iter(qn("w:br")))
+    assert len(breaks) == 1
+    tab_index = next(i for i, run in enumerate(paragraph.runs) if run.text == "\t")
+    break_run = breaks[0].getparent()
+    run_index = list(paragraph._element.iter(qn("w:r"))).index(break_run)
+    assert run_index < tab_index
+
+
+def test_key_layout_flags_short_leader() -> None:
+    words = [
+        (50, 100, 62, 112, "1.", 0, 0, 0),
+        (65, 100, 150, 112, "Gills", 0, 0, 1),
+        (193, 100, 195, 112, ".", 0, 0, 2),
+        (197, 100, 199, 112, ".", 0, 0, 3),
+        (400, 100, 470, 112, "O.", 0, 0, 4),
+        (473, 100, 480, 112, "(p.", 0, 0, 5),
+        (482, 100, 500, 112, "1)", 0, 0, 6),
+        (50, 130, 62, 142, "2.", 1, 1, 0),
+        (65, 130, 150, 142, "Gills", 1, 1, 1),
+        (200, 130, 203, 142, "…", 1, 1, 2),
+        (400, 130, 470, 142, "O.", 1, 1, 3),
+        (473, 130, 480, 142, "(p.", 1, 1, 4),
+        (482, 130, 500, 142, "2)", 1, 1, 5),
+    ]
+    problems = _key_layout_problems(words, width=520)
+    assert any(item["reason"] == "short leader" for item in problems)
+
+
+def test_pdf_layout_flags_caption_word_break(tmp_path: Path) -> None:
+    pdf = tmp_path / "caption.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=482, height=700)
+    page.insert_text((51, 80), "Fig. 17. A caption that ends with Re-", fontsize=9.5)
+    page.insert_text((51, 94), "drawn from an earlier figure.", fontsize=9.5)
+    doc.save(pdf)
+    report = _pdf_layout_problems(pdf)
+    assert report["caption_word_breaks"]
+
+
+def test_pdf_layout_flags_key_target_not_flush_right(tmp_path: Path) -> None:
+    pdf = tmp_path / "key.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=482, height=700)
+    page.insert_text((51, 80), "Key to species", fontsize=10)
+    page.insert_text(
+        (51, 100),
+        "The body line runs to the right margin so the detector has a reference edge",
+        fontsize=10,
+    )
+    page.insert_text((51, 120), "1. Gills present from setiger 1 . . . . 2", fontsize=9.5)
+    page.insert_text((51, 140), "2. Gills absent . . . . 3", fontsize=9.5)
+    doc.save(pdf)
+    report = _pdf_layout_problems(pdf)
+    assert report["key_layout"]
+    assert report["key_layout"][0]["reason"] == "target not flush right"
+    assert "Gills present" in report["key_layout"][0]["line"]
+
+
 def test_pdf_layout_finds_blank_pages_and_tight_captions(tmp_path: Path) -> None:
     pdf = tmp_path / "layout.pdf"
     doc = fitz.open()
@@ -721,7 +885,7 @@ def test_pdf_layout_finds_blank_pages_and_tight_captions(tmp_path: Path) -> None
     report = _pdf_layout_problems(pdf)
     assert report["blank_pages"] == [1]
     assert report["tight_caption_gaps"][0]["page"] == 2
-    assert report["tight_caption_gaps"][0]["gap_pt"] < 3
+    assert report["tight_caption_gaps"][0]["gap_pt"] < 10
 
 
 def test_text_qa_flags_key_text_inside_body() -> None:
@@ -975,12 +1139,17 @@ def test_spacing_flags_stretched_lines_and_margin_words() -> None:
         (50, 130, 70, 142, "one", 1, 1, 0),
         (180, 130, 200, 142, "two", 1, 1, 1),
         (290, 130, 310, 142, "three", 1, 1, 2),
-        (400, 130, 470, 142, "four", 1, 1, 3),
+        (325, 130, 345, 142, "four", 1, 1, 3),
+        (360, 130, 380, 142, "five", 1, 1, 4),
+        (395, 130, 415, 142, "six", 1, 1, 5),
+        (430, 130, 450, 142, "seven", 1, 1, 6),
+        (465, 130, 490, 142, "eight", 1, 1, 7),
+        (400, 160, 470, 172, "over", 2, 2, 0),
     ]
     wide, overflow = _spacing_problems(words, width=482)
     assert len(wide) == 1
     assert wide[0]["gap_pt"] == 110
-    assert overflow and overflow[0]["word"] == "four"
+    assert "over" in {item["word"] for item in overflow}
 
 
 def test_normalize_moves_heading_suffix_and_citation_body() -> None:
@@ -1466,3 +1635,23 @@ def test_source_convert_keeps_status_phrase_before_rank_words() -> None:
     assert data["pages"][0]["blocks"][0]["translation"] == (
         "Official Index of Names at Genus Level, ICZN. Opinion 2324, 2013)"
     )
+
+
+def test_key_para_splits_two_couplets_joined_in_one_block() -> None:
+    """Upstream line joining must not glue target 5 to the next couplet."""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "• Collar of the anterior peristomial ring absent, replaced by a "
+        "ventral lobe  … 5 3. Collar completely surrounding the anterior end, "
+        "without a mediodorsal incision  … Pseudofabriciola (p. 226)",
+        set(),
+    )
+    first, second = doc.paragraphs
+    assert first.runs[-1].text == "5"
+    assert first.runs[-2].text == "\t"
+    assert second.runs[-1].text.replace(" ", " ") == (
+        "Pseudofabriciola (p. 226)"
+    )
+    assert second.runs[-2].text == "\t"
