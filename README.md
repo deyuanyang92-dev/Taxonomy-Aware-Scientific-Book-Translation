@@ -39,6 +39,7 @@
 docs/        设计与对比
 skill/       模型技能（流程、规则、提示词、领域包）
 docstore/    本地资料库（资料登记、逐页文本与核对等级、FTS5 检索、引页、detect/import 收编）
+booklayout/  对齐译文到成书（DOCX/PDF、目录、两遍页码、图、检索表、索引）
 tests/       docstore 测试
 yiku/        术语库模块（原独立仓库 yiku，含历史迁入）
 scripts/     流水线脚本：术语查询、验证、闸口、批量翻译与核译（llm_engines 直调模型）、图注分离、排版与成品修订、模型比测（bench/）
@@ -64,6 +65,18 @@ docstore cite 动物志33 100
 docstore status
 docstore detect <目录> && docstore import <目录> --adapter txt_pages   # 收编库外页面库
 ```
+
+### booklayout 快速上手
+
+```bash
+pip install -e .
+booklayout build --aligned aligned.json --figures figures/ --metadata metadata.json --out out/book.docx --pdf
+booklayout map-pages --pdf out/book.pdf --aligned aligned.json --metadata metadata.json --out out/page_map.json
+booklayout build --aligned aligned.json --figures figures/ --metadata metadata.json --map out/page_map.json --out out/book_final.docx --pdf
+booklayout check --aligned aligned.json --figures figures/ --pdf out/book_final.pdf --out out/check.json
+```
+
+两遍排版、输入格式和低能力模型的执行步骤见 [docs/booklayout.md](docs/booklayout.md)。
 
 ### 中文通读（定稿前）
 

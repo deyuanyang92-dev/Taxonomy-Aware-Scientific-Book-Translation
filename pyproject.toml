@@ -7,7 +7,7 @@ name = "docstore"
 version = "0.1.0"
 description = "Local document store: registry, page text with verification levels, FTS5 search, citations."
 requires-python = ">=3.9"
-dependencies = ["pymupdf"]
+dependencies = ["pymupdf", "python-docx"]
 
 [project.optional-dependencies]
 ocr = ["rapidocr_onnxruntime"]
@@ -16,9 +16,10 @@ dev = ["pytest", "ruff", "mypy"]
 [project.scripts]
 docstore = "docstore.cli:main"
 taxadb = "taxadb.cli:main"
+booklayout = "booklayout.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["docstore*", "taxadb*", "transqa*"]
+include = ["docstore*", "taxadb*", "transqa*", "booklayout*"]
 
 [tool.ruff]
 line-length = 120
