@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,8 +27,10 @@ from docx.shared import Mm, Pt, RGBColor
 from docx.image.image import Image as DocxImage
 
 BODY_FONT = "Garamond"
+_CJK = re.compile(r"[⺀-鿿＀-￯]")
 TEXT_W = 134.0  # mm
 PAGE_W, PAGE_H = 170.0, 240.0
+
 LEADER_RE = re.compile(r"\s*(?:\.\s*){3,}\s*")
 FIG_RE = re.compile(r"\bFig(?:s)?\.\s*(\d+[′']?)")
 
@@ -42,6 +45,9 @@ class BookMeta:
     edition: str = ""
     publisher: str = ""
     notes: str = ""
+    translator: str = ""
+    translator_preface_title: str = "TRANSLATOR'S PREFACE"
+    translator_preface: str = ""
     running_left: str = ""
     running_right: str = ""
     contents_title: str = "CONTENTS"
@@ -57,11 +63,18 @@ class BookMeta:
     chapter_titles: dict[str, str] = field(default_factory=dict)
     body_start_page: int = 1
     folio_offset: int = 3
+    # When the source starts a chapter part-way down a page, insert the
+    # chapter title at its real position instead of moving it to page top.
+    heading_in_flow: bool = False
     skip_after_page: int | None = None
     index_chapter: str = ""
     index_intro_prefix: str = "Only the scientific names"
     skip_headings: list[str] = field(default_factory=list)
     entry_prefixes: list[str] = field(default_factory=list)
+    # Source indexes contain occasional misprints (wrong genus, missing letter).
+    # Each pair corrects the printed entry; readers must be able to find the
+    # name that the cited pages actually carry.
+    index_entry_fixes: list[tuple[str, str]] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, path: Path) -> "BookMeta":
@@ -69,6 +82,7 @@ class BookMeta:
         data = dict(raw)
         data["authors"] = [tuple(x) for x in data.get("authors", [])]
         data["contributions"] = [tuple(x) for x in data.get("contributions", [])]
+        data["index_entry_fixes"] = [tuple(x) for x in data.get("index_entry_fixes", [])]
         return cls(**data)
 
     def display(self, chapter: str, source_title: str) -> str:
@@ -83,7 +97,12 @@ class BookPaths:
 
 
 def clean_text(s: str) -> str:
+    # python-docx rejects XML-incompatible control characters outright.
+    s = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', s)
     s = re.sub(r'[\u01a4\u0530-\u058f]', '', s)
+    # OCR leader runs are occasionally encoded as U+FFFD; leaving them in
+    # prints a row of black replacement glyphs in keys and body text.
+    s = s.replace('\ufffd', ' ')
     s = s.replace('\u3000', ' ').replace('\xa0', ' ')
     s = re.sub(r'[ \t]+', ' ', s)
     return s.strip()
@@ -108,32 +127,62 @@ def build_genus_set(data: dict) -> set[str]:
     return names
 
 
+def _markdown_chunks(text: str) -> list[tuple[str, bool]]:
+    """Split translated text into plain and *italic* chunks.
+
+    The translation pass marks genus names with Markdown asterisks.  Printing
+    them literally is a layout defect (``*Arabella*``), so the markers are
+    consumed here.  Unpaired asterisks left by a split aligner are dropped.
+    """
+    chunks: list[tuple[str, bool]] = []
+    pos = 0
+    for m in re.finditer(r'\*{1,2}([^*]+)\*{1,2}', text):
+        if m.start() > pos:
+            chunks.append((text[pos:m.start()], False))
+        chunks.append((m.group(1), True))
+        pos = m.end()
+    if pos < len(text):
+        chunks.append((text[pos:], False))
+    return [(c.replace('*', ''), it) for c, it in chunks if c.replace('*', '')]
+
+
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None):
     text = clean_text(text)
     if not text:
         return
     pieces: list[tuple[str, bool]] = []
-    if genera and not italic:
+    for chunk, md_italic in _markdown_chunks(text):
+        if md_italic or italic:
+            pieces.append((chunk, True))
+            continue
+        if not genera:
+            pieces.append((chunk, False))
+            continue
         names = sorted(genera, key=len, reverse=True)
         rx = re.compile(r'(?<![A-Za-z])(' + '|'.join(map(re.escape, names)) + r')\s+([a-z][a-z\-]{1,})(?:\s+([a-z][a-z\-]{1,}))?')
         pos = 0
-        for m in rx.finditer(text):
+        for m in rx.finditer(chunk):
             ep = (m.group(2) or '').lower().strip('.')
             if ep in {'sp', 'spp', 'cf', 'aff', 'indet', 'nov', 'n'}:
                 continue
             if m.start() > pos:
-                pieces.append((text[pos:m.start()], False))
+                pieces.append((chunk[pos:m.start()], False))
             pieces.append((m.group(0), True))
             pos = m.end()
-        if pos < len(text):
-            pieces.append((text[pos:], False))
+        if pos < len(chunk):
+            pieces.append((chunk[pos:], False))
     if not pieces:
-        pieces = [(text, italic)]
+        pieces = [(text.replace('*', ''), italic)]
     for chunk, ital in pieces:
         run = par.add_run(chunk)
         run.font.name = BODY_FONT
         run._element.rPr.rFonts.set(qn('w:eastAsia'), BODY_FONT)
+        # Word needs the eastAsia hint on a run that actually contains CJK
+        # text (the translator's Chinese name); without it the run may fall
+        # back to the Latin font and render boxes/missing glyphs.
+        if _CJK.search(chunk):
+            run._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
         run.font.size = Pt(size)
         run.bold = bold
         run.italic = ital
@@ -155,6 +204,25 @@ def setup(doc: Any):
     st.paragraph_format.space_before = Pt(0)
     st.paragraph_format.space_after = Pt(0)
     st.paragraph_format.line_spacing = 1.0
+    # Justified text without hyphenation produces rivers and huge word gaps,
+    # especially around long taxonomic names and citations.
+    rpr = st._element.get_or_add_rPr()
+    lang = OxmlElement("w:lang")
+    lang.set(qn("w:val"), "en-US")
+    lang.set(qn("w:eastAsia"), "en-US")
+    rpr.append(lang)
+    settings = doc.settings.element
+    anchor = settings.find(qn("w:compat"))
+    index = list(settings).index(anchor) if anchor is not None else len(settings)
+    for tag, value in (
+        ("w:autoHyphenation", "true"),
+        ("w:consecutiveHyphenLimit", "2"),
+        ("w:hyphenationZone", "357"),
+    ):
+        element = OxmlElement(tag)
+        element.set(qn("w:val"), value)
+        settings.insert(index, element)
+        index += 1
 
 
 def set_header_footer(sec, meta: BookMeta):
@@ -209,14 +277,25 @@ def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.
     return p
 
 
+def page_break(doc) -> None:
+    """Start a new page without creating an empty page after a page break."""
+    if doc.paragraphs:
+        last = doc.paragraphs[-1]._element
+        if any(br.get(qn("w:type")) == "page" for br in last.iter(qn("w:br"))):
+            return
+    doc.add_page_break()
+
+
 def heading(doc, text, level, genera, chapter_start=False):
-    if chapter_start:
-        doc.add_page_break()
     sizes = {1: 15, 2: 12, 3: 10.8}
     before = {1: 0, 2: 14, 3: 10}[level]
     after = {1: 10, 2: 7, 3: 4}[level]
     p = para(doc, text, size=sizes[level], bold=True, before=before, after=after,
              keep=True, genera=genera, line=1.0)
+    if chapter_start:
+        # A separate page-break paragraph at the bottom of a full page creates
+        # an empty page.  page_break_before on the heading itself cannot.
+        p.paragraph_format.page_break_before = True
     if level == 1:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for r in p.runs:
@@ -239,6 +318,7 @@ def tabbed(doc, left, right, size, left_indent=5.0, genera=None, bold_left=False
 
 
 def key_para(doc, text, genera):
+    text = re.sub(r'\ufffd+', ' …… ', text)
     text = clean_text(text)
     m = LEADER_RE.search(text)
     if m and text[m.end():].strip():
@@ -274,8 +354,13 @@ def image_para(doc, path: Path, max_w=118.0, max_h=150.0):
 
 
 def caption(doc, text, genera):
-    return para(doc, text, size=8.8, italic=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                after=6, line=1.0, genera=genera)
+    # Source captions are set at 9.5 pt (ITC Garamond Light Italic); 8.8 pt
+    # rendered visibly smaller in Word/LibreOffice.
+    p = para(doc, text, size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+             before=4, after=7, line=1.05, genera=genera)
+    # A caption that splits over a page break reads as two unrelated fragments.
+    p.paragraph_format.keep_together = True
+    return p
 
 
 def raw_pages(translation: Path) -> dict[int, str]:
@@ -283,6 +368,19 @@ def raw_pages(translation: Path) -> dict[int, str]:
     marks = list(re.finditer(r'<!--\s*PDF p\.\s*(\d+)[^>]*-->', text))
     return {int(m.group(1)): text[m.end():marks[i + 1].start() if i + 1 < len(marks) else len(text)]
             for i, m in enumerate(marks)}
+
+
+def _translator_preface(meta: BookMeta) -> str:
+    return meta.translator_preface.strip() or (
+        "An initial machine translation was produced with Google Translate and then "
+        "revised with DeepSeek Flash, a non-reasoning large language model. The "
+        "project's alignment and typesetting software mapped each translated block "
+        "to the corresponding page of the Spanish original and placed the original "
+        "figures. Taxonomic names, literature citations and figure captions were "
+        "aligned with the source edition. This is a working English translation, "
+        "not a critical revision of the Spanish text; remaining errors are the "
+        "translator's responsibility."
+    )
 
 
 def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path | None):
@@ -298,7 +396,19 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
             para(doc, meta.publisher, size=10, align=WD_ALIGN_PARAGRAPH.CENTER, after=30)
         if meta.notes:
             para(doc, meta.notes, size=8.5, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER)
-        doc.add_page_break()
+        page_break(doc)
+
+    if meta.translator:
+        para(doc, meta.translator_preface_title, size=13, bold=True,
+             align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
+        for paragraph in re.split(r"\n\s*\n", _translator_preface(meta)):
+            paragraph = clean_text(paragraph)
+            if paragraph:
+                para(doc, paragraph, size=10.5, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+                     first=5, line=1.05, after=7)
+        para(doc, f"Translated by {meta.translator}.", size=10.5,
+             align=WD_ALIGN_PARAGRAPH.RIGHT, before=14)
+        page_break(doc)
 
     if meta.include_front_matter:
         if meta.abstract_page and translation:
@@ -310,14 +420,15 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
                     abstract = abstract[:dup].strip()
             if abstract:
                 para(doc, "ABSTRACT", size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=8)
-                para(doc, abstract, size=10, align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5, line=1.05, genera=genera)
-                doc.add_page_break()
+                para(doc, abstract, size=10, align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
+                     line=1.05, genera=genera)
+                page_break(doc)
         if meta.authors:
             para(doc, meta.authors_title, size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
             for a, t in meta.authors:
                 para(doc, a, size=10.5, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, before=4, genera=genera)
                 para(doc, t, size=9, align=WD_ALIGN_PARAGRAPH.CENTER, after=2)
-            doc.add_page_break()
+            page_break(doc)
         if meta.contributions:
             para(doc, meta.contributions_title, size=12, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=8)
             for a, t in meta.contributions:
@@ -327,9 +438,10 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
             para(doc, meta.license_note, size=8, italic=True, before=14, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
 
     # contents
-    doc.add_page_break()
+    page_break(doc)
     para(doc, meta.contents_title, size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
     seen = set()
+    rows = []
     for p in data["pages"]:
         if p["page"] < meta.body_start_page:
             continue
@@ -340,13 +452,17 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
         title = meta.display(p["chapter"], source_title)
         printed = p["page"] - meta.folio_offset
         out_page = page_map.get(str(printed), "")
+        rows.append((p, title, out_page))
+    # The index is always rendered after every body chapter, so its contents
+    # entry must come last even when the source book prints it earlier.
+    rows.sort(key=lambda row: _is_index_chapter(row[0]["chapter"], meta))
+    for p, title, out_page in rows:
         par = doc.add_paragraph()
         par.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
         par.paragraph_format.space_before = Pt(3)
         add_runs(par, title, 10.5, bold=True, genera=genera)
         par.add_run("\t")
         add_runs(par, str(out_page), 10.5)
-    doc.add_page_break()
 
 
 def chapter_title(page: dict, meta: BookMeta) -> str:
@@ -354,6 +470,10 @@ def chapter_title(page: dict, meta: BookMeta) -> str:
         if b["role"] == "heading" and b.get("level") == 1 and b.get("translation"):
             return clean_text(b["translation"])
     return page["chapter"]
+
+
+def _is_index_chapter(chapter: str, meta: BookMeta) -> bool:
+    return chapter == meta.index_chapter or (not meta.index_chapter and "index" in chapter.lower())
 
 
 def iter_pages(data, meta: BookMeta):
@@ -369,16 +489,36 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
         if meta.skip_after_page is not None and p["page"] >= meta.skip_after_page:
             continue
         ch = p["chapter"]
-        is_index = ch == meta.index_chapter or (not meta.index_chapter and "index" in ch.lower())
+        is_index = _is_index_chapter(ch, meta)
         if is_index:
             current_chapter = ch
             continue
         first_page = ch != current_chapter
+        synthetic_heading = False
+        pending_heading = None
         if first_page:
             current_chapter = ch
             source_title = chapter_title(p, meta)
             title = meta.display(ch, source_title)
-            heading(doc, title, 1, genera, chapter_start=True)
+            in_flow = meta.heading_in_flow and any(
+                b.get("role") == "heading" and b.get("level") == 1 for b in p["blocks"])
+            if in_flow:
+                synthetic_heading = False
+            else:
+                # A source page can hold the tail of the previous chapter
+                # before the new chapter heading.  Put the heading where the
+                # source heading sits, not above that tail.
+                for candidate in p["blocks"]:
+                    try:
+                        level = int(candidate.get("level", 1))
+                    except (TypeError, ValueError):
+                        level = 1
+                    if candidate.get("role") == "heading" and level == 1:
+                        pending_heading = id(candidate)
+                        break
+                if pending_heading is None:
+                    heading(doc, title, 1, genera, chapter_start=True)
+                    synthetic_heading = True
         page_figs = figs.get(p["page"], [])
         caps = [b for b in p["blocks"] if b["role"] == "caption"]
         first_y = min([b.get("y0", 999) for b in p["blocks"] if b["role"] != "caption"], default=999)
@@ -392,6 +532,11 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
         for b in p["blocks"]:
             role = b["role"]
             text = clean_text(b.get("translation") or "")
+            if pending_heading is not None and id(b) == pending_heading:
+                heading(doc, title, 1, genera, chapter_start=True)
+                synthetic_heading = True
+                prev_body = None
+                continue
             if role == "caption":
                 if id(b) not in placed:
                     place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
@@ -401,15 +546,42 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 continue
             if p["kind"] == "index" and text.upper().startswith("ALPHABETICAL INDEX"):
                 continue
+            if role in {"heading", "body"}:
+                ack = re.match(r'^(Acknowledg(?:e)?ments)\b[\s.:\-—]*(.*)$',
+                               text, re.I | re.S)
+                if ack:
+                    heading(doc, ack.group(1).upper(), 2, genera)
+                    text = ack.group(2).strip()
+                    role = "body"
+                    if not text:
+                        prev_body = None
+                        continue
             if role == "heading":
-                skip = first_page and (
+                skip = first_page and synthetic_heading and (
                     clean_text(text).lower() in {clean_text(title).lower(), clean_text(source_title).lower()}
                     or any(clean_text(text).lower().startswith(clean_text(x).lower()) for x in meta.skip_headings)
                 )
                 if skip:
                     continue
-                level = b.get("level", 2)
-                heading(doc, text, min(level, 3), genera)
+                if len(re.findall(r"[A-Za-z]{2,}", text)) > 20:
+                    # A source call-out or boxed note was often tagged as a
+                    # heading by the aligner.  Typesetting it as a chapter
+                    # heading turns it into a huge all-caps block.
+                    para(doc, text, size=9.5, italic=True,
+                         align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
+                         before=4, after=4, genera=genera)
+                else:
+                    level = b.get("level", 2)
+                    try:
+                        level = int(level)
+                    except (TypeError, ValueError):
+                        level = 2
+                    heading(doc, text, min(level, 3), genera)
+                prev_body = None
+            elif role == "note":
+                para(doc, text, size=9.5, italic=True,
+                     align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
+                     before=4, after=4, genera=genera)
                 prev_body = None
             elif role == "body":
                 # merge a page-split sentence
@@ -419,8 +591,12 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     add_runs(prev_body[1], joined, 10.5, genera=genera)
                     prev_body = (joined, prev_body[1])
                 else:
+                    # A lower-case opening is a paragraph continued after an
+                    # intervening figure or caption; indenting it would print
+                    # a paragraph break in the middle of a sentence.
+                    first = 0 if text[:1].islower() else 5
                     par = para(doc, text, size=10.5, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                               first=5, line=1.02, genera=genera)
+                               first=first, line=1.02, genera=genera)
                     prev_body = (text, par)
             elif role == "citation":
                 para(doc, text, size=9.2, left=4, first=-4, before=1, line=1.0, genera=genera)
@@ -462,7 +638,11 @@ def join_texts(a: str, b: str) -> str:
 
 
 def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
-    text = clean_text(cap_block.get('translation') or cap_block.get('text') or '')
+    # Never fall back to the Spanish source here: the English edition must
+    # omit an untranslated caption rather than print source-language text.
+    text = clean_text(cap_block.get('translation') or '')
+    # OCR often appends the panel letters of the illustration as body text.
+    text = re.sub(r'(?:\s+(?:[A-Z]|[A-Z][–-][A-Z])){2,}\s*$', '', text).rstrip()
     label = None
     m = FIG_RE.search(text)
     if m:
@@ -482,8 +662,23 @@ def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
         caption(doc, text, genera)
 
 
+def apply_index_fixes(text: str, meta: BookMeta) -> str:
+    """Correct source-index misprints declared in the metadata."""
+    for old, new in meta.index_entry_fixes:
+        text = text.replace(old, new)
+    return text
+
+
+def index_entry_key(text: str) -> str:
+    """Compare index rows without their dot leaders or spacing."""
+    # Leaders arrive both as "......" and as ". . . ."; strip the spaced form.
+    key = re.sub(r"(?:\.\s*){2,}", " ", text)
+    return re.sub(r"\s+", " ", key).strip().lower()
+
+
 def render_index(doc, data, genera, page_map, meta: BookMeta):
     entries = []
+    seen_entries: set[str] = set()
     raw_intro = ''
     for p in data['pages']:
         if p['kind'] != 'index':
@@ -492,12 +687,36 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
             if not b.get('translation'):
                 continue
             if b['role'] != 'index':
-                if b['translation'].upper().startswith('ALPHABETICAL INDEX'):
+                if 'ALPHABETICAL INDEX' in b['translation'].upper():
                     raw_intro = clean_text(b['translation'])
                 continue
-            entries.append(clean_text(b['translation']))
+            text = apply_index_fixes(clean_text(b['translation']), meta)
+            # An editorial fix can make two source variants identical; compare
+            # without the dot leaders and print the entry once.
+            key = index_entry_key(text)
+            if key and key not in seen_entries:
+                seen_entries.add(key)
+                entries.append(text)
     if not entries:
         return
+    printed_pages: dict[int, dict] = {}
+    block_rows = []
+    word_pages: dict[str, set[int]] = {}
+    for p in data["pages"]:
+        printed = p["page"] - meta.folio_offset
+        printed_pages.setdefault(printed, p)
+        if p.get("kind") == "index":
+            continue
+        for b in p["blocks"]:
+            block_id = str(b.get("block_id") or "")
+            text = unicodedata.normalize(
+                "NFKC", clean_text(b.get("translation") or "")
+            ).lower().replace("-", "")
+            if not block_id or not text:
+                continue
+            block_rows.append((printed, b.get("y0") or 0, block_id, text))
+            for word in set(re.findall(r"[^\W\d_]{4,}", text)):
+                word_pages.setdefault(word, set()).add(printed)
     intro = ""
     if raw_intro:
         if meta.index_intro_prefix:
@@ -523,7 +742,8 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
             m2 = re.match(r'^(.*?)\s+((?:\d{1,3}(?:,\s*)?)+)$', text)
             if m2:
                 left, right = m2.group(1).strip(), m2.group(2).strip()
-                right = remap_refs(right, page_map)
+                right = remap_refs(right, page_map, left, printed_pages,
+                                   block_rows, word_pages)
                 p = doc.add_paragraph()
                 p.paragraph_format.space_before = p.paragraph_format.space_after = Pt(0)
                 p.paragraph_format.line_spacing = 1.0
@@ -535,7 +755,8 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
         if m:
             left = text[:m.start()].strip()
             right = text[m.end():].strip()
-            right = remap_refs(right, page_map)
+            right = remap_refs(right, page_map, left, printed_pages,
+                               block_rows, word_pages)
             p = doc.add_paragraph()
             pf = p.paragraph_format
             pf.left_indent = Mm(0)
@@ -549,9 +770,56 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
             para(doc, text, size=8.6, line=1.0, genera=genera)
 
 
-def remap_refs(right: str, page_map: dict[str, int | str]) -> str:
+def remap_refs(right: str, page_map: dict[str, int | str],
+               left: str = "", printed_pages: dict[int, dict] | None = None,
+               block_rows: list[tuple[int, float, str, str]] | None = None,
+               word_pages: dict[str, set[int]] | None = None) -> str:
+    """Map source page numbers to this edition's pages.
+
+    A source page can straddle two PDF pages, and the source index itself is
+    occasionally off by a few pages.  Prefer the block that contains the cited
+    name, first on the printed source page and then on the nearest page that
+    has every name word; fall back to the numeric map.
+    """
+    # Join hyphenated names before tokenizing: the block text is normalized the
+    # same way, so "saint-hilaire" must match as one word, not "saint"+"hilaire".
+    words = re.findall(r"[^\W\d_]{4,}", left.lower().replace("-", ""))
+
+    def contains_all(text: str) -> bool:
+        return all(re.search(r"\b" + re.escape(w) + r"\b", text) for w in words)
+
     def repl(m):
         n = int(m.group(0))
+        if words and printed_pages is not None:
+            page = printed_pages.get(n)
+            if page is not None:
+                # A page's TYPE SPECIES citation can name the taxon before its
+                # heading is printed on the next PDF page; prefer the heading or
+                # entry block so the index points at the treatment, not the
+                # citation that precedes it.
+                rank = {"heading": 0, "entry": 1, "body": 2}
+                for b in sorted(page["blocks"], key=lambda b: (
+                        rank.get(b.get("role"), 3), b.get("y0") or 0)):
+                    text = unicodedata.normalize(
+                        "NFKC", clean_text(b.get("translation") or "")
+                    ).lower().replace("-", "")
+                    if contains_all(text):
+                        block_page = page_map.get("block:" + str(b.get("block_id") or ""))
+                        if block_page:
+                            return str(block_page)
+            if block_rows and word_pages:
+                candidates = None
+                for word in words:
+                    hits = word_pages.get(word, set())
+                    candidates = hits if candidates is None else candidates & hits
+                    if not candidates:
+                        break
+                for nearest in sorted(candidates or (), key=lambda x: (abs(x - n), x)):
+                    for printed, _y0, block_id, text in block_rows:
+                        if printed == nearest and contains_all(text):
+                            block_page = page_map.get("block:" + block_id)
+                            if block_page:
+                                return str(block_page)
         return str(page_map.get(str(n), n))
     return re.sub(r'\b\d{1,3}\b', repl, right)
 
@@ -575,41 +843,76 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
     return data
 
 
+def match_text(t: str) -> str:
+    """Normalize printed and aligned text to the same comparison form.
+
+    PDF extraction keeps typographic ligatures (ﬂ, ﬁ) and italic markup in the
+    aligned data marks names with asterisks; neither may hide a match.
+    """
+    t = unicodedata.normalize("NFKC", t)
+    t = t.replace("\xad", "").replace("‑", "-")
+    t = re.sub(r"([A-Za-z])-\s*\n\s*([a-z])", r"\1\2", t)
+    t = t.replace("*", "").replace("…", " ")
+    t = re.sub(r"[�.]{4,}", " ", t)
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
 def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
     import fitz
 
     doc = fitz.open(pdf)
+    norm = match_text
 
-    def norm(t):
-        t = re.sub(r"-\s+", "", t)
-        return re.sub(r"\s+", " ", t)
+    def snippet(t):
+        value = norm(t).replace("*", "")
+        value = re.sub(r"^[•\d.,;:)\s]+", "", value)
+        return value[:60]
 
     texts = [norm(p.get_text("text")) for p in doc]
     lines = [[norm(line).strip().upper() for line in p.get_text("text").splitlines() if line.strip()] for p in doc]
     page_map: dict[str, int] = {}
+    # The appendix reprints source descriptions; searching its pages for body
+    # snippets would map an early chapter to the appendix page.
+    appendix_page = next(
+        (i for i, page_lines in enumerate(lines)
+         if any("APPENDIX 1" in line or line == "ANNEX" for line in page_lines[:5])),
+        len(texts),
+    )
+    appendix_source = min(
+        (p["page"] for p in data["pages"] if p["chapter"].startswith("Appendix")),
+        default=10 ** 9,
+    )
+    bib_page = next(
+        (i for i, page_lines in enumerate(lines)
+         if any(line == "BIBLIOGRAPHY" for line in page_lines[:5])),
+        len(texts),
+    )
+    body_search_end = min(appendix_page, bib_page)
     last = 0
     for p in data["pages"]:
-        if p["page"] < meta.body_start_page:
+        if p["page"] < meta.body_start_page or p["page"] >= appendix_source:
             continue
         heads, bodies, anys = [], [], []
         for b in p["blocks"]:
             t = clean_text(b.get("translation") or "")
             if b["role"] == "heading" and len(t) >= 24:
-                heads.append(norm(t)[:60])
+                heads.append(snippet(t))
             elif b["role"] in ("body", "heading") and len(t) >= 35:
-                bodies.append(norm(t)[:60])
+                bodies.append(snippet(t))
             elif len(t) >= 15:
-                anys.append(norm(t)[:50])
-        cands = sorted(set(heads), key=len, reverse=True) + bodies + anys
+                anys.append(snippet(t))
+        cands = sorted({c for c in heads if len(c) >= 18}, key=len, reverse=True)
+        cands += [c for c in bodies if len(c) >= 25]
+        cands += [c for c in anys if len(c) >= 15]
         found = None
-        for snippet in cands:
-            for i in range(last, min(len(texts), last + 12)):
-                if snippet in texts[i]:
+        for snippet_text in cands:
+            for i in range(last, min(len(texts), last + 12, body_search_end)):
+                if snippet_text in texts[i]:
                     found = i
                     break
             if found is None:
-                for i in range(max(0, last - 2), len(texts)):
-                    if snippet in texts[i]:
+                for i in range(max(0, last - 2), min(len(texts), last + 25, body_search_end)):
+                    if snippet_text in texts[i]:
                         found = i
                         break
             if found is not None:
@@ -618,27 +921,134 @@ def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
             page_map[str(p["page"] - meta.folio_offset)] = found + 1
             last = found
     # Chapter headings are more reliable than running text for contents/index.
+    # The contents page repeats every chapter title next to its page number;
+    # matching there would map a chapter to the number printed in the contents.
+    # Only the contents page repeats chapter titles.  The index title appears
+    # as a running head on every index page; skipping those would make the
+    # index chapter unmappable.
+    front_marks = {meta.contents_title.upper()}
+    skip_pages = {
+        i for i, page_lines in enumerate(lines)
+        if any(mark in line for line in page_lines[:4] for mark in front_marks)
+    }
     prev = None
+    chapter_starts: list[tuple[int, int, int | None]] = []
     for p in data["pages"]:
         if p["page"] < meta.body_start_page or p["chapter"] == prev:
             continue
         prev = p["chapter"]
+        chapter_starts.append(
+            (p["page"], p["page"] - meta.folio_offset,
+             page_map.get(str(p["page"] - meta.folio_offset)))
+        )
         title = meta.index_title if p["chapter"] == meta.index_chapter else meta.display(
             p["chapter"], p["chapter"]
         )
-        key = title.upper()[:34]
-        for i in range(5, len(lines)):
-            if any(line.startswith(key) for line in lines[i]):
+        keys = [title.upper()[:34]]
+        short = re.split(r"[（(]", title.upper())[0].strip()[:34]
+        if short and short not in keys:
+            keys.append(short)
+        for i in range(4, len(lines)):
+            if i in skip_pages:
+                continue
+            def heading_match(line: str, key: str) -> bool:
+                if not line.startswith(key):
+                    return False
+                # "BIBLIOGRAPHY. The Central Service..." is prose, not the
+                # chapter heading; a heading continues with a space or is exact.
+                return len(line) == len(key) or line[len(key)] not in ".,;:"
+
+            if any(heading_match(line, key) for key in keys for line in lines[i][:4]):
                 page_map[str(p["page"] - meta.folio_offset)] = i + 1
                 break
+    # A body snippet can also occur in the appendix, which maps a later page of
+    # a chapter to the appendix.  Chapter headings give the true start; reject
+    # mappings far outside that chapter's page range.
+    for idx, (src, printed, out) in enumerate(chapter_starts):
+        # The chapter-heading pass runs after the first pass, so read the
+        # corrected start page here rather than the pre-pass snapshot.
+        out = page_map.get(str(printed), out)
+        if out is None:
+            continue
+        next_src = (chapter_starts[idx + 1][0]
+                    if idx + 1 < len(chapter_starts) else 10 ** 9)
+        for p in data["pages"]:
+            if not (src <= p["page"] < next_src):
+                continue
+            key = str(p["page"] - meta.folio_offset)
+            expected = out + (p["page"] - src)
+            cur = page_map.get(key)
+            # A direct text match is stronger evidence than the chapter's
+            # one-source-page-per-PDF-page assumption; only fill gaps.
+            if cur is None:
+                page_map[key] = expected
+    # The appendix is typeset denser than the Spanish source, so its PDF pages
+    # do not advance one-for-one with source pages.  Locate the appendix start,
+    # then match each page by its own text; the one-for-one estimate is only a
+    # fallback for pages whose text cannot be found.
+    appendix_pages_data = [p for p in data["pages"]
+                           if p["page"] >= meta.body_start_page
+                           and p["chapter"].startswith("Appendix")]
+    if appendix_pages_data:
+        first_src = min(p["page"] for p in appendix_pages_data)
+        needle = ""
+        for p in appendix_pages_data:
+            for b in p["blocks"]:
+                if b["role"] in ("entry", "heading", "body"):
+                    needle = norm(clean_text(b.get("translation") or ""))[:60]
+                    if len(needle) >= 20:
+                        break
+            if len(needle) >= 20:
+                break
+        # Appendix entries often reprint main-text passages, so the earliest
+        # occurrence of the needle can be a body page.  The printed appendix
+        # heading is the reliable floor; without it, take the last occurrence.
+        detected = appendix_page < len(texts)
+        floor = appendix_page if detected else 0
+        hit = None
+        if len(needle) >= 20:
+            if detected:
+                hit = next((i for i in range(floor, len(texts))
+                            if needle in texts[i]), None)
+            else:
+                hit = next((i for i in range(len(texts) - 1, -1, -1)
+                            if needle in texts[i]), None)
+        if hit is not None:
+            base = hit + 1
+        elif detected:
+            base = floor + 1
+        else:
+            base = None
+        if base is not None:
+            cursor = base - 1
+            for p in appendix_pages_data:
+                key = str(p["page"] - meta.folio_offset)
+                cands = []
+                for b in p["blocks"]:
+                    t = norm(clean_text(b.get("translation") or ""))
+                    if b["role"] in ("entry", "heading", "body") and len(t) >= 25:
+                        cands.append(t[:60])
+                found = None
+                for snippet_text in cands:
+                    for i in range(max(floor, cursor - 2), min(len(texts), cursor + 9)):
+                        if snippet_text in texts[i]:
+                            found = i
+                            break
+                    if found is not None:
+                        break
+                if found is not None:
+                    page_map[key] = found + 1
+                    cursor = found
+                elif key not in page_map:
+                    page_map[key] = base + (p["page"] - first_src)
     # Fill gaps monotonically from neighbouring mapped source pages.
-    keys = sorted(int(k) for k in page_map)
-    if keys:
-        for k in range(keys[0], keys[-1] + 1):
+    mapped_keys = sorted(int(k) for k in page_map)
+    if mapped_keys:
+        for k in range(mapped_keys[0], mapped_keys[-1] + 1):
             if str(k) in page_map:
                 continue
-            lo = max((x for x in keys if x < k), default=None)
-            hi = min((x for x in keys if x > k), default=None)
+            lo = max((x for x in mapped_keys if x < k), default=None)
+            hi = min((x for x in mapped_keys if x > k), default=None)
             if lo is not None and hi is not None and hi > lo:
                 v = page_map[str(lo)] + (k - lo) * (page_map[str(hi)] - page_map[str(lo)]) / (hi - lo)
                 page_map[str(k)] = int(round(v))
@@ -646,4 +1056,22 @@ def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
                 page_map[str(k)] = page_map[str(lo)] + (k - lo)
             elif hi is not None:
                 page_map[str(k)] = max(1, page_map[str(hi)] - (hi - k))
+    # A source page can straddle two PDF pages, so an index entry that points
+    # at the source page may land before the name it cites.  Record the page
+    # where each block's own text starts; the index uses it to correct such
+    # references without guessing page numbers.
+    for p in data["pages"]:
+        start = page_map.get(str(p["page"] - meta.folio_offset))
+        if start is None:
+            continue
+        for b in p["blocks"]:
+            block_id = b.get("block_id")
+            t = norm(clean_text(b.get("translation") or ""))
+            if not block_id or len(t) < 20:
+                continue
+            snippet_text = t[:60]
+            for i in range(max(0, start - 2), min(len(texts), start + 3)):
+                if snippet_text in texts[i]:
+                    page_map["block:" + block_id] = i + 1
+                    break
     return page_map
