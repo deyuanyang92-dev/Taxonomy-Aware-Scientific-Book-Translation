@@ -538,8 +538,11 @@ def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[in
 
 
 def chunk_entities(src: str, cid: str, work: Path, a: argparse.Namespace) -> list[dict[str, Any]]:
-    """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。--no-entities 关闭。"""
+    """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。
+    --no-entities 关闭；--engine none（零模型档）也跳过，避免暗中烧 token / 依赖 anthropic。"""
     if not getattr(a, 'entities', True):
+        return []
+    if getattr(a, 'engine', '') == 'none':
         return []
     f = work / f'entities/{cid}.json'
     dg = _digest(src, a.tl, entities.EXTRACT_SYS)
@@ -680,7 +683,9 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
                 stats['fallback_to_model'] += 1
             todo.append(s)
         stats['segments'] += len(segs)
-        stats['sent_to_model'] += len(todo)
+        # lean 候选段数；engine=none 时不会真调模型（见 llm_calls）
+        stats['sent_to_model'] += len(todo) if engine != 'none' else 0
+        stats['lean_candidates'] += len(todo)
         dg = _digest(src, '\n'.join(dmap.values()), sysmsg, PROMPT_VERSION, engine, ','.join(bad),
                      json.dumps(abbr, ensure_ascii=False), ','.join(sorted(kinds)),
                      '' if gl_in_prefix else table_md(relevant(gl, src)))
@@ -697,12 +702,17 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
     issues, parts = {}, []
     for job, rec in zip(jobs, recs, strict=True):
         stats['attempts'] += int(rec.get('attempts', 0))
+        stats['llm_calls'] += int(rec.get('attempts', 0))
         stats['chunks_reworked'] += int(rec.get('attempts', 0) > 1)
         stats['chunks'] += 1
         chunk = render(job['tpl'], {**job['texts'], **rec['texts']}).rstrip('\n') + '\n'
         if rec['issues']:
             issues[job['cid']] = rec['issues']
         parts.append(chunk)
+    if engine == 'none':
+        stats['llm_calls'] = 0
+        print(f'[auto] engine=none：llm_calls=0（lean 候选段 {stats["lean_candidates"]} 保留 Google+术语表）',
+              flush=True)
     _write(work / 'revise_issues.json', json.dumps(issues, ensure_ascii=False, indent=1))
     _write(work / 'revise_stats.json', json.dumps(dict(stats), ensure_ascii=False, indent=1))
     revised = ''.join(parts)
@@ -804,6 +814,11 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
     # 1 找错
     risk = negation_risk(src, tgt, a.sl, a.tl)
     engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
+    # 零模型档：不调 LLM，只保留稿 + 后面的 transqa/taxoformat（脚本）
+    if engine == 'none':
+        print(f'check {cid} engine=none skipped_llm risk_pages={risk}', flush=True)
+        return {'new': join(full_tgt, ps), 'log': [{'chunk': cid, 'result': 'skipped: engine=none'}],
+                'failed': failed, 'human': human}
     dg = _digest(src, tgt, gtab, csys, engine, PROMPT_VERSION, str(getattr(a, 'risky_only', False)))   # 换模型必须重跑，不得复用别的模型的结果
     rec = _cached(work / f'check/{cid}.json', dg)
     if rec is None:
@@ -1053,21 +1068,30 @@ def main(argv: list[str] | None = None) -> None:
                     help='省 token（默认开）：只改写 narrative,remarks；check 风险段。--no-lean=全文改写（费）')
     ap.add_argument('--no-memory', action='store_true',
                     help='不加载跨书共享异写库（默认加载 ~/.cache/yzz-translate/memory/）')
+    ap.add_argument('--tier', choices=['draft', 'release'], default='draft',
+                    help='draft=试译省 token；release=交付（须异模型 verify + --chaptered）')
+    ap.add_argument('--chaptered', action='store_true',
+                    help='声明本 run 属于分章流水线（release 档必需；fast_book chapters 会自动加）')
     ap.add_argument('--stop-after', choices=['draft', 'revise'], default=None,
                     help='只做到这一步')
     a = ap.parse_args(argv)
-    from token_economy import apply_lean, guard_engine
+    from token_economy import apply_lean, guard_engine, guard_tier
     apply_lean(a)
     guard_engine(a.engine, force=a.force_engine)
     if a.verify_engine not in ('none', ''):
         guard_engine(a.verify_engine, force=a.force_engine)
+    a.tier = guard_tier(a.tier, verify_engine=a.verify_engine, chaptered=bool(a.chaptered))
     if a.cmd == 'report':
         print(report(Path(a.src)))
         return
     work = Path(a.work or 'auto_work')
     work.mkdir(parents=True, exist_ok=True)
-    print('[auto] Cursor 优化档：lean 默认开、verify 默认 none、跨书 memory 默认加载 '
-          '（见 skill/TOKEN_ECONOMY.md）', flush=True)
+    (work / 'tier.txt').write_text(a.tier + '\n', encoding='utf-8')
+    print(f'[auto] tier={a.tier} engine={a.engine!r} verify={a.verify_engine!r}；'
+          f'lean 默认开、跨书 memory 默认加载（见 skill/TOKEN_ECONOMY.md）', flush=True)
+    if a.engine == 'auto':
+        print('[auto] 注意：--engine auto 会对 lean 候选段调模型（仍费 token）；'
+              '要 0 token 请加 --engine none', flush=True)
     if not a.no_memory:
         import book_memory
         merged = book_memory.merge_glossary(

@@ -1,4 +1,5 @@
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def test_parse_json_array_tolerates_wrapping():
 
 
 def test_engine_router_by_beijing_time():
-    night = dt.datetime(2026, 11, 16, 17, 0, tzinfo=dt.timezone.utc)  # 周二 01:00 北京（00:30–08:30 折扣窗口）
+    night = dt.datetime(2026, 11, 16, 17, 0, tzinfo=dt.timezone.utc)  # 周二 01:00 北京（折扣时段）
     day = dt.datetime(2026, 11, 16, 3, 0, tzinfo=dt.timezone.utc)  # 周一 11:00 北京（官方忙时）
     assert at.is_night(night) and not at.is_night(day)
     assert at.pick_engine("revise", night) == "deepseek-flash"
@@ -395,6 +396,52 @@ def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
     draft = at.pages("<!-- PDF p.1 -->\n\nBody short. 4 peepers.\n")
     out = at.stage_revise(src, draft, tmp_path, a)
     assert "4 eyes." in out
+
+
+def test_engine_none_skips_entity_llm_even_if_entities_on(tmp_path, monkeypatch):
+    """零模型档不得因专名抽取暗调 deepseek（曾导致 anthropic 缺失时卡 3 次×30s）。"""
+    import argparse
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM")))
+    a = argparse.Namespace(sl="de", tl="en", engine="none", entities=True, domain="分类学")
+    assert at.chunk_entities("Prostomium mit 4 Augen.", "c000", tmp_path, a) == []
+
+
+def test_engine_none_full_pipeline_never_calls_llm(tmp_path, monkeypatch):
+    """draft→revise→check 全程 --engine none 时 llm() 一次都不得调用。"""
+    import argparse
+    calls = []
+
+    def boom(*a_, **k):
+        calls.append((a_, k))
+        raise AssertionError(f"unexpected LLM: {a_[:1]}")
+
+    monkeypatch.setattr(at, "llm", boom)
+    g = tmp_path / "g.tsv"
+    g.write_text("source\ttarget\tvariants\tnote\nAugen\teyes\t\t\n", encoding="utf-8")
+    a = argparse.Namespace(
+        sl="de", tl="en", glossary=str(g), names=None, bad_terms="", engine="none",
+        day_engine=None, abbr=None, entities=True, lean=True, rewrite_kinds="narrative,remarks,caption",
+        risky_only=True, verify_engine="none", verify_mode="review", workers=1, pitfalls=None,
+        domain="分类学", allow_same_verify=False,
+    )
+    from token_economy import apply_lean
+    apply_lean(a)
+    src = at.pages(
+        "<!-- PDF p.1 -->\nProstomium mit 4 Augen.\n\n"
+        "Bemerkung. Die Art ist neu.\n"
+    )
+    draft = at.pages(
+        "<!-- PDF p.1 -->\nProstomium with 4 peepers.\n\n"
+        "Remark. The species is new.\n"
+    )
+    revised = at.stage_revise(src, draft, tmp_path, a)
+    assert "eyes" in revised.lower() or "peepers" in revised  # 术语表或保留稿
+    checked = at.stage_check(src, at.pages(revised), tmp_path, a)
+    assert "<!-- PDF p.1 -->" in checked
+    assert calls == []
+    stats = json.loads((tmp_path / "revise_stats.json").read_text(encoding="utf-8"))
+    assert stats.get("llm_calls", 0) == 0
+    assert stats.get("sent_to_model", 0) == 0
 
 
 def test_prefilter_drops_edits_whose_old_is_not_on_page_before_verify(tmp_path, monkeypatch):

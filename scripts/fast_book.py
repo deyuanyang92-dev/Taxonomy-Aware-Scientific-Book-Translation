@@ -84,17 +84,23 @@ def _print_estimate(e: dict[str, Any]) -> None:
     print(e["notes"])
 
 
-def _auto_cmd(src: Path, work: Path, a: argparse.Namespace, tgt: Path | None = None) -> list[str]:
+def _auto_cmd(src: Path, work: Path, a: argparse.Namespace, tgt: Path | None = None,
+              *, chaptered: bool = False) -> list[str]:
     py = sys.executable
     script = Path(__file__).resolve().parent / "auto_translate.py"
+    tier = getattr(a, "tier", "draft")
     if tgt is None:
         cmd = [py, str(script), "run", str(src), "-o", str(work),
                "--sl", a.sl, "--tl", a.tl, "--engine", a.engine,
-               "--workers", str(a.j), "--verify-engine", a.verify_engine]
+               "--workers", str(a.j), "--verify-engine", a.verify_engine,
+               "--tier", tier]
     else:
         cmd = [py, str(script), "check", str(src), str(tgt), "-o", str(work),
                "--sl", a.sl, "--tl", a.tl, "--engine", a.engine,
-               "--workers", str(a.j), "--verify-engine", a.verify_engine]
+               "--workers", str(a.j), "--verify-engine", a.verify_engine,
+               "--tier", tier]
+    if chaptered or getattr(a, "chaptered", False):
+        cmd.append("--chaptered")
     if a.glossary:
         cmd += ["--glossary", a.glossary]
     if a.names:
@@ -110,11 +116,11 @@ def _auto_cmd(src: Path, work: Path, a: argparse.Namespace, tgt: Path | None = N
     return cmd
 
 
-def run_one(src: Path, work: Path, a: argparse.Namespace) -> int:
+def run_one(src: Path, work: Path, a: argparse.Namespace, *, chaptered: bool = False) -> int:
     work.mkdir(parents=True, exist_ok=True)
     if not a.respect_offpeak:
         os.environ.setdefault("LLM_SKIP_OFFPEAK", "1")
-    cmd = _auto_cmd(src, work, a)
+    cmd = _auto_cmd(src, work, a, chaptered=chaptered)
     print("[fast_book]", " ".join(cmd), flush=True)
     t0 = time.time()
     rc = subprocess.call(cmd)
@@ -130,7 +136,7 @@ def _chapter_job(args: tuple[Any, ...]) -> dict[str, Any]:
     src, work = Path(src_s), Path(work_s)
     # 子进程重建 Namespace
     a = argparse.Namespace(**ns)
-    rc = run_one(src, work, a)
+    rc = run_one(src, work, a, chaptered=True)
     return {"src": src_s, "work": work_s, "rc": rc}
 
 
@@ -146,7 +152,7 @@ def run_chapters(src_dir: Path, work: Path, a: argparse.Namespace) -> int:
         os.environ.setdefault("LLM_SKIP_OFFPEAK", "1")
     ns = {k: getattr(a, k) for k in
           ("sl", "tl", "engine", "j", "verify_engine", "glossary", "names", "lean",
-           "allow_same_verify", "stop_after", "respect_offpeak")}
+           "allow_same_verify", "stop_after", "respect_offpeak", "tier")}
     jobs = []
     for src in files:
         ch_work = work / "chapters" / src.stem
@@ -159,10 +165,19 @@ def run_chapters(src_dir: Path, work: Path, a: argparse.Namespace) -> int:
             r = f.result()
             results.append(r)
             print(f"[fast_book] 章完成 {Path(r['src']).name} rc={r['rc']}", flush=True)
-    summary = {"chapters": results, "ok": sum(1 for r in results if r["rc"] == 0)}
+    summary = {"chapters": results, "ok": sum(1 for r in results if r["rc"] == 0),
+               "tier": getattr(a, "tier", "draft")}
     (work / "chapters_summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                                 encoding="utf8")
-    return 0 if all(r["rc"] == 0 for r in results) else 1
+    import chapter_manifest
+    import delivery_gate
+    chapter_manifest.write_manifest(work)
+    gate = delivery_gate.run_gate(work, tier=getattr(a, "tier", "draft"))
+    print(f"[fast_book] delivery_gate tier={gate['tier']} ok={gate['ok']} "
+          f"problems={gate['problems']}", flush=True)
+    if not all(r["rc"] == 0 for r in results):
+        return 1
+    return int(gate["exit_code"])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--no-lean", action="store_false", dest="lean")
     r.add_argument("-j", type=int, default=8)
     r.add_argument("--stop-after", choices=["draft", "revise"], default=None)
+    r.add_argument("--tier", choices=["draft", "release"], default="draft")
+    r.add_argument("--chaptered", action="store_true",
+                   help="单文件亦声明为分章之一（配合 --tier release）")
     r.add_argument("--respect-offpeak", action="store_true",
                    help="遵守 DeepSeek 闲时窗（默认跳过，否则白天无法 30 分钟）")
 
@@ -207,6 +225,8 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("-j", type=int, default=4, help="每章块并行")
     c.add_argument("--chapter-jobs", type=int, default=4, help="同时跑几章")
     c.add_argument("--stop-after", choices=["draft", "revise"], default=None)
+    c.add_argument("--tier", choices=["draft", "release"], default="draft",
+                   help="release 须同时设异模型 --verify-engine")
     c.add_argument("--respect-offpeak", action="store_true")
 
     a = ap.parse_args(argv)
@@ -218,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
                      if ln.strip().startswith("<!-- PDF p.")])
         if pages:
             _print_estimate(estimate(pages, a.j, a.lean, verify=a.verify_engine not in ("none", "")))
-        return run_one(Path(a.src), Path(a.work), a)
+        return run_one(Path(a.src), Path(a.work), a, chaptered=bool(getattr(a, "chaptered", False)))
     return run_chapters(Path(a.src_dir), Path(a.work), a)
 
 

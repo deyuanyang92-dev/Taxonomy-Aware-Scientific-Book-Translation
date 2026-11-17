@@ -104,15 +104,15 @@
 
 ## 5. 待实现（软件，按优先级）
 
-| ID | 项 | 验收 |
-|---|---|---|
-| T1 | CLI/报告区分 `tier=draft|release`；release 缺 verify 或未分章则拒绝 | 命令行拦截 |
-| T2 | 章级交付清单（每章：draft/revised/checked/polish/qa） | 一文件看齐 |
-| T3 | booklayout 三审扩到 caption/entry（复盘 P1） | 覆盖率门槛 |
-| T4 | lean kinds 默认含 `caption`（或交付档自动加） | 图注不再最差 |
-| T5 | 交付门一键：`scripts/delivery_gate.py` 串 transqa+验证+qa+zh check | 非 ok 退出码 1 |
+| ID | 项 | 验收 | 状态 |
+|---|---|---|---|
+| T1 | CLI `--tier draft\|release`；release 缺 verify 或未分章则拒绝 | `guard_tier` | **已做**（auto_translate / fast_book） |
+| T2 | 章级交付清单 | `chapter_manifest.json` | **已做** `scripts/chapter_manifest.py` |
+| T3 | booklayout 三审扩到 caption/entry/note | `checked_by_role` | **已做** `_text_qa` |
+| T4 | lean kinds 默认含 `caption` | LEAN_REWRITE_KINDS | **已做** |
+| T5 | 交付门一键 | 非 ok 退出码 1 | **已做** `scripts/delivery_gate.py`（可挂 qa/check/key-report；zh check 仍可另跑） |
 
-本轮（Cursor）先落**思路文档与档位澄清**；T1–T5 实现另开或挂 #26/#32。
+Cursor 2026-11-17 实现。跟踪 #32 / #26。
 
 ---
 

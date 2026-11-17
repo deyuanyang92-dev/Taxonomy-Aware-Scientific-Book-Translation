@@ -27,11 +27,22 @@ def test_apply_lean_sets_kinds_and_risky():
     a = argparse.Namespace(lean=True, rewrite_kinds="", risky_only=False)
     te.apply_lean(a)
     assert a.rewrite_kinds == te.LEAN_REWRITE_KINDS
+    assert "caption" in a.rewrite_kinds.split(",")
+    assert "narrative" in a.rewrite_kinds
     assert a.risky_only is True
     # 已显式设置的不覆盖
     b = argparse.Namespace(lean=True, rewrite_kinds="description", risky_only=True)
     te.apply_lean(b)
     assert b.rewrite_kinds == "description"
+
+
+def test_guard_tier_release_requires_verify_and_chapters():
+    te.guard_tier("draft", verify_engine="none", chaptered=False)
+    te.guard_tier("release", verify_engine="codex-sol", chaptered=True)
+    with pytest.raises(SystemExit, match="verify"):
+        te.guard_tier("release", verify_engine="none", chaptered=True)
+    with pytest.raises(SystemExit, match="章"):
+        te.guard_tier("release", verify_engine="codex-sol", chaptered=False)
 
 
 def test_budget_stops(monkeypatch):

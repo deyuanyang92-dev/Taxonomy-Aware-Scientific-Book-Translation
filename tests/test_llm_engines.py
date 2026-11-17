@@ -130,9 +130,9 @@ def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
 
 
 def test_deepseek_window_closed_defers_instead_of_sleeping(monkeypatch):
-    # 用户 2026-11-17：只在折扣窗口 00:30–08:30 调用；窗口关闭时不要把进程挂 16 小时。
+    # 用户 2026-11-17：只在官方折扣时段调用；离折扣时段还远时不要把进程挂几个小时。
     monkeypatch.setattr(le, "seconds_to_offpeak", lambda *a, **k: 16 * 3600)
-    with pytest.raises(le.EngineError, match="00:30–08:30"):
+    with pytest.raises(le.EngineError, match="高峰时段"):
         le.call("deepseek-flash", "s", "u")
 
 
@@ -306,6 +306,6 @@ def test_deepseek_retry_stops_when_night_window_closes(monkeypatch):
     monkeypatch.setattr(le, "_retryable", lambda exc: True)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.setattr(le, "is_peak", lambda now=None: True)
-    with pytest.raises(le.EngineError, match="折扣窗口已结束"):
+    with pytest.raises(le.EngineError, match="高峰时段"):
         le._deepseek("deepseek-flash", "s", "u", 100, check_window=True)
     assert len(calls) == 1  # 第一次失败后不再重试

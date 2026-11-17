@@ -56,7 +56,7 @@
 | **lean（16% 改写）+ 并行 + risky-only check** | ≈0.5 min | ≈1 min | **约 10–15 min**（含 Google 初稿与 verify） |
 
 **硬限制（不修则 30 min 无解）：**
-1. DeepSeek 默认只在北京时间 00:30–08:30；窗外 `wait_offpeak` 会直接让墙钟爆炸（或 defer）。
+1. DeepSeek 只在官方折扣时段调用：工作日北京 09:00–12:00、14:00–18:00 为高峰；高峰时 `wait_offpeak` 会直接 defer（等待超过 30 分钟抛错），不挂进程。
 2. 「可发表定稿」≠「机器流水线完成」：critical 项进 `human_review_queue.csv`，人审不进 30 min 预算。
 3. 高并发会撞 API 限流；需背压与可恢复重试，不能盲加 `-j`。
 

@@ -39,6 +39,9 @@ BODY_FONT = "Garamond"
 # 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
 CJK_FONT = os.environ.get("BOOKLAYOUT_CJK_FONT", BODY_FONT)
 _CJK = re.compile(r"[⺀-鿿＀-￯]")
+# 中英共用的标点（点线、破折号、弯引号等）：只有所在段落含中文时才按东亚字体排。
+# 英文段落里给它们加 eastAsia hint，Word 会把 , . ( ) 显示成全角（yzz zh check）。
+_SHARED_PUNCT = re.compile(r"[…—―·×÷∶‘’“”]")
 TEXT_W = 134.0  # mm
 PAGE_W, PAGE_H = 170.0, 240.0
 
@@ -339,20 +342,25 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
         else:
             final.append((chunk, ital))
     pieces = final
+    para_text = ''.join(r.text for r in par.runs) + text
+    para_cjk = bool(_CJK.search(para_text))
     for chunk, ital in pieces:
-        run = par.add_run(chunk)
-        run.font.name = BODY_FONT
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
-        # Word needs the eastAsia hint on a run that actually contains CJK
-        # text (the translator's Chinese name); without it the run may fall
-        # back to the Latin font and render boxes/missing glyphs.
-        if _CJK.search(chunk):
-            run._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
-        run.font.size = Pt(size)
-        run.bold = bold
-        run.italic = ital
-        if color is not None:
-            run.font.color.rgb = color
+        # 点线「……」单独成 run：它需要 eastAsia hint，但同一 run 里的拉丁文
+        # 若也带 hint，Word 会把其中的 , . ( ) 显示成全角（yzz zh check 报
+        # 「英文段落标点被设为东亚字体」）。拆开后两边各按自己的字体排。
+        for sub in re.split(r'(…+)', chunk):
+            if not sub:
+                continue
+            run = par.add_run(sub)
+            run.font.name = BODY_FONT
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
+            if _CJK.search(sub) or (_SHARED_PUNCT.search(sub) and para_cjk):
+                run._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
+            run.font.size = Pt(size)
+            run.bold = bold
+            run.italic = ital
+            if color is not None:
+                run.font.color.rgb = color
 
 
 def setup(doc: Any):
@@ -395,12 +403,17 @@ def set_header_footer(sec, meta: BookMeta):
     hp = hdr.paragraphs[0]
     hp.text = ''
     hp.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT)
+    hdr_cjk = bool(_CJK.search(meta.running_left + meta.running_right))
     r = hp.add_run(meta.running_left)
     r.font.name, r.font.size, r.italic = BODY_FONT, Pt(8), True
     r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
+    if _CJK.search(meta.running_left) or (_SHARED_PUNCT.search(meta.running_left) and hdr_cjk):
+        r._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
     r2 = hp.add_run('\t' + meta.running_right)
     r2.font.name, r2.font.size, r2.italic = BODY_FONT, Pt(8), True
     r2._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
+    if _CJK.search(meta.running_right) or (_SHARED_PUNCT.search(meta.running_right) and hdr_cjk):
+        r2._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
     ft = sec.footer
     fp = ft.paragraphs[0]
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER

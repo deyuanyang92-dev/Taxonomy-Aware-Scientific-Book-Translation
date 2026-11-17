@@ -628,6 +628,8 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
             return chapter == meta.index_chapter
         return page.get("kind") == "index" or "index" in chapter.lower()
 
+    # 三审覆盖 body + caption/entry/note（交付复盘 P1：原先只扫 body≈25%）
+    TEXT_ROLES = frozenset({"body", "caption", "entry", "note"})
     blocks = [
         (p["page"], b)
         for p in data["pages"]
@@ -635,12 +637,18 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
         and not (skip_after is not None and p["page"] >= skip_after)
         and not is_index_page(p)
         for b in p["blocks"]
-        if b.get("role") == "body" and (b.get("translation") or "").strip()
+        if b.get("role") in TEXT_ROLES and (b.get("translation") or "").strip()
     ]
-    # Only repeated paragraphs on the same page are layout errors.  Boilerplate
-    # such as "Description compiled from ..." recurs legitimately across pages,
-    # so a book-wide duplicate count produces false positives.
-    normalized = [(page, re.sub(r"\s+", " ", b["translation"]).strip()) for page, b in blocks]
+    body_blocks = [(p, b) for p, b in blocks if b.get("role") == "body"]
+    by_role: dict[str, int] = {}
+    for _, b in blocks:
+        by_role[b.get("role") or "?"] = by_role.get(b.get("role") or "?", 0) + 1
+    # Only repeated body paragraphs on the same page are layout errors.
+    # Captions/entries often legitimately share short wording across a page.
+    normalized = [
+        (page, re.sub(r"\s+", " ", b["translation"]).strip())
+        for page, b in body_blocks
+    ]
     counts = Counter((page, t) for page, t in normalized if len(t) >= 80)
     duplicates = [
         {"page": page, "count": count, "text": text[:160]}
@@ -650,8 +658,12 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
     for page, block in blocks:
         source = re.sub(r"\s+", " ", block.get("text") or "").strip()
         translation = re.sub(r"\s+", " ", block.get("translation") or "").strip()
-        if len(source) >= 120 and len(translation) < 0.25 * len(source):
+        role = block.get("role") or "body"
+        # Captions/notes are shorter; lower the source floor so they are checked.
+        floor = 40 if role in {"caption", "note"} else 120
+        if len(source) >= floor and len(translation) < 0.25 * len(source):
             short.append({"page": page, "block_id": block.get("block_id"),
+                          "role": role,
                           "source_chars": len(source), "translation_chars": len(translation)})
     page_blocks: dict[int, list[dict]] = {}
     for page in data["pages"]:
@@ -690,7 +702,7 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
     truncated = [
         {"page": page, "block_id": block.get("block_id"),
          "ending": block["translation"].strip()[-40:]}
-        for page, block in blocks
+        for page, block in body_blocks
         if split_mid_sentence(page, block)
     ]
     # A citation or name entry must not absorb a morphological description.
@@ -704,7 +716,7 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
         r"Chaetae|Setae|Mandibles?|Maxillae|Antennae|Species|Distribution|Biology)\b"
     )
     key_in_body = []
-    for page, block in blocks:
+    for page, block in body_blocks:
         source = re.sub(r"\s+", " ", block.get("text") or "")
         translation = re.sub(r"\s+", " ", block.get("translation") or "").strip()
         if re.search(r"…{4,}|\.{8,}", translation) or (
@@ -720,6 +732,7 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
             continue
         for block in page["blocks"]:
             role = block.get("role")
+            # caption/note 本应含形态词；可疑的是 citation/entry 吞进了描述段
             if role not in {"citation", "entry"}:
                 continue
             text = re.sub(r"\s+", " ", block.get("translation") or "").strip()
@@ -843,7 +856,10 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
         "body_leading_punctuation": leading_punct,
         "function_word_pairs": function_word_pairs,
         "spanish_residue": spanish_residue,
-        "checked_body_blocks": len(blocks),
+        "checked_body_blocks": len(body_blocks),
+        "checked_text_blocks": len(blocks),
+        "checked_by_role": by_role,
+        "text_roles": sorted(TEXT_ROLES),
     }
 
 

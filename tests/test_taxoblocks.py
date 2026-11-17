@@ -55,3 +55,13 @@ def test_risk_term_whole_word():
     assert risk("mit 32 Borstensegmenten", "with 32 setigers", terms=gl) == []
     assert risk("die hinteren Parapodien", "the posterior parapodia", terms=gl) == []
     assert risk("13. von hinten", "13th from behind", terms=gl) == ["term"]
+
+
+def test_junk_keeps_japanese_text_and_taxon_heading():
+    # 2026-11-17：日文正文按拉丁字母比例判 junk，整段留原文，英/中稿出现日文。
+    from transqa.taxoblocks import kind
+
+    assert kind("形態―前口葉は二葉に分かれ，各葉の先端が明瞭な頭頂になっている", "ja") != "junk"
+    assert kind("ウロコムシ科", "ja") != "junk"
+    assert kind("Polynoidae", "ja") != "junk"
+    assert kind("bt If) 7 bad m CO LIU SA", "ja") == "junk"

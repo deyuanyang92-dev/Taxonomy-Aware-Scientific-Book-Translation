@@ -72,8 +72,18 @@ python3 scripts/fast_book.py estimate --pages 40 --lean -j 4
 | #4 / #29 / #31 Google | 0-token 初译稳定性；与 LLM 省钱互补 |
 | #20 / #30 斜体 | 继续走 taxoformat 脚本（0 token） |
 
-## 未在本轮做完的（仍按计划）
+## T1–T5 缺口（已补，同日）
 
-- 名称库/ANNiKEY 自动拼进 glossary 的一键 CLI（可先手工 `--glossary`）
-- 动物志 registered→text_done 批量入库（资料侧）
-- PR-E 抽检闸数值基线（issue #26）
+| ID | 命令/位置 |
+|---|---|
+| T1 | `--tier draft\|release` + `--chaptered`；`token_economy.guard_tier` |
+| T2 | `python3 scripts/chapter_manifest.py WORK --write` |
+| T3 | `booklayout` `_text_qa` 含 caption/entry/note + `checked_by_role` |
+| T4 | Lean 默认 `narrative,remarks,caption` |
+| T5 | `python3 scripts/delivery_gate.py WORK --tier release [--qa|--check|--key-report]` |
+
+## 仍待（非本缺口）
+
+- 名称库/ANNiKEY 自动拼进 glossary 的一键 CLI
+- 动物志 registered→text_done 批量入库
+- PR-E 抽检闸数值基线（issue #26）；`delivery_gate` 尚未内嵌 `zh check`

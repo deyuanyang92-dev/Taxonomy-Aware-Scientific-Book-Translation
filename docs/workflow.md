@@ -41,6 +41,7 @@
 
 ### 2.0 思路定案（Cursor 2026-11-17）：分章 · 两档质控 · 分体裁文风
 
+**分类学如何更准更高效（操作口诀）：** [`docs/TAXONOMY_TRANSLATION_PLAYBOOK.md`](TAXONOMY_TRANSLATION_PLAYBOOK.md)。  
 对照主流后的定案见 [`docs/plans/2026-11-17-translation-approach-optimization.md`](plans/2026-11-17-translation-approach-optimization.md)：
 
 1. **分章**：交付与并行以章为单元（`fast_book chapters` / `run_batches --chapters`）；样章通过再铺开。

@@ -174,7 +174,7 @@ booklayout qa \
 |---|---|---|
 | 一审 结构 | 未译内容块、缺裁剪图、图注无图号、超长标题、缩写表混入正文、全大写正文 | `untranslated_content_blocks > 0` |
 | 二审 版式 | PDF 空白页、图注贴图、回退字体、两端对齐造成的超宽词距、文字越出版心、目录/索引页码指错页、检索表目标未右对齐/目标被拆行、图注把一个词拆到下一行 | `wide_spacing`、`overflow_words`、`wrong_page_refs`、`key_layout`、`caption_word_breaks` |
-| 三审 文字 | 同页重复段落、引文/条目块混入描述性长文、译文过短、句末截断、附录条目缺源文年份、西班牙语状态语残留 | `role_suspects`、`truncated_endings`、`entry_year_missing`、`spanish_residue` |
+| 三审 文字 | 同页重复 **body** 段、引文/条目吞描述、**caption/entry/note/body** 译文过短、句末截断、缺年份、西语残留；报告含 `checked_by_role` | `role_suspects`、`short_translations`、`truncated_endings`、`entry_year_missing`、`spanish_residue` |
 
 三校对应三次确定性关口：一校对齐数据（`normalize` 报告逐条复核）；二校 PDF 版式（`qa` 二审）；三校文字（`qa` 三审）。任一审不为 `ok`，先修数据再重排，不直接改 DOCX/PDF。
 

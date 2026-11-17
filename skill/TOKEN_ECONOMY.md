@@ -7,11 +7,18 @@
 
 | 档 | 用途 | verify | 分章 | 可否称「交付」 |
 |---|---|---|---|---|
-| **试译/草稿**（CLI 默认） | 测流程、量产初稿、省钱 | `none`；质控脚本为主 | 建议 `fast_book chapters` | **否** |
-| **交付/出版** | 正式出书 | **必须异模型**（≠ 译者） | **强制按章** | 须过三审三校映射闸 |
+| **试译/草稿**（CLI 默认 `--tier draft`） | 测流程、量产初稿、省钱 | `none`；质控脚本为主 | 建议 `fast_book chapters` | **否** |
+| **交付/出版**（`--tier release`） | 正式出书 | **必须异模型**（≠ 译者） | **强制按章**（`--chaptered` 或 `chapters`） | 须过 `delivery_gate` + 排版闸 |
 
 思路全文：`docs/plans/2026-11-17-translation-approach-optimization.md`。  
-交付档命令示例：`--verify-engine codex-sol`（或另一 flash 以外模型）+ 叙述 `polish` + `booklayout qa`。
+Lean 默认 kinds 含 `caption`。交付示例：
+
+```bash
+python3 scripts/fast_book.py chapters CHDIR -o WORK --tier release \
+  --verify-engine codex-sol --engine deepseek-flash -j 4
+python3 scripts/delivery_gate.py WORK --tier release \
+  --qa final/qa.json --check final/check.json --key-report final/key_report.json
+```
 
 ## 1. 铁律（试译档默认）
 

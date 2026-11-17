@@ -1549,6 +1549,24 @@ def test_text_qa_flags_untranslated_appendix_status_phrase() -> None:
     assert report["spanish_residue"][0]["phrase"] == "grafía posterior incorrecta"
 
 
+def test_text_qa_checks_caption_and_entry_short_translations() -> None:
+    """三审须覆盖 caption/entry，不只 body（交付复盘 P1）。"""
+    long_src = "Figura de la especie mostrando el prostomio y los parapodios " * 3
+    data = {"pages": [{"page": 1, "blocks": [
+        {"block_id": "c0", "role": "caption", "text": long_src, "translation": "Fig. 1."},
+        {"block_id": "e0", "role": "entry",
+         "text": "X" * 130,
+         "translation": "short"},
+        {"block_id": "b0", "role": "body", "text": "ok", "translation": "Body elongate."},
+    ]}]}
+    report = _text_qa(data)
+    roles = {item["role"] for item in report["short_translations"]}
+    assert "caption" in roles
+    assert "entry" in roles
+    assert report["checked_by_role"].get("caption", 0) >= 1
+    assert report["checked_text_blocks"] >= 3
+
+
 def test_text_qa_flags_entry_that_loses_a_source_year() -> None:
     data = {"pages": [{"page": 1, "kind": "appendix", "blocks": [
         {"block_id": "b0", "role": "entry",
@@ -1798,3 +1816,36 @@ def test_key_breaks_checks_page_with_single_leader_line() -> None:
     breaks, defects = _key_breaks_from_lines(lines, page_no=308)
     assert defects and defects[0]["page"] == 308
     assert any(sig.endswith("\tpraxillura (p. 335)") for sig in breaks)
+
+
+def test_dot_leader_gets_own_run_with_eastasia_hint() -> None:
+    # 点线「……」要和拉丁文分开，hint 只在含中文的段落里加：
+    # 英文段落带了 hint，Word 把拉丁标点显示成全角（2007 中文版检索表，2026-11-17）。
+    from booklayout.builder import add_runs
+
+    def runs_of(text: str) -> list[tuple[str, str | None]]:
+        doc = Document()
+        add_runs(doc.add_paragraph(), text, 10)
+        return [(r.text, r._element.rPr.rFonts.get(qn("w:hint")))
+                for r in doc.paragraphs[0].runs]
+
+    en = runs_of("Labiosthenolepis ……24")
+    assert ("Labiosthenolepis ", None) in en
+    assert ("……", None) in en
+    assert ("24", None) in en
+
+    zh = runs_of("第4疣足……12")
+    assert ("……", "eastAsia") in zh
+
+
+def test_running_header_chinese_gets_eastasia_hint() -> None:
+    # 页眉「环节动物 多毛类」是 CJK run，缺 hint 时 Word 会回落字体。
+    from booklayout.builder import BookMeta, set_header_footer
+
+    doc = Document()
+    set_header_footer(doc.sections[0],
+                      BookMeta(running_left="环节动物 多毛类", running_right="2007"))
+    runs = [(r.text, r._element.rPr.rFonts.get(qn("w:hint")))
+            for r in doc.sections[0].header.paragraphs[0].runs if r.text]
+    assert ("环节动物 多毛类", "eastAsia") in runs
+    assert ("\t2007", None) in runs

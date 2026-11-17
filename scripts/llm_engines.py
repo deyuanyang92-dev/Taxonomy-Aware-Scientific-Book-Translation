@@ -48,8 +48,8 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
 DEEPSEEK_ENV_FILE = "/mnt/p/纤毛虫-环节动物定殖/claude-deepseek.sh"
 MAX_TOKENS = 64000  # 绝对上限；日常请用 profile= / out_budget()，不要直接传 64000
 RETRIES = 3
-# 窗口外最多等半小时；更长说明整个窗口已关闭，直接抛错让任务延期，
-# 不要把进程挂 16 小时（用户 2026-11-17：只在折扣期 00:30–08:30 调用）。
+# 高峰前最多等半小时；更长说明离折扣时段还远，直接抛错让任务延期，
+# 不要把进程挂几个小时（用户 2026-11-17：只在官方折扣时段调用）。
 MAX_OFFPEAK_WAIT = 1800
 CLI_TIMEOUT = 1800
 USAGE_HEADER = "时间\tengine\t标签\t输入token\t输出token\t缓存读token\t耗时秒\n"
@@ -102,7 +102,7 @@ def _deepseek(engine: str, system: str, user: str, max_tokens: int,
     sys_arg: str | list[dict[str, Any]] = system_blocks(system, cache=True)
     for k in range(RETRIES):
         if check_window and k and is_peak():  # 重试前再查一次：夜间窗口已过就停，任务延期而不是越界调用
-            raise EngineError("DeepSeek 折扣窗口已结束（北京时间 08:30），不再重试；任务延期到下一个 00:30–08:30 窗口")
+            raise EngineError("DeepSeek 已进入高峰时段，不再重试；任务延期到下一个折扣时段")
         try:
             # 默认关闭 thinking：2026-11-14 实测，关闭后审校同样抓到误译，输出 token 约为开启时的 1/17；
             # budget_tokens 不被 DeepSeek 遵守（照样长思考且可能无正文）。确需深思时设 YZZ_DEEPSEEK_THINKING=1。
@@ -251,7 +251,7 @@ def call(engine: str, system: str, user: str, *, max_tokens: int | None = None,
             wait_s = seconds_to_offpeak()
             if wait_s > MAX_OFFPEAK_WAIT:
                 raise EngineError(
-                    "DeepSeek 折扣窗口已关闭（仅北京时间 00:30–08:30 可调用）；任务延期到下一个窗口")
+                    "DeepSeek 高峰时段（工作日北京时间 09:00–12:00、14:00–18:00）不调用；任务延期到下一个折扣时段")
             wait_offpeak()
         t0 = time.time()
         guard_window = offpeak and not os.environ.get("LLM_SKIP_OFFPEAK")
