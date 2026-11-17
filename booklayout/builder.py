@@ -27,7 +27,13 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from docx.image.image import Image as DocxImage
 
-from booklayout.english import is_english_word, worms_genera
+from booklayout.english import (
+    FAMILY_RUN,
+    is_english_word,
+    is_family_group,
+    worms_genera,
+    worms_higher_taxa,
+)
 
 BODY_FONT = "Garamond"
 # 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
@@ -180,9 +186,10 @@ def build_genus_set(data: dict) -> set[str]:
                 texts.append(t)
                 # 「El género Elicodasia Laubier y Ramos, 1973」「genus Apomatus」
                 # 这类阶元标签是可靠的属名来源，标签常在句中出现，不能只查段首。
+                # Familia/Subfamilia 不能算：科名和亚科名正体，不是属名。
                 for m in re.finditer(
-                        r'\b(?:[Ff]amilia|[Ss]ubfamilia|[Gg]énero|[Gg]enero|'
-                        r'[Ss]ubgénero|[Ss]ubgenero|[Gg]enus|[Ss]ubgenus)'
+                        r'\b(?:[Gg]énero|[Gg]enero|[Ss]ubgénero|[Ss]ubgenero|'
+                        r'[Gg]enus|[Ss]ubgenus)'
                         r'\s+([A-Z][a-z]{2,})', t):
                     names.add(m.group(1))
     words = set(re.findall(r'\b[A-Z][a-z]{2,}\b', '\n'.join(texts)))
@@ -203,6 +210,11 @@ def build_genus_set(data: dict) -> set[str]:
                 if second not in FUNCTION_WORDS and not is_english_word(second) \
                         and second not in SPANISH_STOP:
                     names.add(mm.group(1))
+    # 科级及以上阶元正体（ICZN 惯例，用户 2026-11-17 定）：译者把科名也标了
+    # 星号（原书科名就排斜体），阶元标签补进来的也可能带科名，全部移出属名集合。
+    higher = worms_higher_taxa()
+    names = {n for n in names
+             if n not in higher and not (is_family_group(n) and n not in worms)}
     names -= {'The', 'This', 'These', 'Their', 'With', 'From', 'Only', 'Both', 'Each', 'Body', 'Tubes'}
     return names
 
@@ -226,6 +238,41 @@ def _markdown_chunks(text: str) -> list[tuple[str, bool]]:
     return [(c.replace('*', ''), it) for c, it in chunks if c.replace('*', '')]
 
 
+_HIGHER_RX: re.Pattern[str] | None = None
+
+
+def _higher_rx() -> re.Pattern[str]:
+    """科级词尾 + WoRMS 阶元名（目、纲、门），用于把阶元名移出斜体。"""
+    global _HIGHER_RX
+    if _HIGHER_RX is None:
+        names = sorted(worms_higher_taxa(), key=len, reverse=True)
+        pattern = FAMILY_RUN.pattern
+        if names:
+            pattern += r"|\b(?:" + "|".join(map(re.escape, names)) + r")\b"
+        _HIGHER_RX = re.compile(pattern)
+    return _HIGHER_RX
+
+
+def _family_roman(chunk: str) -> list[tuple[str, bool]]:
+    """Split an italic chunk so ICZN family-group names come out roman.
+
+    The Spanish original prints family names in italic (Vol. 45 author list,
+    ITC Garamond Light Italic) and the translation marks them with asterisks
+    too.  The English edition follows the zoological convention instead:
+    only genus and species-group names are italic (user 2026-11-17).
+    """
+    pieces: list[tuple[str, bool]] = []
+    pos = 0
+    for m in _higher_rx().finditer(chunk):
+        if m.start() > pos:
+            pieces.append((chunk[pos:m.start()], True))
+        pieces.append((m.group(0), False))
+        pos = m.end()
+    if pos < len(chunk):
+        pieces.append((chunk[pos:], True))
+    return pieces
+
+
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None,
              invert: bool = False):
@@ -239,6 +286,10 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
     pieces: list[tuple[str, bool]] = []
     for chunk, md_italic in _markdown_chunks(text):
         if md_italic:
+            # 译者照原书把科名也标了星号；科级及以上阶元正体，移出斜体。
+            if _higher_rx().search(chunk):
+                pieces.extend(_family_roman(chunk))
+                continue
             # 译者有时把连词也圈进星号（「*Audouin and* Milne Edwards」），
             # 连词移到斜体之外；整条书名/刊名仍保持斜体。
             m = re.match(r'^(.*\S)\s+(and|y|e|et|or|&)$', chunk)
@@ -280,6 +331,14 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
             pieces.append((chunk[pos:], italic))
     if not pieces:
         pieces = [(text.replace('*', ''), italic)]
+    # 带斜体底的段落（作者名单、题记、索引引言）里，科级及以上阶元同样正体。
+    final: list[tuple[str, bool]] = []
+    for chunk, ital in pieces:
+        if ital and _higher_rx().search(chunk):
+            final.extend(_family_roman(chunk))
+        else:
+            final.append((chunk, ital))
+    pieces = final
     for chunk, ital in pieces:
         run = par.add_run(chunk)
         run.font.name = BODY_FONT

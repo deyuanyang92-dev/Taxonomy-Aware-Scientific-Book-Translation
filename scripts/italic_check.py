@@ -18,7 +18,7 @@ References 节）建立「年份 → 姓氏」「姓氏集合」索引；斜体�
   italic.mixed         学名夹英语虚词（*Torrea and*）
   caption.allitalic    整条图注都在斜体里（应正体）
   caption.name_roman   图注里的学名被排成正体（应斜体），仅 --caption-names italic 时报
-  italic.higher_taxon  科名斜体：原书作者名单里本来就斜体，仅提示
+  italic.higher_taxon  科级及以上阶元被排成斜体（应正体：只有属名、种名斜体）
   italic.other         书名、强调等，仅提示
 
 用法：
@@ -48,17 +48,22 @@ YEAR = re.compile(r"\b(?:1[89]|20)\d{2}[a-z]?\b")
 RANK = re.compile(r"\b(?:spp?|cf\.|aff\.|var\.|subsp\.|f\.|n\.\s*sp\.|gen\.\s*n\.|indet\.)")
 ABBR = re.compile(r"^[A-Z]\.\s+[a-z][a-z-]+")
 FAMILY = re.compile(r"(?:idae|inae|ini|oidea)$")
+FAMILY_RUN = re.compile(
+    r"\b[A-Z][a-z]{2,}(?:idae|inae|ini|oidea)"
+    r"(?:\s*(?:,|and|y|e|et|&)\s*[A-Z][a-z]{2,}(?:idae|inae|ini|oidea))*\b")
 FUNCTION_WORD = {"and", "or", "of", "the", "in", "with", "from", "between", "to",
                  "for", "on", "by", "as", "y", "e", "与", "和", "及"}
 CONNECTOR = {"and", "&", "et", "al.", "y", "e", "与", "和", "及", ","}
 
 LEVELS = {"italic.cjk": "critical", "citation.italic": "major", "italic.author": "major",
           "caption.allitalic": "major", "caption.name_roman": "major",
-          "italic.mixed": "major", "italic.higher_taxon": "info",
+          "italic.mixed": "major", "italic.higher_taxon": "major",
           "italic.other": "info"}
 BAD = {k for k, v in LEVELS.items() if v in ("critical", "major")}
 # 可自动去斜体的类别：去斜体后图注/正文的学名仍是斜体，只去掉非学名部分。
-FIXABLE = {"citation.italic", "italic.author", "italic.mixed", "italic.cjk"}
+# 科级及以上阶元（-idae/-inae/-ini/-oidea）一律正体，同样可自动更正。
+FIXABLE = {"citation.italic", "italic.author", "italic.mixed", "italic.cjk",
+           "italic.higher_taxon"}
 
 
 @dataclass
@@ -316,6 +321,20 @@ def _split_names(text: str, lex: tf.Lexicon) -> list[tuple[str, bool]]:
     return pieces
 
 
+def _split_higher(text: str) -> list[tuple[str, bool]]:
+    """科级及以上阶元改正体，同一 run 里其余内容保持斜体。"""
+    pieces: list[tuple[str, bool]] = []
+    pos = 0
+    for m in FAMILY_RUN.finditer(text):
+        if m.start() > pos:
+            pieces.append((text[pos:m.start()], True))
+        pieces.append((m.group(0), False))
+        pos = m.end()
+    if pos < len(text):
+        pieces.append((text[pos:], True))
+    return pieces
+
+
 def _replace_run(par, run, pieces: list[tuple[str, bool]]) -> None:
     prev = run._element
     for text, italic in pieces:
@@ -363,7 +382,9 @@ def fix_docx(path: Path, out: Path, caption_names: str = "italic",
             kind = classify(text, lex, False, caption_names, refs)
             if kind in FIXABLE:
                 findings.append(Finding(kind, f"{out.name}:p{i}", text.strip()[:80]))
-                _replace_run(par, run, _split_names(text, lex))
+                fixed = (_split_higher(text) if kind == "italic.higher_taxon"
+                         else _split_names(text, lex))
+                _replace_run(par, run, fixed)
     doc.save(str(out))
     return findings
 

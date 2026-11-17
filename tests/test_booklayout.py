@@ -1720,6 +1720,45 @@ def test_genus_set_skips_english_second_word_and_authors() -> None:
     assert "Rouse" not in names
 
 
+def test_genus_set_excludes_family_group_names() -> None:
+    # 科名正体（ICZN 惯例）：阶元标签和译者星号都不能把科名带进属名集合。
+    data = {"pages": [{"blocks": [
+        {"text": "Familia Nereididae. El género Nereis."},
+        {"translation": "The family *Chrysopetalidae* is small."},
+    ]}]}
+    names = build_genus_set(data)
+    assert "Nereis" in names
+    assert "Nereididae" not in names
+    assert "Chrysopetalidae" not in names
+
+
+def test_family_names_render_roman_in_body() -> None:
+    doc = Document()
+    p = para(doc, "Families Lumbrineridae, Oenonidae, and the genus Nereis.",
+             genera={"Nereis"})
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert ("Nereis", True) in runs
+    assert not any("Lumbrineridae" in t and it for t, it in runs)
+    assert not any("Oenonidae" in t and it for t, it in runs)
+
+
+def test_family_names_roman_inside_italic_paragraph() -> None:
+    # 作者名单页整体斜体（原书体例），科名仍须正体。
+    doc = Document()
+    p = para(doc, "Familias Lumbrineridae, Oenonidae", italic=True)
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert not any(it for t, it in runs if "Lumbrineridae" in t)
+
+
+def test_markdown_starred_family_names_render_roman() -> None:
+    # 译文照原书把科名标了星号：*Lumbrineridae, Oenonidae* 仍须正体。
+    doc = Document()
+    p = para(doc, "*Lumbrineridae, Oenonidae* are families.", genera=None)
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert not any(it for _, it in runs)
+    assert "".join(t for t, _ in runs).endswith("are families.")
+
+
 def _key_line(text: str, block: int, leader_pt: float | None = None) -> dict:
     leaders = []
     if leader_pt is not None:

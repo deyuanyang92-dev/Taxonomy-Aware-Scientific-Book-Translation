@@ -46,10 +46,31 @@ def test_cjk_italic_is_critical() -> None:
     assert ic.classify("*整条说明*", LEX, False, "roman") == "italic.cjk"
 
 
-def test_family_italic_is_informational() -> None:
-    # 原书「List of authors and texts」里科名本来就斜体（Vol. 45 p. 7），不算错。
+def test_family_italic_is_a_major_finding() -> None:
+    # 原书科名排斜体（Vol. 45 p. 7 作者名单），但英文版按动物命名法惯例：
+    # 只有属名、种名斜体，科级及以上阶元正体（用户 2026-11-17 定）。
     assert ic.classify("*Chrysopetalidae*", LEX, False, "roman") == "italic.higher_taxon"
-    assert ic.LEVELS["italic.higher_taxon"] == "info"
+    assert ic.LEVELS["italic.higher_taxon"] == "major"
+    assert "italic.higher_taxon" in ic.FIXABLE
+
+
+def test_family_italic_is_fixed_to_roman(tmp_path) -> None:
+    src, out = tmp_path / "in.docx", tmp_path / "out.docx"
+    doc = Document()
+    par = doc.add_paragraph()
+    par.add_run("Families ")
+    run = par.add_run("Lumbrineridae, Oenonidae")
+    run.italic = True
+    doc.save(str(src))
+    findings = ic.fix_docx(src, out)
+    assert findings and findings[0].kind == "italic.higher_taxon"
+    fixed = Document(str(out)).paragraphs[0]
+    assert all(not r.italic for r in fixed.runs if r.text.strip())
+
+
+def test_family_run_keeps_neighbouring_italic_text() -> None:
+    assert ic._split_higher("see Lumbrineridae now") == [
+        ("see ", True), ("Lumbrineridae", False), (" now", True)]
 
 
 def test_markdown_reports_author_italic() -> None:

@@ -59,7 +59,7 @@
 | `italic.mixed` | major | 学名后夹英语虚词（`*Torrea and*`、`*Miura and*`） |
 | `caption.allitalic` | major | 整条图注都在斜体里 |
 | `caption.name_roman` | major | 图注学名被排成正体（`--caption-names italic` 时报） |
-| `italic.higher_taxon` | info | 科名斜体（原书作者名单里本来就斜体，不阻断） |
+| `italic.higher_taxon` | major | 科级及以上阶元斜体（应正体；`--fix` 改正体） |
 | `italic.other` | info | 书名、强调等 |
 
 文献引证判别：`--aligned <aligned.json>` 用 `role=ref` 的块建「年份 → 姓氏」索引；不给时从 DOCX 的 References 节建。片段含年份且姓氏命中该年条目 → `citation.italic`（确证）；无年份但姓氏都在文献目录、且带 and/et al./与 等连词 → 按引证处理。
@@ -77,5 +77,8 @@ python3 scripts/italic_check.py pdf 原书.pdf --pages 20-40                  # 
 
 - 作者名斜体：`booklayout.build_genus_set` 把段首 `Rouse y Fauchald…` 当成“属名 + 种加词”，`add_runs` 又把连词 `and/y` 当种加词，整段排成斜体。修复：段首第二个词是虚词（and/or/of/y/de…）时不收为属名；`add_runs` 跳过虚词种加词。回归测试 `test_caption_roman_with_italic_names`、`tests/test_italic_check.py`。
 - 图注全斜体：`caption()` 照搬原书 `italic=True` 整段排。修复：改成正体，学名由属名检测/`*…*` 标成斜体。
+- 科名斜体（2026-11-17 第二轮，Vol. 45 成品 707 处）：原书科名本来就斜体（Vol. 45 p. 7 作者名单，ITC Garamond Light Italic），译文照抄。`build_genus_set` 又把 `Familia/Subfamilia` 后的名字和译者的星号一起收进属名集合，且 `load_worms_genera` 把 `Syllidae incertae sedis` 这类多词阶元名的首词当属名。审计脚本虽报出，但级别定为 `info`，交付闸口不阻断，等于没查。
+  修复：属名集合只从 Genus/Subgenus 和种级名称首词取；`FAMILY_RUN`（-idae/-inae/-ini/-oidea）与 WoRMS 阶元名从属名集合和斜体段落中一律移出，作者名单这类斜体底段落里的科名也改正体；`italic.higher_taxon` 升为 `major` 并加入 `--fix`。
+  回归测试：`test_genus_set_excludes_family_group_names`、`test_family_names_render_roman_in_body`、`test_markdown_starred_family_names_render_roman`、`test_family_names_roman_inside_italic_paragraph`、`test_family_italic_is_a_major_finding`、`test_family_italic_is_fixed_to_roman`。缺的关口见 GitHub issues #33（gate 纳入斜体审计）与 #34（原文-译文逐 token 排版比对）。
 - 属名后接英语词被整段斜体（2026-11-17 第二轮）：旧 `add_runs` 只排除虚词和 sp./cf. 等缩写，`Lopadorrhynchus comprises the`、`Onuphis deposited in` 这类“属名 + 英语词”被当成“属名 + 种加词”整段斜体；`build_genus_set` 同时把 `Material examined` 这类段首普通词语收成属名。修复：新增 `booklayout/english.py`，用系统 hunspell 词典（`/usr/share/hunspell/en_US.dic`，与 `scripts/taxoformat.py` 同源）判定英语词；种加词是英语词时只排属名斜体，`build_genus_set` 也跳过英语词。回归测试 `test_body_genus_followed_by_english_word_italicises_genus_only`、`test_genus_set_skips_english_second_word_and_authors`。
 - 图注中单独出现的属名不斜体（2026-11-17 第二轮）：旧正则要求“属名 + 小写词”才斜体，`Cenogenus sp.`、`Apomatus Philippi, 1844`、`Apomatus (fig. 82A)` 里的属名都没排斜体。修复：属名单独出现也排斜体（分类学惯例），后接 sp./spp./cf./aff. 时缩写保持正体。回归测试 `test_caption_italicises_bare_genus_but_not_sp`、`test_caption_italicises_genus_before_author`。

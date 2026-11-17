@@ -9,6 +9,7 @@ word list is the system hunspell dictionary, the same source that
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 ENGLISH_DICT = Path(os.environ.get("BOOKLAYOUT_ENGLISH_DICT",
@@ -71,6 +72,78 @@ def is_english_word(word: str, english: frozenset[str] | None = None) -> bool:
 GENERA_DB = Path(os.environ.get("BOOKLAYOUT_GENERA_DB",
                                 "/root/.specimen_inventory/worms_cache.sqlite"))
 
+# 动物命名法规（ICZN 29.2）的科级名称词尾：总科 -oidea、科 -idae、亚科
+# -inae、族 -ini。科级以上阶元（目、纲、门）同样正体，由 WoRMS 的阶元记录
+# 提供名称，不靠词尾猜。
+FAMILY_GROUP = re.compile(r"(?:idae|inae|ini|oidea)$")
+FAMILY_WORD = re.compile(r"\b[A-Z][a-z]{2,}(?:idae|inae|ini|oidea)\b")
+# 「Lumbrineridae, Oenonidae」「Syllidae and Nereididae」整串都正体。
+FAMILY_RUN = re.compile(
+    r"\b[A-Z][a-z]{2,}(?:idae|inae|ini|oidea)"
+    r"(?:\s*(?:,|and|y|e|et|&)\s*[A-Z][a-z]{2,}(?:idae|inae|ini|oidea))*\b")
+HIGHER_RANKS = ("Superfamily", "Family", "Subfamily", "Tribe", "Subtribe",
+                "Superorder", "Order", "Suborder", "Infraorder",
+                "Superclass", "Class", "Subclass", "Phylum", "Subphylum",
+                "Kingdom", "Subkingdom")
+
+
+def is_family_group(name: str) -> bool:
+    """True for an ICZN family-group name (family, subfamily, tribe, superfamily)."""
+    return bool(FAMILY_GROUP.search(name.strip()))
+
+
+def family_group_words(text: str) -> list[str]:
+    """Capitalised family-group names found in ``text``."""
+    return FAMILY_WORD.findall(text)
+
+
+def load_worms_higher_taxa(path: Path | None = None) -> frozenset[str]:
+    """Family-group and higher taxon names of Annelida in the local WoRMS cache.
+
+    These are printed in roman; only genus and species-group names are italic
+    (zoological convention, user 2026-11-17).  The suffix rule covers names the
+    cache lacks; the rank query covers order/class names that have no shared
+    ending.
+    """
+    import sqlite3
+
+    path = GENERA_DB if path is None else path
+    if path is None or not path.exists():
+        return frozenset()
+    names: set[str] = set()
+    placeholders = ",".join("?" * len(HIGHER_RANKS))
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        rows = con.execute(
+            "select valid_name from worms_taxa "
+            f"where phylum='Annelida' and rank in ({placeholders}) "
+            "and valid_name is not null",
+            HIGHER_RANKS,
+        ).fetchall()
+    except sqlite3.Error:
+        return frozenset()
+    finally:
+        try:
+            con.close()
+        except (sqlite3.Error, UnboundLocalError):
+            pass
+    for (name,) in rows:
+        name = (name or "").strip()
+        if name and " " not in name:
+            names.add(name)
+    return frozenset(names)
+
+
+_HIGHER: frozenset[str] | None = None
+
+
+def worms_higher_taxa() -> frozenset[str]:
+    """Cached higher-taxon list; empty when the cache is not installed."""
+    global _HIGHER
+    if _HIGHER is None:
+        _HIGHER = load_worms_higher_taxa()
+    return _HIGHER
+
 
 def load_worms_genera(path: Path | None = None) -> frozenset[str]:
     """Genus names of Annelida in the local WoRMS cache; empty when absent.
@@ -105,7 +178,9 @@ def load_worms_genera(path: Path | None = None) -> frozenset[str]:
             continue
         if rank in ("Genus", "Subgenus"):
             genera.add(name)
-        elif " " in name:
+        elif rank in ("Species", "Subspecies", "Variety", "Forma") and " " in name:
+            # 只有种级名称的首词才是属名。``Syllidae incertae sedis``（Subfamily）
+            # 的首词是科名，按首词一律取属会把 Syllidae 收进属名集合、排成斜体。
             genera.add(name.split()[0])
     return frozenset(genera)
 
