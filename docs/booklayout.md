@@ -208,3 +208,7 @@ booklayout qa \
 - `0`：成功，或 `check` 无问题。
 - `1`：`check` 发现问题。
 - 其他非零：参数、输入文件、LibreOffice 转换失败。
+
+## 交付复盘（2026-11-17）
+
+三卷交付后的根因复盘见 `docs/research/2026-11-17/booklayout-delivery-postmortem.md`。结论：`gate.json` 只覆盖 qa/check/key-report；三审文本检查仅针对 `role == "body"`（约 25% 的块），不含 caption/entry/citation 译文，也不含 `zh check`。在 gate 扩展与覆盖率闸口落地前，`ok: true` 不能当作“全书无翻译错误”的证据。
