@@ -75,7 +75,7 @@ JSON 字段（全部可省略）：
 | `index_intro_prefix` | 索引引言起始文字 |
 | `skip_headings` | 章节首页要丢弃的标题前缀（如重复标题） |
 | `entry_prefixes` | 附录条目开头要删的正则列表 |
-| `index_entry_fixes` | `[[源索引文字, 改正文字], ...]`：原书索引的排印错误（错属名、漏字母），改正后才按页核实 |
+| `index_entry_fixes` | `[[源索引文字, 改正文字, 依据], ...]`：原书索引的排印错误（错属名、漏字母）。改正后按页核实；被改条目在索引里加 †，书末自动生成 `CORRECTIONS TO THE ORIGINAL` 页，第三项依据可省略 |
 
 示例见 `tests/test_booklayout.py`；Vol. 48 的完整元数据在工程目录，不随仓库分发。
 

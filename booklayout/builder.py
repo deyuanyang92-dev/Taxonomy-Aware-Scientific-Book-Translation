@@ -12,6 +12,7 @@ aligned JSON and book metadata. Marked DeepSeek-optimized for later review.
 from __future__ import annotations
 
 import json
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -26,10 +27,30 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from docx.image.image import Image as DocxImage
 
+from booklayout.english import is_english_word, worms_genera
+
 BODY_FONT = "Garamond"
+# 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
+CJK_FONT = os.environ.get("BOOKLAYOUT_CJK_FONT", BODY_FONT)
 _CJK = re.compile(r"[⺀-鿿＀-￯]")
 TEXT_W = 134.0  # mm
 PAGE_W, PAGE_H = 170.0, 240.0
+
+# 属名后跟这些词时不是种加词：「Rouse y Fauchald」「Torrea and」被整段排成斜体，
+# 根因是 build_genus_set 把段首作者名当成属名、add_runs 又把连词当种加词。
+FUNCTION_WORDS = {"and", "or", "of", "the", "in", "with", "from", "between", "to",
+                  "for", "on", "by", "as", "y", "e", "de", "del", "en", "con",
+                  "et", "al", "与", "和", "及"}
+
+# 属名后跟这些词时不是种加词，只把属名排斜体（sp. 正体是通行做法）。
+SKIP_EPITHETS = {"sp", "spp", "cf", "aff", "indet", "nov", "n"}
+
+# 原文是西班牙文；全段扫描「大写词 + 小写词」时用它挡掉 Los individuos 这类词组。
+SPANISH_STOP = {"los", "las", "el", "la", "un", "una", "unos", "unas", "del", "al",
+                "para", "por", "según", "entre", "sobre", "con", "sin", "sus", "su",
+                "este", "esta", "estos", "estas", "como", "donde", "cuando", "más",
+                "pero", "otra", "otro", "fig", "figs", "tabla", "lámina", "láminas",
+                "clave", "género", "especie", "especies", "material", "ejemplares"}
 
 # Dot leaders reach the builder in three forms: the source's spaced dots
 # (". . . ."), a run of periods ("......"), and the ellipsis that the key
@@ -95,8 +116,15 @@ class BookMeta:
     entry_prefixes: list[str] = field(default_factory=list)
     # Source indexes contain occasional misprints (wrong genus, missing letter).
     # Each pair corrects the printed entry; readers must be able to find the
-    # name that the cited pages actually carry.
-    index_entry_fixes: list[tuple[str, str]] = field(default_factory=list)
+    # name that the cited pages actually carry.  An optional third element
+    # records the evidence printed in the end-of-book correction list.
+    index_entry_fixes: list[tuple[str, ...]] = field(default_factory=list)
+    corrections_title: str = "CORRECTIONS TO THE ORIGINAL"
+    corrections_intro: str = (
+        "The source index contains a few misprints. Corrected entries are "
+        "marked † in the index; each correction and the evidence for it "
+        "are listed below."
+    )
 
     @classmethod
     def from_json(cls, path: Path) -> "BookMeta":
@@ -135,16 +163,46 @@ def load_aligned(path: Path) -> dict:
 
 
 def build_genus_set(data: dict) -> set[str]:
+    """属名集合：WoRMS Annelida 名单与书内实际出现的词取交集，再加译者的星号标记。
+
+    只用段首/全书「大写词 + 小写词」会漏掉正文里只出现一次的属名
+    （Notomastus latericeus），而全段扫描不加过滤又会收进 Los、Abundantes
+    这类西语普通词。WoRMS 缓存（与 scripts/taxoformat.py 同一个库）给出可信
+    属名，书内出现过的才保留。缓存不存在时退回段首启发式。
+    """
+    texts: list[str] = []
     names: set[str] = set()
     for p in data['pages']:
         for b in p['blocks']:
-            t = b.get('text', '')
-            m = re.match(r'^(?:Familia|Subfamilia|G[eé]nero|Subg[eé]nero)\s+([A-Z][a-z]{2,})', t)
-            if m:
-                names.add(m.group(1))
-            m = re.match(r'^([A-Z][a-z]{2,})\s+[a-z(]', t)
-            if m:
-                names.add(m.group(1))
+            for t in (b.get('text', ''), b.get('translation', '') or ''):
+                if not t:
+                    continue
+                texts.append(t)
+                # 「El género Elicodasia Laubier y Ramos, 1973」「genus Apomatus」
+                # 这类阶元标签是可靠的属名来源，标签常在句中出现，不能只查段首。
+                for m in re.finditer(
+                        r'\b(?:[Ff]amilia|[Ss]ubfamilia|[Gg]énero|[Gg]enero|'
+                        r'[Ss]ubgénero|[Ss]ubgenero|[Gg]enus|[Ss]ubgenus)'
+                        r'\s+([A-Z][a-z]{2,})', t):
+                    names.add(m.group(1))
+    words = set(re.findall(r'\b[A-Z][a-z]{2,}\b', '\n'.join(texts)))
+    # 译者的星号标记：*Genus* 与 *Genus epithet*（书内新属不一定在 WoRMS 里）。
+    for t in texts:
+        for m in re.finditer(r'\*\s*([A-Z][a-z]{2,})(?:\s+[a-z][a-z\-]+)?\s*\*', t):
+            names.add(m.group(1))
+    worms = worms_genera()
+    if worms:
+        names |= worms & words
+    else:
+        # 缓存缺失时退回段首「属名 + 小写词」启发式（会混入普通词语，故只在
+        # 没有 WoRMS 名单时使用）。
+        for t in texts:
+            mm = re.match(r'^([A-Z][a-z]{2,})\s+([a-z(][^\s]*)', t)
+            if mm:
+                second = mm.group(2).lower().strip(',.;:()')
+                if second not in FUNCTION_WORDS and not is_english_word(second) \
+                        and second not in SPANISH_STOP:
+                    names.add(mm.group(1))
     names -= {'The', 'This', 'These', 'Their', 'With', 'From', 'Only', 'Both', 'Each', 'Body', 'Tubes'}
     return names
 
@@ -169,37 +227,63 @@ def _markdown_chunks(text: str) -> list[tuple[str, bool]]:
 
 
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
-             color: RGBColor | None = None, genera: set[str] | None = None):
+             color: RGBColor | None = None, genera: set[str] | None = None,
+             invert: bool = False):
+    """Emit runs.  ``invert`` sets the taxon names opposite to the base style
+    (kept for styles that print captions in italic); the Fauna Ibérica
+    delivery uses roman captions with italic names, see ``caption``.
+    """
     text = clean_text(text)
     if not text:
         return
     pieces: list[tuple[str, bool]] = []
     for chunk, md_italic in _markdown_chunks(text):
-        if md_italic or italic:
-            pieces.append((chunk, True))
+        if md_italic:
+            # 译者有时把连词也圈进星号（「*Audouin and* Milne Edwards」），
+            # 连词移到斜体之外；整条书名/刊名仍保持斜体。
+            m = re.match(r'^(.*\S)\s+(and|y|e|et|or|&)$', chunk)
+            if m:
+                pieces.append((m.group(1), True))
+                pieces.append((" " + m.group(2), italic))
+            else:
+                pieces.append((chunk, (not italic) if invert else True))
             continue
         if not genera:
-            pieces.append((chunk, False))
+            pieces.append((chunk, italic))
             continue
         names = sorted(genera, key=len, reverse=True)
-        rx = re.compile(r'(?<![A-Za-z])(' + '|'.join(map(re.escape, names)) + r')\s+([a-z][a-z\-]{1,})(?:\s+([a-z][a-z\-]{1,}))?')
+        # 属名单独出现也排斜体（分类学惯例：属名后不带种加词时同样斜体）。
+        # 「属名 + 小写词」只有小写词确实是种加词才连排斜体——英语词和虚词
+        # 不是种加词，曾把「Lopadorrhynchus comprises the」整段排成斜体。
+        rx = re.compile(
+            r'(?<![A-Za-z])(' + '|'.join(map(re.escape, names)) + r')(?![a-z])'
+            r'(?:\s+([a-z][a-z\-]{1,})(?:\s+([a-z][a-z\-]{1,}))?)?')
         pos = 0
         for m in rx.finditer(chunk):
             ep = (m.group(2) or '').lower().strip('.')
-            if ep in {'sp', 'spp', 'cf', 'aff', 'indet', 'nov', 'n'}:
-                continue
+            end = m.end(1)
+            name = m.group(1)
+            if ep and ep not in SKIP_EPITHETS and ep not in FUNCTION_WORDS \
+                    and not is_english_word(ep):
+                end = m.end(2)
+                name = chunk[m.start(1):end]
+                third = (m.group(3) or '').lower().strip('.')
+                if third and third not in FUNCTION_WORDS and third not in SKIP_EPITHETS \
+                        and not is_english_word(third):
+                    end = m.end(3)
+                    name = chunk[m.start(1):end]
             if m.start() > pos:
-                pieces.append((chunk[pos:m.start()], False))
-            pieces.append((m.group(0), True))
-            pos = m.end()
+                pieces.append((chunk[pos:m.start()], italic))
+            pieces.append((name, (not italic) if invert else True))
+            pos = end
         if pos < len(chunk):
-            pieces.append((chunk[pos:], False))
+            pieces.append((chunk[pos:], italic))
     if not pieces:
         pieces = [(text.replace('*', ''), italic)]
     for chunk, ital in pieces:
         run = par.add_run(chunk)
         run.font.name = BODY_FONT
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), BODY_FONT)
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
         # Word needs the eastAsia hint on a run that actually contains CJK
         # text (the translator's Chinese name); without it the run may fall
         # back to the Latin font and render boxes/missing glyphs.
@@ -222,7 +306,7 @@ def setup(doc: Any):
     st = doc.styles['Normal']
     st.font.name = BODY_FONT
     st.font.size = Pt(10.5)
-    st._element.rPr.rFonts.set(qn('w:eastAsia'), BODY_FONT)
+    st._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     st.paragraph_format.space_before = Pt(0)
     st.paragraph_format.space_after = Pt(0)
     st.paragraph_format.line_spacing = 1.0
@@ -254,10 +338,10 @@ def set_header_footer(sec, meta: BookMeta):
     hp.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT)
     r = hp.add_run(meta.running_left)
     r.font.name, r.font.size, r.italic = BODY_FONT, Pt(8), True
-    r._element.rPr.rFonts.set(qn('w:eastAsia'), BODY_FONT)
+    r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     r2 = hp.add_run('\t' + meta.running_right)
     r2.font.name, r2.font.size, r2.italic = BODY_FONT, Pt(8), True
-    r2._element.rPr.rFonts.set(qn('w:eastAsia'), BODY_FONT)
+    r2._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     ft = sec.footer
     fp = ft.paragraphs[0]
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -283,7 +367,7 @@ def set_header_footer(sec, meta: BookMeta):
 
 def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.0,
          left=0.0, before=0.0, after=0.0, keep=False, genera=None, color=None,
-         line=1.0):
+         line=1.0, invert=False):
     p = doc.add_paragraph()
     pf = p.paragraph_format
     pf.space_before, pf.space_after = Pt(before), Pt(after)
@@ -295,7 +379,7 @@ def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.
     if align is not None:
         p.alignment = align
     if text:
-        add_runs(p, text, size, bold, italic, color, genera)
+        add_runs(p, text, size, bold, italic, color, genera, invert)
     return p
 
 
@@ -468,13 +552,14 @@ def _suppress_hyphenation(p) -> None:
 
 
 def caption(doc, text, genera):
-    # Source captions are set at 9.5 pt (ITC Garamond Light Italic); 8.8 pt
-    # rendered visibly smaller in Word/LibreOffice.
+    # 出版惯例（用户 2026-11-17 定）：图注正体，学名斜体。原书把整条图注排成
+    # ITC Garamond Light Italic（Vol. 45 p. 30），照搬后图注与学名同色同体、没有层次。
+    # 9.5 pt：8.8 pt 在 Word/LibreOffice 里明显偏小。
     # The Spanish original sets captions ragged-right beside the figure.  A
     # justified caption has to hyphenate long words ("Re-drawn") to fill the
     # measure; ragged-right keeps the caption readable and avoids those
     # accidental-looking hyphens in the printed book.
-    p = para(doc, text, size=9.5, italic=True, align=WD_ALIGN_PARAGRAPH.LEFT,
+    p = para(doc, text, size=9.5, italic=False, align=WD_ALIGN_PARAGRAPH.LEFT,
              before=12, after=7, line=1.05, genera=genera)
     # A caption that splits over a page break reads as two unrelated fragments.
     p.paragraph_format.keep_together = True
@@ -782,11 +867,22 @@ def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
         caption(doc, text, genera)
 
 
-def apply_index_fixes(text: str, meta: BookMeta) -> str:
-    """Correct source-index misprints declared in the metadata."""
-    for old, new in meta.index_entry_fixes:
+def index_fixes(meta: BookMeta):
+    """(old, new, evidence) for each declared source-index misprint."""
+    for item in meta.index_entry_fixes:
+        old, new = item[0], item[1]
+        note = item[2] if len(item) > 2 else ""
+        yield old, new, note
+
+
+def apply_index_fixes(text: str, meta: BookMeta) -> tuple[str, bool]:
+    """Correct source-index misprints; also report whether any was applied."""
+    fixed = False
+    for old, new, _note in index_fixes(meta):
+        if old in text and old != new:
+            fixed = True
         text = text.replace(old, new)
-    return text
+    return text, fixed
 
 
 def index_entry_key(text: str) -> str:
@@ -810,13 +906,13 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
                 if 'ALPHABETICAL INDEX' in b['translation'].upper():
                     raw_intro = clean_text(b['translation'])
                 continue
-            text = apply_index_fixes(clean_text(b['translation']), meta)
+            text, fixed = apply_index_fixes(clean_text(b['translation']), meta)
             # An editorial fix can make two source variants identical; compare
             # without the dot leaders and print the entry once.
             key = index_entry_key(text)
             if key and key not in seen_entries:
                 seen_entries.add(key)
-                entries.append(text)
+                entries.append((text, fixed))
     if not entries:
         return
     printed_pages: dict[int, dict] = {}
@@ -856,7 +952,7 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
     if cols:
         cols[0].set(qn('w:num'), '2')
         cols[0].set(qn('w:space'), '360')
-    for text in entries:
+    for text, fixed in entries:
         m = LEADER_RE.search(text)
         if not m:
             m2 = re.match(r'^(.*?)\s+((?:\d{1,3}(?:,\s*)?)+)$', text)
@@ -869,6 +965,8 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
                 p.paragraph_format.line_spacing = 1.0
                 p.paragraph_format.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
                 add_runs(p, left, 8.6, genera=genera)
+                if fixed:
+                    p.add_run('†')
                 p.add_run('\t')
                 add_runs(p, right, 8.6)
                 continue
@@ -884,10 +982,35 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
             pf.line_spacing = 1.0
             pf.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
             add_runs(p, left, 8.6, genera=genera)
+            if fixed:
+                p.add_run('†')
             p.add_run('\t')
             add_runs(p, right, 8.6)
         else:
-            para(doc, text, size=8.6, line=1.0, genera=genera)
+            para(doc, text + ('†' if fixed else ''), size=8.6, line=1.0,
+                 genera=genera)
+    render_corrections(doc, meta, genera)
+
+
+def render_corrections(doc, meta: BookMeta, genera=None):
+    """End-of-book list of the source misprints corrected in the index."""
+    fixes = list(index_fixes(meta))
+    if not fixes:
+        return
+    doc.add_page_break()
+    para(doc, meta.corrections_title, size=13, bold=True,
+         align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
+    if meta.corrections_intro:
+        para(doc, meta.corrections_intro, size=8.8, italic=True,
+             align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=8)
+    for old, new, note in fixes:
+        old_clean = old.strip('()')
+        new_clean = new.strip('()')
+        line = f"† Index entry “{old_clean}” corrected to “{new_clean}”."
+        if note:
+            line += " " + note
+        para(doc, line, size=8.8, left=4, first=-4, after=3, line=1.0,
+             genera=genera)
 
 
 def remap_refs(right: str, page_map: dict[str, int | str],

@@ -14,7 +14,9 @@ from booklayout.builder import (
     BookMeta,
     BookPaths,
     apply_index_fixes,
+    index_fixes,
     build,
+    build_genus_set,
     index_entry_key,
     caption,
     key_para,
@@ -22,10 +24,12 @@ from booklayout.builder import (
     make_page_map,
     match_text,
     page_break,
+    para,
     remap_refs,
     setup,
 )
 from booklayout.cli import (
+    _key_breaks_from_lines,
     _key_layout_problems,
     _pdf_layout_problems,
     _reference_problems,
@@ -447,6 +451,17 @@ def test_caption_does_not_split_across_pages() -> None:
     assert p._p.pPr.find(qn("w:suppressAutoHyphens")) is not None
 
 
+def test_caption_roman_with_italic_names() -> None:
+    # 出版惯例：图注正体，学名斜体（用户 2026-11-17 定；原书整条图注斜体太丑）。
+    doc = Document()
+    p = caption(doc, "Fig. 2. Anterior region of *Nereis pelagica* in dorsal view.",
+                {"Nereis"})
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert ("Nereis pelagica", True) in runs
+    assert any("Anterior" in t and not it for t, it in runs)
+    assert any("dorsal view" in t and not it for t, it in runs)
+
+
 def test_caption_strips_trailing_panel_letters(tmp_path: Path) -> None:
     aligned, figs, meta = make_book(tmp_path)
     data = json.loads(aligned.read_text(encoding="utf-8"))
@@ -531,8 +546,15 @@ def test_index_ref_uses_block_page_when_source_page_straddles(tmp_path: Path) ->
 def test_index_entry_fixes_correct_declared_source_errata() -> None:
     """A metadata fix changes the printed entry and drives its page lookup."""
     meta = BookMeta(index_entry_fixes=[("arietina, Apomatus", "arietina, Ditrupa")])
-    assert apply_index_fixes("arietina, Apomatus  264, 431", meta) == "arietina, Ditrupa  264, 431"
-    assert apply_index_fixes("ambigua, Circeis  300", meta) == "ambigua, Circeis  300"
+    assert apply_index_fixes("arietina, Apomatus  264, 431", meta) == (
+        "arietina, Ditrupa  264, 431", True)
+    assert apply_index_fixes("ambigua, Circeis  300", meta) == (
+        "ambigua, Circeis  300", False)
+    # A third element carries the evidence printed in the correction list.
+    meta = BookMeta(index_entry_fixes=[
+        ("arietina, Apomatus", "arietina, Ditrupa", "pp. 264, 431")])
+    assert list(index_fixes(meta)) == [
+        ("arietina, Apomatus", "arietina, Ditrupa", "pp. 264, 431")]
     # Two source variants can become one entry after the fix; leaders and
     # spacing must not keep the duplicate alive.
     assert index_entry_key("(saint-hilaire)..... 526") == index_entry_key("(saint-hilaire) 526")
@@ -1655,3 +1677,85 @@ def test_key_para_splits_two_couplets_joined_in_one_block() -> None:
         "Pseudofabriciola (p. 226)"
     )
     assert second.runs[-2].text == "\t"
+
+
+def test_caption_italicises_bare_genus_but_not_sp() -> None:
+    # 「Cenogenus sp.」：属名斜体，sp. 正体（分类学惯例）。
+    doc = Document()
+    p = caption(doc, "Fig. 39. Anterior region of Cenogenus sp. in lateral view.",
+                {"Cenogenus"})
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert ("Cenogenus", True) in runs
+    assert any("sp." in t and not it for t, it in runs)
+
+
+def test_caption_italicises_genus_before_author() -> None:
+    # 「Apomatus Philippi, 1844」：属名斜体，作者名正体。
+    doc = Document()
+    p = caption(doc, "Fig. 82. Operculum of Apomatus Philippi, 1844.", {"Apomatus"})
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert ("Apomatus", True) in runs
+    assert any("Philippi" in t and not it for t, it in runs)
+
+
+def test_body_genus_followed_by_english_word_italicises_genus_only() -> None:
+    # 「Lopadorrhynchus comprises the」曾整段斜体：英语词不是种加词。
+    doc = Document()
+    p = para(doc, "So that Lopadorrhynchus comprises the subgenera.",
+             genera={"Lopadorrhynchus"})
+    runs = [(r.text, bool(r.italic)) for r in p.runs if r.text.strip()]
+    assert ("Lopadorrhynchus", True) in runs
+    assert any("comprises" in t and not it for t, it in runs)
+
+
+def test_genus_set_skips_english_second_word_and_authors() -> None:
+    data = {"pages": [{"blocks": [
+        {"text": "Material examined. Twelve specimens."},
+        {"text": "Rouse y Fauchald (1997) revised the group."},
+        {"text": "Nereis pelagica Smith, 1900."},
+    ]}]}
+    names = build_genus_set(data)
+    assert "Nereis" in names
+    assert "Material" not in names
+    assert "Rouse" not in names
+
+
+def _key_line(text: str, block: int, leader_pt: float | None = None) -> dict:
+    leaders = []
+    if leader_pt is not None:
+        leaders = [{"text": "……", "bbox": [0.0, 0.0, leader_pt, 10.0]}]
+    return {"text": text, "block": block, "leaders": leaders}
+
+
+def test_key_breaks_reads_couplet_whose_target_wrapped() -> None:
+    """目标换到下一行时，构造强制断行签名（Vol. 45 Praxillura 条目）。"""
+    lines = [
+        _key_line("1. Body with 20-29 setigers or more (fig. 129A)..........", 0, 93.2),
+        _key_line("2. Body with fewer setigers..........Praxillura (p. 335)", 1, 300.0),
+        _key_line("Praxillura (p. 335)", 0, None),
+        _key_line("3. Other..........Praxillura (p. 336)", 1, 300.0),
+    ]
+    breaks, defects = _key_breaks_from_lines(lines, page_no=308)
+    assert defects and defects[0]["page"] == 308
+    assert any(sig.endswith("\tpraxillura (p. 335)") for sig in breaks)
+
+
+def test_key_breaks_ignores_wide_leader() -> None:
+    lines = [
+        _key_line("1. Short left..........Alpha (p. 1)", 0, 300.0),
+        _key_line("2. Other left..........Beta (p. 2)", 1, 300.0),
+    ]
+    assert _key_breaks_from_lines(lines) == ([], [])
+
+
+def test_key_breaks_checks_page_with_single_leader_line() -> None:
+    """键页只有一行带引导点也要检查（Vol. 45 p. 308 的 Praxillura）。"""
+    lines = [
+        _key_line("1. Body with 20-29 setigers (fig. 129A); uncini with a single "
+                  "subrostral barbula (fig. 129E)..........", 0, 93.2),
+        _key_line("Praxillura (p. 335)", 0, None),
+        _key_line("2. Body with fewer setigers..........Ninoe (p. 336)", 0, 300.0),
+    ]
+    breaks, defects = _key_breaks_from_lines(lines, page_no=308)
+    assert defects and defects[0]["page"] == 308
+    assert any(sig.endswith("\tpraxillura (p. 335)") for sig in breaks)
