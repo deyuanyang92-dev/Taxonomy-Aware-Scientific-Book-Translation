@@ -50,3 +50,9 @@ def test_same_author_year_differs_by_title():
 def test_chinese_unchanged():
     g = guess(Path("中国动物志 环节动物门 多毛纲.pdf"))
     assert g["lang"] == "zh"
+
+
+def test_author_year_without_title():
+    assert guess(Path("Amoureux, 1973.pdf"))["key"] == "Amoureux1973"
+    assert guess(Path("Fauvel, 1923a.pdf"))["key"] == "Fauvel1923a"
+    assert guess(Path("Day & Hutchings, 1979.pdf"))["key"] == "Day1979"

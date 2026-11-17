@@ -86,3 +86,61 @@ def test_glyphs():
     out, _ = fix_glyphs(t)
     assert out == ("die Typusart, O. morena; VON O0. MORENA; O. pterochaeta; Taf. 1 Fig. 2; Fig. 1a, b; aus 13. Parapod; "
                    "Ann. Inst. Océanogr.; l’étude; Salzgehalt 19.35‰ Cl; 8‰; Day & Hutchings; 10 0. 5")
+
+
+def test_layer_is_ocr_scan_image(tmp_path):
+    import fitz
+
+    from docstore.textify import layer_is_ocr
+    doc = fitz.open()
+    pg = doc.new_page(width=300, height=400)
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 30, 40), 0)
+    pix.clear_with(250)
+    pg.insert_image(pg.rect, pixmap=pix)
+    pg.insert_text((20, 50), "m e h r o d e r w e n i g", fontsize=9)
+    native = fitz.open()
+    native.new_page(width=300, height=400).insert_text((20, 50), "born digital text", fontsize=9)
+    assert layer_is_ocr({"producer": "PageGenie PDFGenerator"}) is True
+    assert layer_is_ocr({}, doc) is True
+    assert layer_is_ocr({}, native) is False
+
+
+def test_postfix_keeps_text_layer_method_so_resume_still_ocrs(tmp_path, monkeypatch):
+    """回归（2026-11-15）：postfix 曾把文本层页改写成 method=ocr，续跑逻辑误认为已 OCR，错层页永远不重识。"""
+    from docstore import cli, open_store
+    from docstore.store import make_version
+    from docstore.textify import _is_real_ocr
+
+    monkeypatch.setenv("DOCSTORE_AGENT", "pytest")
+    st = open_store(tmp_path / "lib")
+    pdf = tmp_path / "Muster, 1970-Die Polychaeten der Nordsee.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    key, _ = st.register(pdf, by="pytest")
+    st.update_doc(key, lang="de")
+    st.put_version(key, 1, make_version("Notopod beim & und beim 9 hier.", "text_layer",
+                                        producer="script:docstore(x)", engine="PyMuPDF get_text"))
+    assert cli.main(["--root", str(st.root), "postfix", key]) == 0
+    pg = st.read_page(key, 1)
+    assert pg["producer"] == "latinfix" and pg["method"] == "text_layer"
+    assert not any(_is_real_ocr(v) for v in [pg] + pg["alternates"])
+    assert _is_real_ocr({"method": "ocr", "engine": "tesseract + latinfix"})
+    assert not _is_real_ocr({"method": "ocr", "engine": "PyMuPDF get_text + latinfix"})
+
+
+def test_postfix_keeps_ocr_conf(tmp_path, monkeypatch):
+    """回归（2026-11-16）：postfix 新版本曾丢掉 ocr_conf，难页筛选缺约 1050 页置信度。"""
+    from docstore import cli, open_store
+    from docstore.store import make_version
+
+    monkeypatch.setenv("DOCSTORE_AGENT", "pytest")
+    st = open_store(tmp_path / "lib")
+    pdf = tmp_path / "Muster, 1970-Die Polychaeten der Nordsee.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    key, _ = st.register(pdf, by="pytest")
+    st.update_doc(key, lang="de")
+    st.put_version(key, 1, make_version("Notopod beim & und beim 9 hier.", "ocr",
+                                        producer="script:docstore(x)", engine="tesseract", conf=0.83))
+    assert cli.main(["--root", str(st.root), "postfix", key]) == 0
+    pg = st.read_page(key, 1)
+    assert pg["producer"] == "latinfix"
+    assert pg["quality"]["ocr_conf"] == 0.83

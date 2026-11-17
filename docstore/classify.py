@@ -34,7 +34,7 @@ def clean_title(stem: str) -> tuple[str, str]:
 
 
 # 文件名「作者, 年份-题名」（文献管理软件常见导出格式）
-_AUTHOR_YEAR = re.compile(r"^(?P<a>[^,]{2,80}?),\s*(?P<y>1[5-9]\d\d|20\d\d)[a-z]?\s*[-–—_.]\s*(?P<t>.+)$")
+_AUTHOR_YEAR = re.compile(r"^(?P<a>[^,]{2,80}?),\s*(?P<y>1[5-9]\d\d|20\d\d)(?P<s>[a-z]?)(?:\s*[-–—_.,]\s*(?P<t>.+))?\s*$")
 
 # 题名语言初判：各语言高频功能词（命中数最多者胜；全不命中按英文）。新语言加一行即可。
 _LANG_WORDS = {
@@ -116,11 +116,11 @@ def _domain(text: str) -> str:
 def _guess_author_year(path: Path, m: re.Match) -> dict:
     """「Hartmann-Schröder, 1965- Die Polychaeten des sublitorals」→ key HartmannSchroder1965_Polychaeten_Sublitorals。
     多作者取第一作者；题名取前两个实词。括号不当作者（常是「Teil 14」之类）。"""
-    authors, year, title = m.group("a").strip(), m.group("y"), m.group("t").strip()
+    authors, year, title = m.group("a").strip(), m.group("y"), (m.group("t") or "").strip()
     first = re.split(r"\s*(?:&|\bund\b|\band\b|\bet\b|;)\s*", authors)[0]
     sur = "".join(p[:1].upper() + p[1:] for p in re.findall(r"[A-Za-z]+", _ascii(first)))
     words = [w for w in re.findall(r"[A-Za-z]+", _ascii(title)) if w.lower() not in _STOP and len(w) > 1][:2]
-    key = f"{sur}{year}" + "".join("_" + w[:1].upper() + w[1:] for w in words)
+    key = f"{sur}{year}{m.group('s') or ''}" + "".join("_" + w[:1].upper() + w[1:] for w in words)
     lang = guess_lang(title)
     return {"key": key, "title": title, "authors": authors, "year": year,
             "kind": "英文原著" if lang == "en" else "外文原著", "lang": lang,

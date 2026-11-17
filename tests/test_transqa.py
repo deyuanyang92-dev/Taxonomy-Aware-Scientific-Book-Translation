@@ -116,6 +116,13 @@ def test_repeated_latin_name_dropped_once_is_caught():
     assert codes(src, TGT)["taxon.name_missing"].severity == "critical"
 
 
+def test_footnote_asterisks_do_not_become_italic_taxa():
+    from transqa.taxonomy import latin_names
+
+    text = "Paraprionospio * 14. Gills absent ... *P. hoplura* (p. 253)"
+    assert latin_names(text) == ["P. hoplura"]
+
+
 def test_parenthesised_authority_change():
     assert "taxon.authority_changed" in codes(SRC, TGT.replace("(Vinogradov, 1949)", "(Vinogradov 1950)"))
 

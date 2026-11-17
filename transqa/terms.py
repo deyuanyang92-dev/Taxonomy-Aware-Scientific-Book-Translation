@@ -62,16 +62,17 @@ def normalize(src: str, tgt: str, terms: list[Term]) -> tuple[str, list[tuple[st
         return f'\x00{len(protected) - 1}\x00'
 
     body = re.sub(r'\*[^*\n]+\*|\[TN:[^\]]*\]', keep, tgt)
-    for t in terms:
-        if not t.variants or not source_has(src, t.source):
-            continue
-        for var, rep in sorted(t.variants.items(), key=lambda x: -len(x[0])):
-            pat = re.compile(rf'(?<![\w-]){re.escape(var)}(?![\w-])', re.I)
-            n = len(pat.findall(body))
-            if n:
-                def case(m: re.Match[str], r: str = rep) -> str:   # 保留原大小写（句首大写）
-                    return r[0].upper() + r[1:] if m.group(0)[0].isupper() else r
-                body = pat.sub(case, body)
-                log.append((var, rep, n))
+    # 所有生效条目的异写统一按长度从长到短替换：否则短的先换（bristle→seta）会让长的
+    # （bristle segment→setiger）匹配不上，得到「seta segment」（Hartmann-Schröder 1971 试点，2026-11-15）
+    active = sorted({(var, rep) for t in terms if t.variants and source_has(src, t.source)
+                     for var, rep in t.variants.items()}, key=lambda x: (-len(x[0]), x[0]))
+    for var, rep in active:
+        pat = re.compile(rf'(?<![\w-]){re.escape(var)}(?![\w-])', re.I)
+        n = len(pat.findall(body))
+        if n:
+            def case(m: re.Match[str], r: str = rep) -> str:   # 保留原大小写（句首大写）
+                return r[0].upper() + r[1:] if m.group(0)[0].isupper() else r
+            body = pat.sub(case, body)
+            log.append((var, rep, n))
     out = re.sub(r'\x00(\d+)\x00', lambda m: protected[int(m.group(1))], body)
     return out, log

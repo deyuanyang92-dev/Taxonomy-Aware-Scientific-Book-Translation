@@ -57,6 +57,9 @@ def kind(text: str, sl: str = "de") -> str:
         words = sorted(lab[k], key=len, reverse=True)
         if re.match(r"(?:%s)\s*[:.—–-]" % "|".join(map(re.escape, words)), t):
             return "label" if k == "other" else k
+    # 文献表条目：「FAUVEL, P., 1923.」「——, 1970.」（OCR 常把年份读坏：10966），整段原样保留不译
+    if re.match(r"^(?:——|—|--)\s*,\s*\S", t) or re.match(r"^[A-ZÄÖÜ][A-Za-zÄÖÜäöü'\-]+,\s+(?:[A-Z]\.\s*){1,3}(?:[A-Z]\.|,|&)", t):
+        return "reference"
     if re.match(r"^[A-ZÄÖÜ][A-ZÄÖÜ'\- ]{2,}(?:,| &| und| and)", t) and re.search(YEAR, t) and len(t) < 600:
         if re.search(rf"[A-Z]\.\s*(?:\([^)]*\))?,?\s*(?:{YEAR})[a-z]?\.", t[:90]) and len(t) > 60:
             return "reference"
@@ -66,3 +69,51 @@ def kind(text: str, sl: str = "de") -> str:
     verbs = len(re.findall(r"\b(?:%s)\b" % "|".join(lab["narrative_words"]), t, flags=re.I))
     sent = max(1, len(re.findall(r"[.!?](?:\s|$)", t)))
     return "narrative" if verbs / sent >= 0.8 else "description"
+
+
+# ---- 风险段（只核对这些，省 token）----
+_EPITHET = re.compile(r"\b([A-Z][a-z]{3,})\s+(?:\([A-Z][a-z]+\)\s+)?([a-z]{4,}(?:a|us|um|is|ae|ii|i|ensis|oides|ata|ina|ella|ica|osa|ensis))\b")
+_NUM = re.compile(r"\d+(?:[.,]\d+)?")
+_NEG = {"de": r"\b(?:nicht|kein\w*|ohne|fehl\w*|nie)\b", "en": r"\b(?:no|not|without|absent|lacking|lacks?|none|never|nor|devoid)\b|\bnon-"}
+_RESIDUE = {"de": r"\b(?:der|und|mit|von|aus|bei|ist|sind|nicht|oder|auf|vom|zum|zur|des|dem|den|einer|eines)\b"}
+_STOP_EPI = {"mittleren", "hinteren", "vorderen", "kleinen", "großen", "grossen", "dorsal", "ventral", "lateral"}
+
+
+def _stem(w: str) -> str:
+    w = w.lower()
+    return w[:max(4, len(w) - 2)] if len(w) > 5 else w
+
+
+def risk(src: str, tgt: str, sl: str = "de", tl: str = "en", rewritten: bool = False,
+         terms: list[tuple[str, str]] | None = None) -> list[str]:
+    """一段译文的风险信号（脚本，0 token）。空列表 = 低风险，可不送模型核对。
+    rewritten：该段由模型整段改写过（会编造），一律视为风险。
+    terms：术语表 (源, 定名)；原文出现源术语（词干匹配）而译文没有定名（词干匹配）→ term。"""
+    why = []
+    low_s, low_t = src.lower(), tgt.lower()
+
+    def has(text: str, phrase: str) -> bool:
+        # 整词、词首匹配，只容 ≤3 字母屈折词尾：Borsten 不匹配 Borstensegmenten，hinten 不匹配 hinteren
+        pat = r"\s+".join(re.escape(_stem(x)) + r"\w{0,%d}" % (len(x) - len(_stem(x)) + 3) for x in phrase.split())
+        return re.search(r"(?<!\w)" + pat + r"(?!\w)", text) is not None
+
+    for a, b in terms or []:
+        if a and b and has(low_s, a.lower()) and not has(low_t, b.lower()):
+            why.append("term")
+            break
+    if rewritten:
+        why.append("rewritten")
+    if sorted(_NUM.findall(src)) != sorted(_NUM.findall(tgt)):
+        why.append("number")
+    if sl in _NEG and tl in _NEG and len(re.findall(_NEG[sl], src, re.I)) > len(re.findall(_NEG[tl], tgt, re.I)):
+        why.append("negation")
+    r = len(tgt) / max(1, len(src))
+    if r < 0.6 or r > 1.6:
+        why.append("length")
+    if sl in _RESIDUE and re.search(_RESIDUE[sl], tgt):
+        why.append("residue")
+    for g, e in _EPITHET.findall(src):
+        if e.lower() not in _STOP_EPI and (g not in tgt or e not in tgt):
+            why.append("name")
+            break
+    return why

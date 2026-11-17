@@ -19,6 +19,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -169,17 +170,32 @@ class Store:
 
     # ---------------- 登记表 ----------------
     def _load_registry(self) -> dict[str, dict]:
-        mt = self.registry_path.stat().st_mtime if self.registry_path.exists() else 0.0
-        if self._reg is not None and mt == self._reg_mtime:
-            return self._reg
-        reg: dict[str, dict] = {}
-        if self.registry_path.exists():
-            with open(self.registry_path, encoding="utf-8", newline="") as f:
-                for row in csv.DictReader(f, delimiter="\t"):
-                    check_key(row["key"])
-                    reg[row["key"]] = {k: (row.get(k) or "") for k in FIELDS}
-        self._reg, self._reg_mtime = reg, mt
-        return reg
+        """另一进程原子替换 registry.tsv 的瞬间（/mnt/p 上先删后改名）文件会短暂不存在：
+        已加载过就重试，不当成空表，也不崩（2026-11-16：Xue 入库与 proofread 并发，30 页试跑 0 页完成即崩）。"""
+        for attempt in range(40):
+            try:
+                mt = self.registry_path.stat().st_mtime
+            except FileNotFoundError:
+                if self._reg_mtime == 0.0:
+                    mt = 0.0  # 登记表从未存在过（新库），空表是对的，不等待
+                else:
+                    time.sleep(0.25)
+                    continue
+            if self._reg is not None and mt == self._reg_mtime:
+                return self._reg
+            reg: dict[str, dict] = {}
+            if mt:
+                try:
+                    with open(self.registry_path, encoding="utf-8", newline="") as f:
+                        for row in csv.DictReader(f, delimiter="\t"):
+                            check_key(row["key"])
+                            reg[row["key"]] = {k: (row.get(k) or "") for k in FIELDS}
+                except FileNotFoundError:
+                    time.sleep(0.25)
+                    continue
+            self._reg, self._reg_mtime = reg, mt
+            return reg
+        raise FileNotFoundError(f"登记表长时间不可读: {self.registry_path}")
 
     def _save_registry(self, reg: dict[str, dict]) -> None:
         buf = io.StringIO()

@@ -1,11 +1,37 @@
 """llm_engines：全部用 mock，不真调 API、不真起命令行。"""
 import json
 import subprocess
+import sys
 import types
+from types import SimpleNamespace
 
-import anthropic
-import httpx
 import pytest
+
+# 无 anthropic/httpx 时仍可跑 mock 测试（PEP 668 环境常见）
+try:
+    import anthropic
+    import httpx
+except ModuleNotFoundError:  # pragma: no cover
+    class _APIConnectionError(Exception):
+        def __init__(self, request=None):
+            self.request = request
+            super().__init__("connection")
+
+    class _APIStatusError(Exception):
+        def __init__(self, message="", response=None, body=None):
+            self.response = response
+            self.body = body
+            self.status_code = getattr(response, "status_code", None)
+            super().__init__(message)
+
+    anthropic = SimpleNamespace(  # type: ignore[assignment]
+        APIConnectionError=_APIConnectionError,
+        APIStatusError=_APIStatusError,
+        Anthropic=object,
+    )
+    httpx = SimpleNamespace(Request=lambda *a, **k: SimpleNamespace(method=a[0] if a else "POST", url=a[1] if len(a) > 1 else ""))  # type: ignore[assignment]
+    sys.modules.setdefault("anthropic", anthropic)
+    sys.modules.setdefault("httpx", httpx)
 
 import llm_engines as le
 
@@ -49,6 +75,7 @@ def make_client(*outcomes):
 def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_USAGE_TSV", str(tmp_path / "usage.tsv"))
     monkeypatch.setattr(le, "wait_offpeak", lambda *a, **k: None)
+    monkeypatch.setattr(le, "seconds_to_offpeak", lambda *a, **k: 0)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.delenv("LLM_SKIP_OFFPEAK", raising=False)
 
@@ -63,12 +90,31 @@ def test_deepseek_returns_text_and_usage_and_logs(monkeypatch, tmp_path):
     text, usage = le.call("deepseek-flash", "系统", "用户", tag="c00")
     assert text == "你好"
     assert usage["input_tokens"] == 123 and usage["output_tokens"] == 10 and usage["cache_read_tokens"] == 7
-    assert calls[0]["model"] == "deepseek-flash" and calls[0]["max_tokens"] == 64000
-    assert calls[0]["system"] == "系统" and calls[0]["messages"] == [{"role": "user", "content": "用户"}]
+    assert calls[0]["model"] == "deepseek-flash" and calls[0]["max_tokens"] == 8192  # profile=default
+    # DeepSeek system 带 cache_control，稳定前缀走缓存价
+    assert calls[0]["system"] == [{"type": "text", "text": "系统", "cache_control": {"type": "ephemeral"}}]
+    assert calls[0]["messages"] == [{"role": "user", "content": "用户"}]
     rows = (tmp_path / "usage.tsv").read_text(encoding="utf8").splitlines()
     assert rows[0].startswith("时间\tengine") and len(rows) == 2
     cols = rows[1].split("\t")
     assert cols[1] == "deepseek-flash" and cols[2] == "c00" and cols[3] == "123" and cols[4] == "10"
+
+
+def test_deepseek_profile_json_caps_tokens(monkeypatch):
+    client, calls = make_client(make_msg("[]"))
+    monkeypatch.setattr(le, "_make_client", lambda: client)
+    le.call("deepseek-flash", "s", "u", profile="json")
+    assert calls[0]["max_tokens"] == 4096
+
+
+def test_deepseek_budget_blocks_before_call(monkeypatch):
+    import token_economy as te
+    te.reset_spent(60)  # 已超预算，call 应在发请求前拒绝
+    monkeypatch.setenv("YZZ_TOKEN_BUDGET", "50")
+    with pytest.raises(te.BudgetExceeded):
+        le.call("deepseek-flash", "s", "u")
+    te.reset_spent(0)
+    monkeypatch.delenv("YZZ_TOKEN_BUDGET")
 
 
 def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
@@ -81,6 +127,13 @@ def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
     monkeypatch.setenv("LLM_SKIP_OFFPEAK", "1")
     le.call("deepseek-v4-pro", "s", "u")
     assert waited == [1]
+
+
+def test_deepseek_window_closed_defers_instead_of_sleeping(monkeypatch):
+    # 用户 2026-11-17：只在折扣窗口 00:30–08:30 调用；窗口关闭时不要把进程挂 16 小时。
+    monkeypatch.setattr(le, "seconds_to_offpeak", lambda *a, **k: 16 * 3600)
+    with pytest.raises(le.EngineError, match="00:30–08:30"):
+        le.call("deepseek-flash", "s", "u")
 
 
 @pytest.fixture(autouse=True)
@@ -253,6 +306,6 @@ def test_deepseek_retry_stops_when_night_window_closes(monkeypatch):
     monkeypatch.setattr(le, "_retryable", lambda exc: True)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.setattr(le, "is_peak", lambda now=None: True)
-    with pytest.raises(le.EngineError, match="夜间窗口已结束"):
+    with pytest.raises(le.EngineError, match="折扣窗口已结束"):
         le._deepseek("deepseek-flash", "s", "u", 100, check_window=True)
     assert len(calls) == 1  # 第一次失败后不再重试

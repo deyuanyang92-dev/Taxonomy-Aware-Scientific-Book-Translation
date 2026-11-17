@@ -30,3 +30,28 @@ def test_description_vs_narrative():
          "Laubier und Storch lag mir zur Untersuchung vor. An dieser Stelle möchte ich den Herren nochmals danken.")
     assert kind(d) == "description"
     assert kind(n) == "narrative"
+
+
+def test_reference_entries():
+    assert kind("——, 1970. Contribution à la faunistique du coralligène. — Ann. Inst. Océanogr., 46: 79-107.") == "reference"
+    assert kind("FAUVEL, P., 1923. Polychètes errantes. — Faune de France, 5: 1-494.") == "reference"
+
+
+def test_risk_signals():
+    from transqa.taxoblocks import risk
+    gl = [("Tentakelcirren", "tentacular cirri")]
+    assert risk("Zwei Paar Tentakelcirren.", "Two pairs of tentacle cirrus.", terms=gl) == ["term"]
+    assert risk("Zwei Paar Tentakelcirren.", "Two pairs of tentacular cirri.", terms=gl) == []
+    assert "number" in risk("mit 48 Borstensegmenten 6 mm lang", "6 mm long with 46 setigers")
+    assert "negation" in risk("Augen fehlen.", "Eyes present.")
+    assert "residue" in risk("aus Ghardaqa", "aus Ghardaqa")
+    assert "name" in risk("wie bei Eulalia microphylla", "as in E. microphylla")
+    assert risk("x", "y", rewritten=True) == ["rewritten"]
+
+
+def test_risk_term_whole_word():
+    from transqa.taxoblocks import risk
+    gl = [("Borsten", "setae"), ("von hinten", "in posterior view")]
+    assert risk("mit 32 Borstensegmenten", "with 32 setigers", terms=gl) == []
+    assert risk("die hinteren Parapodien", "the posterior parapodia", terms=gl) == []
+    assert risk("13. von hinten", "13th from behind", terms=gl) == ["term"]

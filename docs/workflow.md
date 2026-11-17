@@ -39,6 +39,16 @@
 ⑨ 反馈回流  读者意见、外部审查、抽查 → 陷阱表 / 规则 / yiku → 回到 ③
 ```
 
+### 2.0 思路定案（Cursor 2026-11-17）：分章 · 两档质控 · 分体裁文风
+
+对照主流后的定案见 [`docs/plans/2026-11-17-translation-approach-optimization.md`](plans/2026-11-17-translation-approach-optimization.md)：
+
+1. **分章**：交付与并行以章为单元（`fast_book chapters` / `run_batches --chapters`）；样章通过再铺开。
+2. **两档**：试译档 = lean + verify=none（省 token，**不得称交付**）；交付档 = 异模型双语审 + 脚本三校 + 叙述 polish + `booklayout qa`。
+3. **「优雅」**：描述/检索表 = 志书电报体；叙述/总论 = 名家中文通读（STYLE §6），不为流畅改证据。
+
+国内「三审三校」映射到 M5–M9 + `booklayout qa`，不是再叠三轮大模型。
+
 ### 2.1 模块（对应正规出版流程；参考 ISO 17100:2015 翻译服务、ISO 18587:2017 机器翻译译后编辑）
 
 每个模块有固定的输入、输出、工具和通过标准，可以单独换模型或单独重做；模块之间只通过文件交接。
@@ -153,6 +163,7 @@
 | 分类学证据 | 学名、数字、引文、图号原样保留 | `taxon_validate.py` |
 | 一致 | 同义项同译、科名不漂移 | `yiku check`、`drift_check.py` |
 | 格式 | 残留英文、引号星号、U+3000、重复括注 | `qa.py` + 全书扫描 |
+| 斜体 | 引证/作者名误斜体、图注整条斜体、图注学名正体 | `italic_check.py`（`docx --fix` 可更正；`--aligned` 建文献索引） |
 | 抽查 | 每批随机 20 条，错误率 > 5% 退回 | `核译/抽查.tsv` |
 | 交付 | 字体、乱码、版式 | `python3 /mnt/p/yzz-分类工作流/yzz.py zh check` |
 
@@ -186,7 +197,7 @@
 
 | 工作 | 谁 |
 |---|---|
-| OCR、抽取、初译、核译、缺口查证、术语出处复核 | 执行模型（Codex、DeepSeek、Claude 子代理），token 不限；不得再派生子任务；每节写盘 |
+| OCR、抽取、初译、核译、缺口查证、术语出处复核 | 执行模型（Codex、DeepSeek、Claude 子代理）；**调度默认最低 token / 可零模型**（见 `docs/plans/2026-11-17-token-speed-optimization.md`），不得「全书默认送模型改写」；不得再派生子任务；每节写盘 |
 | 核验、替换、一致性、排版、目录量页 | 脚本 |
 | 裁定、抽查、规则更新、定稿、**顶层设计** | 主会话（Claude）+ 用户 |
 | 资料与数据库本地化（OCR、知识库、志书/论文抽取入库） | **Codex 等**（用户 2026-11-10：Claude 额度留给顶层设计与裁定，执行性工作优先交 Codex） |
@@ -310,5 +321,6 @@
 - [ ] Rouse 全书「表述核译」：先试 2 章，抽查合格再铺开。
 - [ ] Rouse 其余 68 章异模型逐句核译（Codex 已核 11 章）。
 - [ ] yiku 工具：`verify`、`resolve`、`gaps`；`run_batches.py --engine deepseek`；抽查脚本。
+- [x] **省 token / 零模型 / 并行加速（Cursor 2026-11-17 可测档）**：说明 `docs/CURSOR_OPTIMIZATION_2026-11-17.md`；计划 `docs/plans/2026-11-17-token-speed-optimization.md`；默认 lean + verify=none + book_memory + 贵模型 force；余下名称库一键拼表、质量数值闸等仍按计划迭代。
 - [ ] `ytrans`：按第 11.5 节顺序开发（状态与 next → 陷阱回归 → 替换走闸口 → 术语主库统一 → 段对齐 → 裁定工作单/例句检索 → 标注层分离）。
 - [ ] 分类数据层卷33：图注剥离规则过宽、300 dpi 后标题锚点漏认，修后重抽 20 条核对（2026-11-10 试点：原始 OCR 记述 0/20 全对）。

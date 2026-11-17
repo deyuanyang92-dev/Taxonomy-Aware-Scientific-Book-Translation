@@ -93,7 +93,7 @@ def test_parse_json_array_tolerates_wrapping():
 
 
 def test_engine_router_by_beijing_time():
-    night = dt.datetime(2026, 11, 16, 15, 0, tzinfo=dt.timezone.utc)  # 周一 23:00 北京（闲时）
+    night = dt.datetime(2026, 11, 16, 17, 0, tzinfo=dt.timezone.utc)  # 周二 01:00 北京（00:30–08:30 折扣窗口）
     day = dt.datetime(2026, 11, 16, 3, 0, tzinfo=dt.timezone.utc)  # 周一 11:00 北京（官方忙时）
     assert at.is_night(night) and not at.is_night(day)
     assert at.pick_engine("revise", night) == "deepseek-flash"
@@ -125,7 +125,7 @@ def test_stage_check_applies_only_verified_and_caches(tmp_path, monkeypatch):
     import argparse
     calls = []
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         calls.append(engine)
         if "/check/" in tag:
             return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
@@ -203,7 +203,7 @@ def test_negation_risk_generic_languages():
 def test_critical_fix_goes_to_human_queue(tmp_path, monkeypatch):
     import argparse
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         if "/check/" in tag:
             return ('[{"pdf_page": 1, "old": "4 eyes", "new": "4 large eyes", "severity": "critical"},'
                     ' {"pdf_page": 1, "old": "Body short.", "new": "Body short and thin.", "severity": "minor"}]'), {}
@@ -253,7 +253,7 @@ def _ns(**kw):
 def test_second_model_reviews_full_text_receipt_and_extras(tmp_path, monkeypatch):
     import json
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         if "/check/" in tag:
             return "[]", {}
         return ('[{"new_fix": true, "pdf_page": 1, "old": "Body short.", "new": "Body short and thin.",'
@@ -272,6 +272,14 @@ def test_same_model_for_check_and_verify_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
     with pytest.raises(ValueError, match="异模型"):
         at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_engine="deepseek-flash"))
+
+
+def test_same_model_allowed_with_explicit_flag(tmp_path, monkeypatch):
+    """用户 2026-11-17：只在 DeepSeek 折扣窗口跑，第二模型也用 deepseek-flash。"""
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path,
+                         _ns(verify_engine="deepseek-flash", allow_same_verify=True))
+    assert "Body short." in out
 
 
 SRC2 = """<!-- PDF p.1 -->
@@ -303,7 +311,7 @@ def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, mo
     nm.write_text("Зернов\tZernov\n", encoding="utf-8")
     calls = []
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         calls.append((tag, system, user))
         ids = _re.findall(r"⟦(p\d+_s\d+)⟧", user)
         en = {"p1_s1": "Body short. 4 eyes.", "p2_s1": "Length 2—3 mm.", "p3_s1": "Colour whitish.",
@@ -325,6 +333,26 @@ def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, mo
     n = len(calls)
     at.stage_revise(src_pg, src_pg, tmp_path, a)                                    # 续跑命中缓存
     assert len(calls) == n
+
+
+def test_repair_draft_pages_rebuilds_only_mismatched_pages(tmp_path, monkeypatch):
+    import argparse
+
+    class FakeGoogle:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def one(self, text):
+            return "EN:" + text
+
+    monkeypatch.setattr(at, "Google", FakeGoogle)
+    a = argparse.Namespace(sl="bg", tl="en")
+    src = at.pages("<!-- PDF p.1 -->\n\nПърви.\n\nВтори.\n\n<!-- PDF p.2 -->\n\nТрети.\n")
+    draft = at.pages("<!-- PDF p.1 -->\n\nFirst.\n\n<!-- PDF p.2 -->\n\nThird.\n")
+    assert at.repair_draft_pages(src, draft, [1, 2], tmp_path, a) == [1]
+    assert len(at.segments_from_pages(draft[1])) == 2
+    assert len(at.segments_from_pages(draft[2])) == 1       # 正常页不动
+    assert (tmp_path / "draft.md").exists()
 
 
 def test_stage_draft_does_not_send_synonymy_to_google(tmp_path, monkeypatch):
@@ -372,7 +400,7 @@ def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
 def test_prefilter_drops_edits_whose_old_is_not_on_page_before_verify(tmp_path, monkeypatch):
     sent = []
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         if "/check/" in tag:
             return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
                     ' {"pdf_page": 1, "old": "not in text", "new": "x"},'
@@ -393,7 +421,7 @@ def test_parallel_check_keeps_chunk_order(tmp_path, monkeypatch):
     src = "".join(f"<!-- PDF p.{i} | x -->\n\nТекст {i}.\n\n" for i in range(1, 10))
     tgt = "".join(f"<!-- PDF p.{i} | x -->\n\nText {i}.\n\n" for i in range(1, 10))
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         _t.sleep(0.05 if "c000" in tag else 0)     # 第一块最慢：并行时最后返回
         if "/check/" in tag:
             return "[]", {}
@@ -411,7 +439,7 @@ def test_pitfalls_loaded_into_both_prompts(tmp_path, monkeypatch):
     pf = tmp_path / "pf.md"
     pf.write_text("- PROJECT-TRAP: foo = bar", encoding="utf-8")
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         systems.append(system)
         return ("[]" if "/check/" in tag else '[{"receipt": true, "pages": [1, 2]}]'), {}
 
@@ -430,7 +458,7 @@ def test_fit_old_tolerates_quote_style_and_whitespace():
 def test_check_cache_depends_on_engine(tmp_path, monkeypatch):
     calls = []
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         calls.append(engine)
         return ("[]" if "/check/" in tag else '[{"receipt": true, "pages": [1, 2]}]'), {}
 
@@ -443,7 +471,7 @@ def test_check_cache_depends_on_engine(tmp_path, monkeypatch):
 def test_judge_mode_narrow_verdicts_unsure_to_human(tmp_path, monkeypatch):
     systems = {}
 
-    def fake(engine, system, user, tag, usage_file):
+    def fake(engine, system, user, tag, usage_file, **kwargs):
         systems[tag.split("/")[1]] = system
         if "/check/" in tag:
             return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
@@ -468,3 +496,76 @@ def test_judge_verdict_is_derived_by_script():
     assert at.judge_verdict({"quote": q, "old_faithful": True, "new_faithful": True}, src) == "REJECT"
     assert at.judge_verdict({"quote": q, "old_faithful": False, "new_faithful": False}, src) == "UNSURE"
     assert at.judge_verdict({"quote": "не е в оригинала", "old_faithful": False, "new_faithful": True}, src) == "UNSURE"
+
+
+def test_risky_filter_numbers_clean_description_and_stats():
+    src = {1: '<!-- PDF p.1 -->\n\nProstomium mit 4 Augen.\n\nProstomium mit Palpen.',
+           2: '<!-- PDF p.2 -->\n\nProstomium mit Palpen.'}
+    tgt = {1: '<!-- PDF p.1 -->\n\nProstomium with 2 eyes.\n\nProstomium with palps.',
+           2: '<!-- PDF p.2 -->\n\nProstomium with palps.'}
+    s, t, stats = at.risky_filter(src, tgt, 'de', 'en')
+    assert list(s) == list(t) == [1]
+    assert '4 Augen' in s[1] and '2 eyes' in t[1]
+    assert 'Palpen' not in s[1] and 'palps' not in t[1]
+    assert stats == dict(pages_in=2, pages_kept=1, paras_in=3, paras_kept=1,
+                         chars_in=len('Prostomium mit 4 Augen.') + 2 * len('Prostomium mit Palpen.'),
+                         chars_kept=len('Prostomium mit 4 Augen.'), by_reason={'number': 1})
+
+
+def test_risky_filter_clean_narrative_kept():
+    src, tgt = {1: 'Das Tier ist klein.'}, {1: 'The animal is small.'}
+    assert at.taxoblocks.risk(src[1], tgt[1], 'de', 'en') == []
+    assert at.taxoblocks.kind(src[1], 'de') == 'narrative'
+    s, t, stats = at.risky_filter(src, tgt, 'de', 'en')
+    assert s == src and t == tgt
+    assert stats['paras_kept'] == 1 and not stats['by_reason']
+
+
+def test_risky_filter_count_mismatch_keeps_whole_page():
+    src = {1: '<!-- PDF p.1 -->\n\nProstomium mit Palpen.\n\nProstomium mit Augen.'}
+    tgt = {1: '<!-- PDF p.1 -->\n\nProstomium with palps and eyes.'}
+    s, t, stats = at.risky_filter(src, tgt, 'de', 'en')
+    assert s == src and t == tgt
+    assert stats['paras_in'] == stats['paras_kept'] == 2
+    assert stats['chars_in'] == stats['chars_kept']
+
+
+def test_risky_filter_term_and_rewritten_signals():
+    src, tgt = {1: 'Prostomium mit Borsten.'}, {1: 'Prostomium with bristles.'}
+    s, t, stats = at.risky_filter(src, tgt, 'de', 'en', terms=[('Borsten', 'setae')])
+    assert s == src and t == tgt and stats['by_reason']['term'] == 1
+    _, _, stats = at.risky_filter(src, tgt, 'de', 'en', rewritten_pages={1})
+    assert stats['by_reason']['rewritten'] == 1
+
+
+def test_risky_check_preserves_full_output_and_separates_caches(tmp_path, monkeypatch, capsys):
+    calls = []
+    src = {1: '<!-- PDF p.1 -->\n\nProstomium mit 4 Augen.\n\nProstomium mit Palpen.',
+           2: '<!-- PDF p.2 -->\n\nProstomium mit Palpen.'}
+    tgt = {1: '<!-- PDF p.1 -->\n\nProstomium with 2 eyes.\n\nProstomium with palps.',
+           2: '<!-- PDF p.2 -->\n\nProstomium with palps.'}
+
+    def fake(engine, system, user, tag, usage_file, **kwargs):
+        calls.append(user)
+        return ('[{"pdf_page": 1, "old": "2 eyes", "new": "4 eyes"}]' if '/check/' in tag else
+                '[{"id": 0, "verdict": "ACCEPT"}, {"receipt": true, "pages": [1, 2]}]'), {}
+
+    monkeypatch.setattr(at, 'llm', fake)
+    a = _ns(sl='de', risky_only=True)
+    out = at.stage_check(src, tgt, tmp_path, a)
+    assert '4 eyes' in out and '2 eyes' not in out
+    assert at.pages(out)[2].strip() == tgt[2]
+    assert out.count('Prostomium with palps.') == 2
+    assert all('palps' not in user and 'Palpen' not in user for user in calls)
+    assert 'risky-only kept 1/3 paragraphs' in capsys.readouterr().out
+    at.stage_check(src, tgt, tmp_path, a)
+    assert len(calls) == 2
+    at.stage_check(src, tgt, tmp_path, _ns(sl='de', risky_only=False))
+    assert len(calls) == 4
+
+
+def test_risky_check_empty_selection_skips_models(tmp_path, monkeypatch):
+    monkeypatch.setattr(at, 'llm', lambda *args: (_ for _ in ()).throw(AssertionError('no LLM')))
+    src = {1: '<!-- PDF p.1 -->\n\nProstomium mit Palpen.'}
+    tgt = {1: '<!-- PDF p.1 -->\n\nProstomium with palps.'}
+    assert at.pages(at.stage_check(src, tgt, tmp_path, _ns(sl='de', risky_only=True)))[1].strip() == tgt[1]

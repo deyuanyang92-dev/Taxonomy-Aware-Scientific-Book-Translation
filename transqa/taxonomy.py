@@ -15,9 +15,18 @@ AUTH_PAREN_RE = re.compile(r'\(([A-Z][\w.\'\- ]+?),?\s(1[5-9]\d\d|20\d\d)\)')
 
 
 def latin_names(t: str) -> list[str]:
-    """斜体里含拉丁字母、不含西里尔/汉字的串，按出现顺序（规范化空白）。"""
-    return [re.sub(r'\s+', ' ', m.strip()) for m in re.findall(r'\*([^*\n]+)\*', clean(t))
-            if re.search(r'[A-Za-z]', m) and not re.search(r'[Ѐ-ӿ぀-ヿ一-鿿]', m)]
+    """提取格式标记中的拉丁双名，避免把独立脚注星号配成超长斜体段。"""
+    # OCR 文本常用独立 * 标脚注。只抽取符合属名 + 种加词形式的斜体片段，
+    # 不能把 `Genus * 1. ... *Species epithet*` 当成一个跨整段的斜体名称。
+    pattern = re.compile(
+        r'\*('
+        r'(?:[A-Z][a-z]{1,}|[A-Z]\.)\s+'
+        r'(?:\([A-Z][a-z]+\)\s+)?'
+        r'[a-z][a-z-]*'
+        r'(?:\s+(?:subsp\.|var\.|f\.)\s+[a-z][a-z-]*)?'
+        r')\*'
+    )
+    return [re.sub(r'\s+', ' ', m.strip()) for m in pattern.findall(clean(t))]
 
 
 def key_edges(t: str) -> list[tuple[int, int, str]]:

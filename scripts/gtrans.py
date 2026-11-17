@@ -57,11 +57,18 @@ from direct_mode import PAGE_MARK
 
 ROOT = Path(__file__).resolve().parent.parent
 GOOGLE_URL = "https://translate.googleapis.com/translate_a/single"
+# 2026-11-16：translate.googleapis.com 对并发批量请求整段 IP 返回 429（连单条也 429），
+# clients5 的 dict-chrome-ex 端点仍可用；作为 429/5xx 时的即时后备。
+GOOGLE_FALLBACK_URL = "https://clients5.google.com/translate_a/t"
 CHUNK_MAX = 4500
 MAX_RETRIES = 5
 ENGINE = "deepseek-flash"
 MAX_WORDS = 1500
 DEFAULT_CACHE = "~/.cache/yzz-translate/gtrans_cache.sqlite"
+# PDF extraction leaves control bytes (notably 0x08) inside running headers
+# and OCR failures (U+FFFD) in leader-dot runs; either can push the encoded
+# request past Google's limit and get HTTP 400. Strip both before URL encoding.
+CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f�]")
 
 _sleep = time.sleep           # 测试里替换，免得真等
 
@@ -124,13 +131,29 @@ def http_get(url: str, timeout: float = 30) -> str:
         return str(r.read().decode("utf8"))
 
 
+def _parse_google(data: object) -> str:
+    """两种免费端点的返回：gtx 的 [[[译文,原文,...],...]]；clients5 的 [译文] 或 [译文,...]。"""
+    if isinstance(data, list) and data:
+        if all(isinstance(x, str) for x in data):
+            return "".join(data)
+        try:
+            return "".join(str(seg[0]) for seg in data[0] if seg and seg[0])  # type: ignore[index]
+        except (TypeError, IndexError):
+            pass
+    if isinstance(data, dict) and isinstance(data.get("sentences"), list):
+        return "".join(str(s.get("trans", "")) for s in data["sentences"] if isinstance(s, dict))
+    raise TypeError(f"Google 返回格式无法解析：{str(data)[:120]}")
+
+
 class Cache:
     """sqlite 持久缓存，键 sha1(原文)。"""
 
     def __init__(self, path: str | Path | None = None):
         p = Path(path or os.environ.get("GTRANS_CACHE") or DEFAULT_CACHE).expanduser()
         p.parent.mkdir(parents=True, exist_ok=True)
-        self.con = sqlite3.connect(p, check_same_thread=False)
+        self.con = sqlite3.connect(p, timeout=30, check_same_thread=False)
+        self.con.execute("PRAGMA journal_mode=WAL")      # 多进程同时读写：读不挡写，写等锁而不是立刻报错
+        self.con.execute("PRAGMA busy_timeout=30000")
         self.lock = threading.Lock()
         self.con.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, en TEXT, zh TEXT, ts REAL)")
         self.con.commit()
@@ -142,12 +165,22 @@ class Cache:
     def get(self, text: str) -> str | None:
         with self.lock:
             row = self.con.execute("SELECT zh FROM cache WHERE key=?", (self.key(text),)).fetchone()
-        return None if row is None else str(row[0])
+        if row is None or not str(row[0]).strip():
+            return None          # 旧版曾把空响应写入缓存；空译文按未命中处理，重新请求
+        return str(row[0])
 
     def put(self, text: str, zh: str) -> None:
-        with self.lock:
-            self.con.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?,?)", (self.key(text), text, zh, time.time()))
-            self.con.commit()
+        for attempt in range(5):
+            try:
+                with self.lock:
+                    self.con.execute("INSERT OR REPLACE INTO cache VALUES (?,?,?,?)",
+                                     (self.key(text), text, zh, time.time()))
+                    self.con.commit()
+                return
+            except sqlite3.OperationalError as exc:   # busy_timeout 之外再兜底：并发书目可能同时提交
+                if "locked" not in str(exc) or attempt == 4:
+                    raise
+                time.sleep(0.2 * (attempt + 1))
 
 
 class Google:
@@ -164,6 +197,7 @@ class Google:
         self.hits = 0
         self.chars = 0
         self._cool_until = 0.0
+        self._primary_down_until = 0.0      # 主端点整段 IP 429 后，先直连后备端点，避免每条都撞一次
         self._lock = threading.Lock()
 
     def _ck(self, c: str) -> str:
@@ -174,8 +208,13 @@ class Google:
         return all(self.cache.get(self._ck(c)) is not None for c in split_chunks(text.strip()))
 
     def _fetch(self, q: str) -> str:
-        url = GOOGLE_URL + "?" + urllib.parse.urlencode(
+        q = CONTROL_RE.sub("", q)
+        if not q.strip():
+            return ""
+        primary = GOOGLE_URL + "?" + urllib.parse.urlencode(
             {"client": "gtx", "sl": self.sl, "tl": self.tl, "dt": "t", "q": q}, quote_via=urllib.parse.quote)
+        fallback = GOOGLE_FALLBACK_URL + "?" + urllib.parse.urlencode(
+            {"client": "dict-chrome-ex", "sl": self.sl, "tl": self.tl, "q": q}, quote_via=urllib.parse.quote)
         if self.pause[1] > 0:
             _sleep(random.uniform(*self.pause))
         last: Exception | None = None
@@ -184,18 +223,31 @@ class Google:
             if self._cool_until > max(slept_until, time.time()):  # 别的线程触发了冷却：一起等
                 _sleep(self._cool_until - time.time())
                 slept_until = self._cool_until
-            try:
-                with self._lock:
-                    self.requests += 1
-                    self.chars += len(q)
-                data = json.loads(http_get(url))
-                return "".join(str(seg[0]) for seg in data[0] if seg and seg[0])
-            except urllib.error.HTTPError as exc:
-                if exc.code != 429 and exc.code < 500:
-                    raise GoogleError(f"Google HTTP {exc.code}：{exc.reason}") from exc
-                last = exc
-            except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError, IndexError, TypeError) as exc:
-                last = exc
+            fatal: urllib.error.HTTPError | None = None
+            urls = (fallback,) if self._primary_down_until > time.time() else (primary, fallback)
+            for url in urls:
+                try:
+                    with self._lock:
+                        self.requests += 1
+                        self.chars += len(q)
+                    out = _parse_google(json.loads(http_get(url)))
+                    if not out.strip():        # Google 偶发返回空串；不能缓存，按失败重试/换端点
+                        last = GoogleError(f"Google 返回空译文：{q[:60]!r}")
+                        continue
+                    return out
+                except urllib.error.HTTPError as exc:
+                    last = exc
+                    if url is primary and exc.code == 429:     # 主端点限流：10 分钟内直接走后备
+                        with self._lock:
+                            self._primary_down_until = time.time() + 600
+                    if exc.code != 429 and exc.code < 500:
+                        fatal = exc      # 主端点 4xx：先试后备端点，两者都 4xx 才算致命
+                    continue
+                except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError,
+                        IndexError, TypeError, KeyError) as exc:
+                    last = exc
+            if fatal is not None:
+                raise GoogleError(f"Google HTTP {fatal.code}：{fatal.reason}") from fatal
             if k < MAX_RETRIES:
                 wait = 5 * 2 ** k + random.uniform(0, 2)
                 if isinstance(last, urllib.error.HTTPError):  # 429/5xx：全体冷却
@@ -219,7 +271,10 @@ class Google:
             else:
                 self.hits += 1
             parts.append(zh)
-        return "".join(parts).strip()
+        out = "".join(parts).strip()
+        if not out:
+            raise GoogleError(f"Google 返回空译文：{text[:60]!r}")
+        return out
 
     def prefetch(self, texts: list[str], workers: int = 8) -> int:
         """并发预取未缓存的块（无间隔，遇 429 全体冷却）；返回新请求数。失败的块留给顺序流程重试并报错。"""

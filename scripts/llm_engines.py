@@ -9,6 +9,12 @@ DeepSeek 凭证：环境变量 DEEPSEEK_API_KEY；缺省时读 DEEPSEEK_ENV_FILE
 /mnt/p/纤毛虫-环节动物定殖/claude-deepseek.sh）里 `export ANTHROPIC_AUTH_TOKEN=` 一行。凭证不写进仓库、不进日志。
 DeepSeek 调用前先 wait_offpeak()（忙时等到闲时，半价）；LLM_SKIP_OFFPEAK=1 可跳过。
 
+省 token（见 token_economy.py / skill/TOKEN_ECONOMY.md）：
+  - profile=json|revise|translate|default|long 控制 max_tokens（默认 default=8192，不再默认 64000）
+  - DeepSeek system 自动加 cache_control，稳定前缀走缓存价
+  - YZZ_TOKEN_BUDGET=N 设进程累计预算，超限抛 BudgetExceeded
+  - 默认关 thinking（YZZ_DEEPSEEK_THINKING=1 才开）
+
 每次调用向 usage.tsv 追加一行：时间、engine、标签、输入 token、输出 token、缓存读 token、耗时。
 路径取 call(usage_file=…)，其次环境变量 LLM_USAGE_TSV，缺省 ~/.cache/yzz-translate/usage.tsv。
 命令行自测：python3 llm_engines.py <engine> "<系统提示>" "<用户消息>"
@@ -21,10 +27,14 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any
 
-from deepseek_offpeak import is_peak, wait_offpeak
+from deepseek_offpeak import is_peak, seconds_to_offpeak, wait_offpeak
+from token_economy import BudgetExceeded, check_budget, out_budget, record_usage, system_blocks
+
+_USAGE_LOCK = threading.Lock()
 
 DEEPSEEK_ENGINES = ("deepseek-flash", "deepseek-v4-pro")
 CLAUDE_ENGINES = {"claude-sonnet": "sonnet", "claude-opus": "opus"}
@@ -36,8 +46,11 @@ ENGINES = (*DEEPSEEK_ENGINES, *CLAUDE_ENGINES, *CODEX_ENGINES, *CURSOR_ENGINES)
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
 DEEPSEEK_ENV_FILE = "/mnt/p/纤毛虫-环节动物定殖/claude-deepseek.sh"
-MAX_TOKENS = 64000
+MAX_TOKENS = 64000  # 绝对上限；日常请用 profile= / out_budget()，不要直接传 64000
 RETRIES = 3
+# 窗口外最多等半小时；更长说明整个窗口已关闭，直接抛错让任务延期，
+# 不要把进程挂 16 小时（用户 2026-11-17：只在折扣期 00:30–08:30 调用）。
+MAX_OFFPEAK_WAIT = 1800
 CLI_TIMEOUT = 1800
 USAGE_HEADER = "时间\tengine\t标签\t输入token\t输出token\t缓存读token\t耗时秒\n"
 
@@ -86,16 +99,17 @@ def _deepseek(engine: str, system: str, user: str, max_tokens: int,
               check_window: bool = False) -> tuple[str, dict[str, Any]]:
     client = _make_client()
     last: Exception | None = None
+    sys_arg: str | list[dict[str, Any]] = system_blocks(system, cache=True)
     for k in range(RETRIES):
         if check_window and k and is_peak():  # 重试前再查一次：夜间窗口已过就停，任务延期而不是越界调用
-            raise EngineError("DeepSeek 夜间窗口已结束（北京时间 08:00），不再重试；任务延期到下一个夜间")
+            raise EngineError("DeepSeek 折扣窗口已结束（北京时间 08:30），不再重试；任务延期到下一个 00:30–08:30 窗口")
         try:
             # 默认关闭 thinking：2026-11-14 实测，关闭后审校同样抓到误译，输出 token 约为开启时的 1/17；
             # budget_tokens 不被 DeepSeek 遵守（照样长思考且可能无正文）。确需深思时设 YZZ_DEEPSEEK_THINKING=1。
             extra: dict[str, Any] = ({} if os.environ.get("YZZ_DEEPSEEK_THINKING")
                                      else {"thinking": {"type": "disabled"}})
             with client.messages.stream(
-                model=engine, max_tokens=max_tokens, system=system,
+                model=engine, max_tokens=max_tokens, system=sys_arg,
                 messages=[{"role": "user", "content": user}], **extra,
             ) as stream:
                 msg = stream.get_final_message()
@@ -199,7 +213,6 @@ def log_usage(engine: str, usage: dict[str, Any], tag: str = "",
               usage_file: str | os.PathLike[str] | None = None) -> None:
     path = usage_path(usage_file)
     path.parent.mkdir(parents=True, exist_ok=True)
-    new = not path.exists() or path.stat().st_size == 0
 
     def cell(v: Any) -> str:
         return "-" if v is None else str(v)
@@ -207,23 +220,38 @@ def log_usage(engine: str, usage: dict[str, Any], tag: str = "",
     row = [time.strftime("%Y-%m-%d %H:%M:%S"), engine, tag.replace("\t", " "),
            cell(usage.get("input_tokens")), cell(usage.get("output_tokens")),
            cell(usage.get("cache_read_tokens")), f"{usage.get('seconds', 0):.1f}"]
-    with open(path, "a", encoding="utf8") as f:
-        if new:
-            f.write(USAGE_HEADER)
-        f.write("\t".join(row) + "\n")
+    line = "\t".join(row) + "\n"
+    with _USAGE_LOCK:  # 并行 revise/check 同写一个 usage.tsv
+        new = not path.exists() or path.stat().st_size == 0
+        with open(path, "a", encoding="utf8") as f:
+            if new:
+                f.write(USAGE_HEADER)
+            f.write(line)
 
 
-def call(engine: str, system: str, user: str, *, max_tokens: int = MAX_TOKENS, tag: str = "",
+def call(engine: str, system: str, user: str, *, max_tokens: int | None = None,
+         profile: str = "default", tag: str = "",
          usage_file: str | os.PathLike[str] | None = None, offpeak: bool = True) -> tuple[str, dict[str, Any]]:
     """调用 engine，返回 (正文, usage)。usage 含 input_tokens/output_tokens/cache_read_tokens（命令行引擎为 None）、
-    seconds、engine。失败抛 EngineError。"""
+    seconds、engine、max_tokens、profile。失败抛 EngineError / BudgetExceeded。
+
+    max_tokens 缺省时按 profile + user 篇幅由 token_economy.out_budget 决定（default=8192）。
+    需要旧行为显式传 max_tokens=64000 或 profile=\"long\"。"""
     if engine not in ENGINES:
         raise EngineError(f"未知 engine {engine!r}，可选：{', '.join(ENGINES)}")
+    check_budget()
+    if max_tokens is None:
+        max_tokens = out_budget(profile, user)
+    max_tokens = min(int(max_tokens), MAX_TOKENS)
     t0 = time.time()
     if engine in DEEPSEEK_ENGINES and os.environ.get("YZZ_DISABLE_DEEPSEEK"):
         raise EngineError("DeepSeek 已被 YZZ_DISABLE_DEEPSEEK 禁用")
     if engine in DEEPSEEK_ENGINES:
         if offpeak and not os.environ.get("LLM_SKIP_OFFPEAK"):
+            wait_s = seconds_to_offpeak()
+            if wait_s > MAX_OFFPEAK_WAIT:
+                raise EngineError(
+                    "DeepSeek 折扣窗口已关闭（仅北京时间 00:30–08:30 可调用）；任务延期到下一个窗口")
             wait_offpeak()
         t0 = time.time()
         guard_window = offpeak and not os.environ.get("LLM_SKIP_OFFPEAK")
@@ -234,8 +262,13 @@ def call(engine: str, system: str, user: str, *, max_tokens: int = MAX_TOKENS, t
         text, usage = _cursor(engine, system, user)
     else:
         text, usage = _claude(engine, system, user)
-    usage = {**usage, "engine": engine, "seconds": time.time() - t0}
+    usage = {**usage, "engine": engine, "seconds": time.time() - t0,
+             "max_tokens": max_tokens, "profile": profile}
     log_usage(engine, usage, tag, usage_file)
+    try:
+        record_usage(usage)
+    except BudgetExceeded:
+        raise
     return text, usage
 
 

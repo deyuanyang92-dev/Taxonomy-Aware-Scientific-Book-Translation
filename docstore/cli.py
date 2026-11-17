@@ -14,6 +14,7 @@ from .store import LEVELS, Store, agent
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
 WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix"}
+WRITE_CMDS.add("proofread")
 
 
 def _by(args) -> str:
@@ -59,6 +60,7 @@ def cmd_text(st: Store, a) -> None:
             vlm=a.vlm,
             pages=_parse_pages(a.pages),
             fix=not a.no_fix,
+            layer_only=a.layer_only,
             ocr_threads=a.ocr_threads,
             log=lambda m: print(m, flush=True),
         )
@@ -316,11 +318,34 @@ def cmd_postfix(st: Store, a) -> None:
                     continue
                 base = pg.get("producer") if not str(pg.get("producer") or "").startswith("latinfix") else \
                     (pg.get("extra") or {}).get("latinfix", {}).get("base_producer")
-                v = make_version(new, "ocr", producer="latinfix", engine=f"{pg.get('engine') or ''} + latinfix",
+                v = make_version(new, pg.get("method") or "ocr", producer="latinfix", engine=f"{pg.get('engine') or ''} + latinfix",
                                  dpi=pg.get("dpi"), level=pg.get("verify_level"), source=f"{d['path']}#latinfix",
+                                 conf=(pg.get("quality") or {}).get("ocr_conf"),
                                  extra={"latinfix": {"changes": len(ch), "base_producer": base}})
                 st.put_version(key, n, v, promote=True)
         print(f"{key}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+
+
+def cmd_proofread(st: Store, a) -> None:
+    from .proofread import proofread_doc, rejudge_doc
+
+    if a.rejudge:
+        result = rejudge_doc(st, a.key, pages=_parse_pages(a.pages), dry=a.dry, by=_by(a))
+    else:
+        result = proofread_doc(st, a.key, below=a.below, pages=_parse_pages(a.pages), limit=a.limit,
+                              engine=a.engine, workers=a.workers, include_unknown=a.include_unknown,
+                              dry=a.dry, by=_by(a))
+    print(json.dumps(result, ensure_ascii=False), flush=True)
+
+
+def cmd_attest(st: Store, a) -> None:
+    """短语在本地库某语种资料里的佐证（页数、资料数）；多个短语时按资料数排序，判断哪个译法是实际用法。"""
+    from .attest import attest
+
+    rows = [attest(st, p, a.lang, a.kind) for p in a.phrases]
+    for r in sorted(rows, key=lambda r: (-r["docs"], -r["pages"])) if len(rows) > 1 else rows:
+        cap = "+" if r.get("capped") else ""
+        print(f"{r['docs']}\t{r['pages']}{cap}\t{r['phrase']}\t{','.join(r['sample_keys'])}")
 
 
 def cmd_rename(st: Store, a) -> None:
@@ -390,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--dpi", type=int, default=300)
     s.add_argument("--limit", type=int, help="每本最多处理多少页（估时用）")
     s.add_argument("--pages", help="只处理这些页（PDF 页码，1 起），如 655-671,700")
+    s.add_argument("--layer-only", action="store_true",
+                   help="只取 PDF 自带文本层，不 OCR（大批文献先建检索/语料；之后去掉此参数再跑即补 OCR）")
     s.add_argument("--no-fix", action="store_true", help="不对共识文本再跑 lexicon 编辑距离纠错（保留引擎原文）")
     s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
     s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
@@ -501,6 +528,24 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("keys", nargs="+")
     s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本")
     s.set_defaults(fn=cmd_postfix)
+
+    s = sub.add_parser("proofread", help="Proofread low-confidence OCR against page images")
+    s.add_argument("key")
+    s.add_argument("--rejudge", action="store_true", help="Recheck stored proofread alternates without model calls")
+    s.add_argument("--below", type=float, default=0.92)
+    s.add_argument("--pages", help="PDF page ranges, e.g. 1-30,35")
+    s.add_argument("--limit", type=int)
+    s.add_argument("--engine", default="codex-sol")
+    s.add_argument("--workers", type=int, default=3)
+    s.add_argument("--include-unknown", action="store_true")
+    s.add_argument("--dry", action="store_true", help="List candidates without rendering, model calls, or writes")
+    s.set_defaults(fn=cmd_proofread)
+
+    s = sub.add_parser("attest", help="短语在本地库某语种资料中的佐证（资料数、页数；0 token）")
+    s.add_argument("phrases", nargs="+")
+    s.add_argument("--lang", default="en")
+    s.add_argument("--kind")
+    s.set_defaults(fn=cmd_attest)
 
     s = sub.add_parser("lang", help="识别资料语言（纯脚本：文本层或快速 OCR + 功能词，零 token）")
     s.add_argument("items", nargs="+", help="PDF、目录或已登记 key")

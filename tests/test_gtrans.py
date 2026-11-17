@@ -116,13 +116,54 @@ def test_split_chunks_oversize_sentence_hard_split():
 
 def test_cache_hit_across_instances(net: Net, tmp_path: Path):
     p = tmp_path / "c.sqlite"
-    g1 = gtrans.Google(gtrans.Cache(p))
+    c1 = gtrans.Cache(p)
+    assert c1.con.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"   # 并发书目共享缓存
+    assert c1.con.execute("PRAGMA busy_timeout").fetchone()[0] >= 30000
+    g1 = gtrans.Google(c1)
     assert g1.translate("natural selection") == "自然淘汰"
     assert g1.translate("natural selection") == "自然淘汰"
     g2 = gtrans.Google(gtrans.Cache(p))                     # 新实例、同一文件
     assert g2.translate("natural selection") == "自然淘汰"
     assert net.queries == ["natural selection"] and g2.requests == 0 and g2.hits == 1
     assert gtrans.Cache.key("x") == "11f6ad8ec52a2984abaafd7c3b516503785c2072"   # sha1
+
+
+def test_empty_cached_translation_is_treated_as_miss(tmp_path: Path):
+    c = gtrans.Cache(tmp_path / "c.sqlite")
+    c.put("x", "  ")
+    assert c.get("x") is None
+
+
+def test_empty_google_response_retried_not_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    replies = [json.dumps([[["", "x", None, None, 1]]]),
+               json.dumps([[["好", "x", None, None, 1]]])]
+    calls: list[str] = []
+
+    def http_get(url: str, timeout: float = 30) -> str:
+        calls.append(url)
+        return replies.pop(0)
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
+    assert g.translate("x") == "好"
+    assert len(calls) == 2 and g.cache.get("x") == "好"   # 空串没有写进缓存
+
+
+def test_google_fallback_endpoint_on_429(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    calls: list[str] = []
+
+    def http_get(url: str, timeout: float = 30) -> str:
+        calls.append(url)
+        if "translate.googleapis.com" in url:
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", None, None)  # type: ignore[arg-type]
+        return json.dumps(["Fallback text"])                 # clients5 的 [译文] 形状
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
+    assert g.translate("Hallo Welt") == "Fallback text"
+    assert any("clients5.google.com" in u for u in calls)
 
 
 def test_long_text_is_chunked_into_requests(net: Net, tmp_path: Path):
@@ -138,7 +179,7 @@ def test_long_text_is_chunked_into_requests(net: Net, tmp_path: Path):
 
 def test_retry_with_exponential_backoff(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     sleeps: list[float] = []
-    codes = [429, 503]
+    codes = [429, 429, 503, 503]
 
     def flaky(url: str, timeout: float = 30) -> str:
         if codes:
@@ -148,9 +189,9 @@ def test_retry_with_exponential_backoff(monkeypatch: pytest.MonkeyPatch, tmp_pat
     monkeypatch.setattr(gtrans, "http_get", flaky)
     monkeypatch.setattr(gtrans, "_sleep", sleeps.append)
     g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
-    assert g.translate("ok") == "好" and g.requests == 3
+    assert g.translate("ok") == "好" and g.requests == 5   # 每轮主端点 + 后备端点
     backoff = sleeps[1:]                                      # 第 0 个是请求前的礼貌间隔
-    assert len(backoff) == 2 and backoff[0] >= 5 and backoff[1] >= 10
+    assert len(backoff) == 3 and backoff[0] >= 5 and backoff[1] >= 10 and backoff[2] >= 20
 
 
 def test_gives_up_after_max_retries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -162,7 +203,7 @@ def test_gives_up_after_max_retries(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
     with pytest.raises(gtrans.GoogleError):
         g.translate("x")
-    assert g.requests == gtrans.MAX_RETRIES + 1
+    assert g.requests == 2 * (gtrans.MAX_RETRIES + 1)   # 主端点 + 后备端点
 
 
 def test_client_error_not_retried(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -174,7 +215,21 @@ def test_client_error_not_retried(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
     with pytest.raises(gtrans.GoogleError):
         g.translate("x")
-    assert g.requests == 1
+    assert g.requests == 2   # 主端点 403 后试一次后备端点，不重试
+
+
+def test_control_bytes_removed_before_request(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    seen: list[str] = []
+
+    def ok(url: str, timeout: float = 30) -> str:
+        seen.append(url)
+        return json.dumps([[["ok", "source", None, None, 1]]])
+
+    monkeypatch.setattr(gtrans, "http_get", ok)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
+    assert g.translate("header\x08 text") == "ok"
+    assert seen and "%08" not in seen[0] and "header%20text" in seen[0]
 
 
 # ---------------------------------------------------------------- 解析
@@ -581,7 +636,7 @@ def test_google_uses_configured_languages_and_cools_down_on_429(tmp_path, monkey
     def http_get(url, timeout=30):
         seen.append(urllib.parse.parse_qs(urllib.parse.urlparse(url).query))
         state["n"] += 1
-        if state["n"] == 1:
+        if state["n"] <= 2:   # 主端点 + 后备端点都 429（整段 IP 被限）
             raise urllib.error.HTTPError(url, 429, "Too Many", {}, None)
         return _json.dumps([[["Body short.", "x"]]])
 
