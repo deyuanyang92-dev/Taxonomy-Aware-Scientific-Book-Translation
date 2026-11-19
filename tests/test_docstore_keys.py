@@ -320,3 +320,20 @@ def test_inline_page_with_left_shifted_markers_calibrates_on_marker_rows():
     rows += [row(74, 120 + 40 * i, "続く", 300) for i in range(6)]
     tm, _right = keys.calibrate(keys.default_grammar(), 1276.0, rows)
     assert tm < 30
+
+
+def test_pull_text_from_slots_moves_description_back_into_text():
+    c = {"text": "", "terminals": ["体表面は粘着性の突起で覆われる；疣足の背触糸は洋ナシ形………Sphaerosyllis -> 3"],
+         "slots": [{"kind": "name_jump", "name": "体表面は粘着性の突起で覆われる；疣足の背触糸は洋ナシ形………Sphaerosyllis", "num": "3"}]}
+    assert keys.pull_text_from_slots(c)
+    assert c["text"] == "体表面は粘着性の突起で覆われる；疣足の背触糸は洋ナシ形"
+    assert c["slots"] == [{"kind": "name_jump", "name": "Sphaerosyllis", "num": "3"}]
+    d = {"text": "—", "terminals": ["鰓先端の各鰓枝は多数って短く，密に分岐する -> Euphrosine sp.C（図155)"],
+         "slots": [{"kind": "group_taxon", "group": "鰓先端の各鰓枝は多数って短く，密に分岐する", "taxon": "Euphrosine sp.C（図155)"}]}
+    assert keys.pull_text_from_slots(d)
+    assert d["text"].startswith("鰓先端") and d["slots"] == [{"kind": "taxon", "taxon": "Euphrosine sp.C（図155)"}]
+    ok = {"text": "体は小さい", "terminals": ["2"], "slots": [{"kind": "jump", "num": "2"}]}
+    assert not keys.pull_text_from_slots(ok)
+    jp = {"text": "", "terminals": ["シンカイウロコムシ亜科 -> Branchinotogluminae"],
+          "slots": [{"kind": "group_taxon", "group": "シンカイウロコムシ亜科", "taxon": "Branchinotogluminae"}]}
+    assert not keys.pull_text_from_slots(jp)

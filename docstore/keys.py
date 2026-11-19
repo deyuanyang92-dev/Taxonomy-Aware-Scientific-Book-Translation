@@ -394,6 +394,36 @@ def term_struct(gr: Grammar, v: str) -> dict[str, str]:
     return {"kind": "taxon", "taxon": v}
 
 
+_LEADER_RUN = re.compile(r"\s*[…‥⋯.．·]{2,}\s*")
+_DESC_PUNCT = re.compile(r"[，；、。;,]")
+
+
+def pull_text_from_slots(c: dict[str, Any]) -> bool:
+    """条目正文为空（或只有横线）而终点栏位里装着整句描述：把描述移回 text，返回是否改动。
+
+    OCR 偶尔把一整行（描述 + 点线 + 名称/号）并成一个右栏框，于是整句落进终点。
+    - name_jump：名称里还有点线 → 最后一段点线之前是描述，之后才是名称；
+    - group_taxon：类群部分带标点或过长 → 它其实是描述，终点只剩学名。"""
+    if c["text"].strip(" —一-"):
+        return False
+    for i, s in enumerate(c["slots"]):
+        if s["kind"] == "name_jump":
+            parts = _LEADER_RUN.split(s["name"])
+            if len(parts) >= 2 and parts[-1].strip() and parts[0].strip():
+                c["text"] = _LEADER_RUN.sub(" ", " ".join(parts[:-1])).strip()
+                s["name"] = parts[-1].strip()
+                c["terminals"][i] = f"{s['name']} -> {s['num']}"
+                return True
+        elif s["kind"] == "group_taxon":
+            g = s["group"]
+            if _DESC_PUNCT.search(g) or len(g) > 14:
+                c["text"] = g
+                c["slots"][i] = {"kind": "taxon", "taxon": s["taxon"]}
+                c["terminals"][i] = s["taxon"]
+                return True
+    return False
+
+
 def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | None = None) -> dict[str, Any]:
     """pages: (页号, 页宽, 行框) 按页序。返回可直接写 keys.json 的字典。"""
     kp = KeyParser(grammar)
@@ -407,6 +437,8 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
     couplets = [{"key": ld["key"], "lead": ld["lead"], "kind": ld["kind"], "page": ld["page"],
                  "text": ld["text"], "terminals": ld["term"],
                  "slots": [term_struct(gr, v) for v in ld["term"]]} for ld in leads]
+    for c in couplets:
+        pull_text_from_slots(c)
     # 整页版面：每页按阅读顺序的 {couplet 下标 | heading | rest}；下游据此整页替换检索表页
     layout: dict[str, list[dict[str, Any]]] = {}
     for pg in sorted(kp.items):
