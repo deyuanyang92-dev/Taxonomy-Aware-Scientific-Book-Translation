@@ -376,9 +376,16 @@ def cmd_keys(st: Store, a) -> None:
         pages, missing = keys.read_cache_pages(cache, a.first, last)
         data = keys.extract(pages)
         data["missing_pages"] = missing
+        if a.fix:
+            try:
+                keys.apply_fixes(data, json.loads(Path(a.fix).read_text(encoding="utf-8")))
+            except keys.FixError as exc:
+                print(f"{a.fix}：{exc}", file=sys.stderr)
+                sys.exit(1)
+            print(f"已应用 {len(data['fixes'])} 条人工改正（{a.fix}）", file=sys.stderr)
         if a.out:
             Path(a.out).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
-        rep = keys.check_by_key([{**c, "term": c["terminals"]} for c in data["couplets"]])
+        rep = keys.check_couplets(data["couplets"])
         if missing:
             print(f"缺行框缓存 {len(missing)} 页（不 OCR）：{missing[:10]}", file=sys.stderr)
     n_ok = 0
@@ -608,6 +615,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--first", type=int, default=1)
     e.add_argument("--last", type=int, default=0, help="末页（默认到资料末页；用 --cache 时必须给）")
     e.add_argument("--out", help="写 keys.json（couplets、keys、events、missing_pages）")
+    e.add_argument("--fix", help="keys_fix.json：对照页面图像人工核对后的改正（set/drop/add，必须写 why）")
     e.add_argument("--problems", action="store_true", help="列出每张表的具体缺陷")
     c = ks.add_parser("check", help="对 keys.json 重做按表图检查（人工补完条目后用）")
     c.add_argument("file")

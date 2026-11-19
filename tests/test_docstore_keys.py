@@ -231,6 +231,68 @@ def test_cli_extract_needs_key_or_cache_with_last(tmp_path):
         main(["--root", str(tmp_path / "root"), "keys", "extract", "--cache", str(tmp_path)])
 
 
+def _basic_data():
+    return parse(basic_page())
+
+
+def test_apply_fixes_set_drop_add_keep_layout_and_recheck():
+    res = _basic_data()
+    assert [c["lead"] for c in res["couplets"]] == ["1", "1'", "2", "2'"]
+    fixes = {"fixes": [
+        {"op": "set", "page": 1, "lead": "2'", "terminals": ["Lepidonotus squamatus (図3)"], "why": "p1 图像"},
+        {"op": "add", "after": {"page": 1, "lead": "2'"},
+         "couplet": {"lead": "3", "kind": "num", "text": "新条目の説明文です", "terminals": ["5"]}, "why": "p1 漏提"},
+        {"op": "drop", "page": 1, "lead": "1'", "why": "幽灵条目"},
+    ]}
+    keys.apply_fixes(res, fixes)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "2", "2'", "3"]
+    c22 = res["couplets"][2]
+    assert c22["terminals"] == ["Lepidonotus squamatus (図3)"] and c22["slots"] == [
+        {"kind": "taxon", "taxon": "Lepidonotus squamatus (図3)"}]
+    # layout 的下标跟着 couplets 走：每个 i 指向的条目号与页面顺序一致
+    order = [res["couplets"][it["i"]]["lead"] for it in res["layout"]["1"] if it["t"] == "couplet"]
+    assert order == ["1", "2", "2'", "3"]
+    assert len(res["fixes"]) == 3 and res["fixes"][1]["lead_added"] == "3"
+    probs = [p for k in res["keys"] for p in k["problems"]]
+    assert "missing alternate for 1" in probs  # 1' 被删后图检查重做
+    assert "jump to unknown 5 from 3" not in probs and "missing alternate for 3" in probs
+
+
+def test_apply_fixes_requires_why_and_exactly_one_match():
+    import pytest
+
+    res = _basic_data()
+    with pytest.raises(keys.FixError, match="why"):
+        keys.apply_fixes(res, {"fixes": [{"op": "drop", "page": 1, "lead": "2"}]})
+    with pytest.raises(keys.FixError, match="匹配到 0 条"):
+        keys.apply_fixes(res, {"fixes": [{"op": "drop", "page": 9, "lead": "2", "why": "x"}]})
+    with pytest.raises(keys.FixError, match="不认识"):
+        keys.apply_fixes(res, {"fixes": [{"op": "move", "why": "x"}]})
+
+
+def test_cli_extract_applies_fix_file(tmp_path, capsys):
+    from docstore.cli import main
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    _write_cache(cache, [basic_page()])
+    fixf = tmp_path / "keys_fix.json"
+    fixf.write_text(json.dumps({"fixes": [{"op": "set", "page": 1, "lead": "1", "terminals": ["3"],
+                                           "why": "p1 图像上跳转号是 3"}]}), encoding="utf-8")
+    out = tmp_path / "keys.json"
+    assert main(["--root", str(tmp_path / "root"), "keys", "extract", "--cache", str(cache), "--last", "1",
+                 "--out", str(out), "--fix", str(fixf)]) == 0
+    assert "已应用 1 条人工改正" in capsys.readouterr().err
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["couplets"][0]["terminals"] == ["3"] and data["fixes"][0]["why"].startswith("p1")
+    fixf.write_text(json.dumps({"fixes": [{"op": "drop", "page": 7, "lead": "1", "why": "x"}]}), encoding="utf-8")
+    import pytest
+
+    with pytest.raises(SystemExit):
+        main(["--root", str(tmp_path / "root"), "keys", "extract", "--cache", str(cache), "--last", "1",
+              "--fix", str(fixf)])
+
+
 # ---- 真实三卷回归：行框缓存不入库，缺则跳过。数字是 issue #38 记录的原型结果（只有计数，无书文）----
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)

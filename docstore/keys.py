@@ -556,6 +556,84 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
             "events": [{"page": p, "event": e, "detail": d} for p, e, d in kp.events]}
 
 
+class FixError(ValueError):
+    """keys_fix.json 的某条改动对不上提取结果（页号/条目号不存在、匹配多条、缺依据）。"""
+
+
+def _match(couplets: list[dict[str, Any]], page: int, lead: str, kind: str | None) -> int:
+    hits = [i for i, c in enumerate(couplets)
+            if c["page"] == page and c["lead"] == lead and (kind is None or c["kind"] == kind)]
+    if len(hits) != 1:
+        raise FixError(f"p{page} 条目 {lead}{'/' + kind if kind else ''}：匹配到 {len(hits)} 条，必须恰好 1 条")
+    return hits[0]
+
+
+def _shift_layout(layout: dict[str, list[dict[str, Any]]], start: int, delta: int) -> None:
+    for items in layout.values():
+        for it in items:
+            if it.get("t") == "couplet" and it["i"] >= start:
+                it["i"] += delta
+
+
+def apply_fixes(data: dict[str, Any], fixes: dict[str, Any], grammar: Grammar | None = None) -> dict[str, Any]:
+    """按人工核对页面图像后写的 keys_fix.json 改正提取结果；原地修改并返回 data。
+
+    `{"fixes": [{"op": "set", "page": 172, "lead": "11", "terminals": ["Eunice sp.（図5）"], "why": "…"}, …]}`
+    - set   改 text / terminals / lead / kind 中给出的字段（给了 terminals 就重算 slots 并清掉 fix）
+    - drop  删掉一条（幽灵条目）；
+    - add   在 after={page, lead[, kind]} 之后插入 couplet={lead, kind, text, terminals}。
+    每条必须写 why（对照了哪页图像、看到什么）。匹配必须恰好一条，否则抛 FixError：提取器改进后旧补丁
+    失效时要显式报出，不能静默套错位置。改完重做按表检查并写回 data["keys"]；已应用的记入 data["fixes"]。
+    """
+    gr = grammar or default_grammar()
+    cs: list[dict[str, Any]] = data["couplets"]
+    layout: dict[str, list[dict[str, Any]]] = data.setdefault("layout", {})
+    applied: list[dict[str, Any]] = []
+    for n, fx in enumerate(fixes.get("fixes", []), start=1):
+        op = fx.get("op")
+        if not str(fx.get("why", "")).strip():
+            raise FixError(f"第 {n} 条改动缺 why（依据）")
+        if op in ("set", "drop"):
+            i = _match(cs, int(fx["page"]), str(fx["lead"]), fx.get("kind"))
+        if op == "set":
+            c = cs[i]
+            for f in ("text", "lead", "kind"):
+                if f in fx:
+                    c[f] = fx[f]
+            if "terminals" in fx:
+                c["terminals"] = list(fx["terminals"])
+                c["slots"] = [term_struct(gr, v) for v in c["terminals"]]
+                c.pop("fix", None)
+        elif op == "drop":
+            del cs[i]
+            for pg, items in layout.items():
+                layout[pg] = [it for it in items if not (it.get("t") == "couplet" and it["i"] == i)]
+            _shift_layout(layout, i + 1, -1)
+        elif op == "add":
+            a = fx["after"]
+            i = _match(cs, int(a["page"]), str(a["lead"]), a.get("kind"))
+            src = fx["couplet"]
+            new = {"key": cs[i]["key"], "lead": src["lead"], "kind": src.get("kind", "dash"),
+                   "page": int(src.get("page", cs[i]["page"])), "text": src.get("text", ""),
+                   "terminals": list(src.get("terminals", []))}
+            new["slots"] = [term_struct(gr, v) for v in new["terminals"]]
+            cs.insert(i + 1, new)
+            _shift_layout(layout, i + 1, 1)
+            items = layout.setdefault(str(new["page"]), [])
+            pos = next((j + 1 for j, it in enumerate(items) if it.get("t") == "couplet" and it["i"] == i), 0)
+            items.insert(pos, {"t": "couplet", "i": i + 1})
+        else:
+            raise FixError(f"第 {n} 条改动 op={op!r} 不认识（set/drop/add）")
+        rec = {k: v for k, v in fx.items() if k != "couplet"}
+        if op == "add":
+            rec["lead_added"] = fx["couplet"]["lead"]
+        applied.append(rec)
+    by_key = check_couplets(cs)
+    data["keys"] = [{"key": k, **v} for k, v in by_key.items()]
+    data["fixes"] = applied
+    return data
+
+
 def read_cache_pages(cache_dir: Path, first: int, last: int) -> tuple[list[tuple[int, float, list[Row]]], list[int]]:
     """读 PP-OCR 行框缓存目录 `pNNNN.json`；返回 (页, 缺页号)。不触发 OCR。"""
     pages: list[tuple[int, float, list[Row]]] = []
