@@ -348,6 +348,50 @@ def cmd_attest(st: Store, a) -> None:
         print(f"{r['docs']}\t{r['pages']}{cap}\t{r['phrase']}\t{','.join(r['sample_keys'])}")
 
 
+def cmd_keys(st: Store, a) -> None:
+    """检索表偶句重建：读 PP-OCR 行框缓存，零 token，不触发 OCR（issue #38）。"""
+    from . import keys
+
+    if a.keys_cmd == "check":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        rep = keys.check_couplets(data["couplets"])
+    else:
+        if not a.key and not (a.cache and a.last):
+            print("需要 key，或同时给 --cache 与 --last", file=sys.stderr)
+            sys.exit(1)
+        if a.cache:
+            cache = Path(a.cache)
+        else:
+            from .engines import ppocr
+
+            d = st.doc(a.key)
+            if not d["path"] or not Path(d["path"]).exists():
+                print(f"{a.key}：登记表里没有可用的原件 PDF，无法定位行框缓存；可用 --cache 指定目录", file=sys.stderr)
+                sys.exit(1)
+            cache = ppocr._cache_file(d["path"], 1, a.dpi).parent
+        last = a.last or int(st.doc(a.key)["pages"] or 0)
+        if not cache.is_dir() or last < a.first:
+            print(f"行框缓存不存在或页范围为空：{cache}（先 docstore text --engines ppocr）", file=sys.stderr)
+            sys.exit(1)
+        pages, missing = keys.read_cache_pages(cache, a.first, last)
+        data = keys.extract(pages)
+        data["missing_pages"] = missing
+        if a.out:
+            Path(a.out).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        rep = keys.check_by_key([{**c, "term": c["terminals"]} for c in data["couplets"]])
+        if missing:
+            print(f"缺行框缓存 {len(missing)} 页（不 OCR）：{missing[:10]}", file=sys.stderr)
+    n_ok = 0
+    for kid, v in rep.items():
+        ok = not v["problems"]
+        n_ok += ok
+        print(f"表{kid}\tp{v['first_page']}-{v['last_page']}\t偶句 {v['couplets']}\t{'自洽' if ok else str(len(v['problems'])) + ' 处缺陷'}")
+        if a.problems:
+            for pr in v["problems"]:
+                print(f"    {pr}")
+    print(f"共 {len(rep)} 张表，{n_ok} 张自洽", file=sys.stderr)
+
+
 def cmd_rename(st: Store, a) -> None:
     st.rename(a.old, a.new)
     print(f"{a.old} → {a.new}")
@@ -554,6 +598,21 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="store_true", help="结果写回登记表 lang/kind")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_lang)
+
+    s = sub.add_parser("keys", help="检索表偶句重建（读 PP-OCR 行框缓存；零 token，不 OCR）")
+    ks = s.add_subparsers(dest="keys_cmd", required=True)
+    e = ks.add_parser("extract", help="从行框缓存重建偶句，图检查，可写 keys.json")
+    e.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
+    e.add_argument("--cache", help="行框缓存目录（含 pNNNN.json）；缺省由 key 的 PDF 指纹推出")
+    e.add_argument("--dpi", type=int, default=200)
+    e.add_argument("--first", type=int, default=1)
+    e.add_argument("--last", type=int, default=0, help="末页（默认到资料末页；用 --cache 时必须给）")
+    e.add_argument("--out", help="写 keys.json（couplets、keys、events、missing_pages）")
+    e.add_argument("--problems", action="store_true", help="列出每张表的具体缺陷")
+    c = ks.add_parser("check", help="对 keys.json 重做按表图检查（人工补完条目后用）")
+    c.add_argument("file")
+    c.add_argument("--problems", action="store_true")
+    s.set_defaults(fn=cmd_keys)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")
