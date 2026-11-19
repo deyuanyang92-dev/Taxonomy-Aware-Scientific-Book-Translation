@@ -110,6 +110,10 @@ def calibrate(gr: Grammar, width: float, rows: list[Row]) -> tuple[float, float]
         xs = [r["x0"] for r in rows if len(r["t"]) >= g["min_marker_text"] and mx1 < r["x0"] < mx1 + g["margin_probe"] * width]
         if xs:
             return _mode_margin(xs, g["margin_bin"]), right
+    il = [r["x0"] for r in rows if len(r["t"]) >= g["min_row_chars"] and r["x0"] < g["marker_zone"] * width
+          and gr.inline.match(r["t"])]
+    if len(il) >= g["inline_min_rows"]:  # 内联型页（条目号并进正文框，如 2009 卷偏左的页）：用这些行自己定位
+        return _mode_margin(il, g["margin_bin"]), right
     xs = [r["x0"] for r in rows if len(r["t"]) >= g["min_row_chars"] and r["x0"] > g["fallback_x_min"] * width]
     if not xs:
         return g["fallback_margin"] * width, right
@@ -153,8 +157,9 @@ class KeyParser:
                     "ty1": None, "last_y1": y1, "prev": prev, "reopen": reopen, "lx1": None}
         self.items.setdefault(pg, []).append(("couplet", self.cur))
 
-    def _rest(self, pg: int, text: str, why: str) -> None:
-        self.items.setdefault(pg, []).append(("rest", text, why))
+    def _rest(self, pg: int, text: str, why: str, r: Row | None = None) -> None:
+        pos = (round(r["x0"]), round(r["y0"])) if r else (0, 0)
+        self.items.setdefault(pg, []).append(("rest", text, why, *pos))
 
     def _start_inline(self, pg: int, n: str, primes: int, y1: float) -> None:
         """G1b：「N.正文」/「N'.正文」；重复出现的号是备择条目。"""
@@ -281,15 +286,15 @@ class KeyParser:
                 else:  # 条目栏里的非条目行：小标题，结束该表
                     self._reset_key()
                     self.events.append((pg, "SUBHEAD", t))
-                    self._rest(pg, t, "subhead")
+                    self._rest(pg, t, "subhead", r)
                     continue
             if self.cur is None:
-                self._rest(pg, t, "outside")
+                self._rest(pg, t, "outside", r)
                 continue
             if gr.caption.match(t):  # G9
                 self._reset_key()
                 self.events.append((pg, "ENDKEY", t[:20]))
-                self._rest(pg, t, "caption")
+                self._rest(pg, t, "caption", r)
                 continue
             c = self.cur
             tg = self._is_target(r, width, cal)
@@ -297,7 +302,7 @@ class KeyParser:
                 kind, val = tg
                 if kind == "jump" and c["page"] == pg and r["y0"] > c["last_y1"] + g["pageno_gap"]:
                     self.events.append((pg, "PAGENO", val))
-                    self._rest(pg, val, "pageno")
+                    self._rest(pg, val, "pageno", r)
                     continue
                 self._term(val, r["y1"])
                 continue
@@ -363,8 +368,15 @@ def check_couplets(couplets: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     return check_by_key(leads)
 
 
+_NOT_NAME_END = {"sp", "spp", "cf", "aff", "var", "nov", "n"}
+_NAME_NUM = re.compile(r"^(.*?[A-Za-z)）])\s*(?:[…‥⋯]+|\s[.．·]+|[.．·]{2,})\s*(\d{1,3})$")
+_JA_GROUP = re.compile(r"^([^A-Za-z0-9]*?[\u3040-\u30ff\u4e00-\u9fff][^A-Za-z0-9]*?)\s*([A-Z][a-z].*)$")
+
+
 def term_struct(gr: Grammar, v: str) -> dict[str, str]:
-    """终点字符串 → 版式栏位：jump(号) / name_jump(名称+号) / group_taxon(类群+学名) / taxon(学名)。"""
+    """终点字符串 → 版式栏位。kind：jump(号) / name_jump(名称+号) / group_taxon(类群+学名) / taxon(学名)。
+    「Eunoe…14」「Syllis . 1」按名称+号拆开（名称末词是 sp./cf. 等时不拆）；
+    「シンカイウロコムシ亜科Branchinotogluminae」日文类群名与学名粘连时按类群+学名拆开。"""
     v = gr.fix_term(v)
     if " -> " in v:
         left, right = (x.strip() for x in v.split(" -> ", 1))
@@ -373,13 +385,21 @@ def term_struct(gr: Grammar, v: str) -> dict[str, str]:
         return {"kind": "group_taxon", "group": left, "taxon": right}
     if v.isdigit():
         return {"kind": "jump", "num": v}
+    m = _NAME_NUM.match(v)
+    if m and m.group(1).split()[-1].rstrip(".").lower() not in _NOT_NAME_END:
+        return {"kind": "name_jump", "name": m.group(1).strip(), "num": m.group(2)}
+    m = _JA_GROUP.match(v)
+    if m:
+        return {"kind": "group_taxon", "group": m.group(1).strip(), "taxon": m.group(2).strip()}
     return {"kind": "taxon", "taxon": v}
 
 
 def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | None = None) -> dict[str, Any]:
     """pages: (页号, 页宽, 行框) 按页序。返回可直接写 keys.json 的字典。"""
     kp = KeyParser(grammar)
+    widths: dict[str, float] = {}
     for pg, width, rows in pages:
+        widths[str(pg)] = width
         kp.feed_page(width, rows, pg)
     leads = kp.finish()
     gr = kp.gr
@@ -398,12 +418,13 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
             elif it[0] == "heading":
                 out.append({"t": "heading", "text": it[1], "key": it[2]})
             else:
-                out.append({"t": "rest", "text": it[1], "why": it[2]})
+                out.append({"t": "rest", "text": it[1], "why": it[2], "x0": it[3], "y0": it[4]})
         layout[str(pg)] = out
     by_key = check_by_key(leads)
     return {"couplets": couplets,
             "keys": [{"key": k, **v} for k, v in by_key.items()],
             "layout": layout,
+            "widths": {k: widths[k] for k in layout},
             "events": [{"page": p, "event": e, "detail": d} for p, e, d in kp.events]}
 
 

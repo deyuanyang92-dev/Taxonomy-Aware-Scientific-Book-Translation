@@ -236,7 +236,7 @@ def test_cli_extract_needs_key_or_cache_with_last(tmp_path):
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
     "966b8423a9d4": (406, 14, 420, 9, 6),    # 2001（孤立「…」作条目横线后 419→420、缺陷 7→6）
     "858f37873e50": (363, 8, 253, 1, 21),    # 2007
-    "c1ac037a042b": (361, 10, 493, 2, 28),   # 2009
+    "c1ac037a042b": (361, 10, 566, 2, 23),   # 2009（内联页按条目号行自校准后 493→566：p200 等偏左页原先整页丢失）
 }
 
 
@@ -289,3 +289,34 @@ def test_layout_lists_page_items_in_reading_order():
 def test_lone_ellipsis_in_lead_column_is_a_dash_lead():
     gr = keys.default_grammar()
     assert gr.is_dash("…") and gr.is_marker("…")
+
+
+def test_term_struct_splits_single_ellipsis_and_glued_group_name():
+    gr = keys.default_grammar()
+    assert keys.term_struct(gr, "Eunoe…14") == {"kind": "name_jump", "name": "Eunoe", "num": "14"}
+    assert keys.term_struct(gr, "Nephtys .13")["kind"] == "name_jump"
+    assert keys.term_struct(gr, "Aricidea (Acmira)…14")["name"] == "Aricidea (Acmira)"
+    # 「sp. 3」是种名的一部分，不是跳转
+    assert keys.term_struct(gr, "Syllis sp. 3") == {"kind": "taxon", "taxon": "Syllis sp. 3"}
+    assert keys.term_struct(gr, "シンカイウロコムシ亜科Branchinotogluminae") == {
+        "kind": "group_taxon", "group": "シンカイウロコムシ亜科", "taxon": "Branchinotogluminae"}
+    assert keys.term_struct(gr, "Iphione ovata (図38)")["kind"] == "taxon"
+
+
+def test_rest_items_carry_position_and_widths():
+    res = parse(basic_page())
+    assert set(res["widths"]) == set(res["layout"])
+    for items in res["layout"].values():
+        for it in items:
+            if it["t"] == "rest":
+                assert {"x0", "y0"} <= set(it)
+
+
+def test_inline_page_with_left_shifted_markers_calibrates_on_marker_rows():
+    """2009 卷 p200 型页：条目号并进正文框且整页偏左（x0≈18），全页众数会误取续行缩进（≈75）。"""
+    def row(x0, y, t, x1=None):
+        return {"x0": x0, "x1": x1 or x0 + 400, "y0": y, "y1": y + 30, "t": t}
+    rows = [row(19, 100 + 40 * i, f"{30 + i}.前口葉に斑紋はない；体前方は普通", 1100) for i in range(6)]
+    rows += [row(74, 120 + 40 * i, "続く", 300) for i in range(6)]
+    tm, _right = keys.calibrate(keys.default_grammar(), 1276.0, rows)
+    assert tm < 30

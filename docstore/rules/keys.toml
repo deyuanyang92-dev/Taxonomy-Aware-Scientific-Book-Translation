@@ -51,6 +51,7 @@ inline_tol = 0.03                # 内联条目号：x0 < Tm + inline_tol·W
 lost_tol = 0.08                  # 短行判定：x1 < R − lost_tol·W
 min_row_chars = 8                # 校准用的最短文本行（全页众数）
 min_marker_text = 6              # 校准用的最短文本行（条目号定位）
+inline_min_rows = 4              # 内联型页校准：至少这么多行以条目号开头，才用它们定位 Tm
 fallback_x_min = 0.02            # 全页众数只看 x0 大于此比例的行（排除页边噪声）
 fallback_margin = 0.13           # 无法校准时 Tm = 0.13·W
 # 像素量（200 dpi 页图）
