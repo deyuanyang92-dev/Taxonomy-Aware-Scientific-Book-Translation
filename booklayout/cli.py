@@ -24,11 +24,13 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
+from . import builder as builder_module
 from .builder import BookMeta, BookPaths, build, load_aligned, make_page_map
 from .furniture import aligned_furniture_blocks
 from .keyalign import align_document
 from .keymarkers import lost_marker_pages
 from .structure import uncertain_boundaries
+from .quality import sha256_file
 from .normalize import apply_block_edits, apply_page_patch, backfill_source, normalize_aligned
 
 
@@ -114,7 +116,7 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         b.get("block_id") or b.get("text", "")[:50]
         for b in blocks
         if b.get("role") == "caption"
-        and not re.match(r"^(?:Fig\b|L[aá]m\b|Tabla\b|Plate\b|图|図|表)",
+        and not re.match(rf"^(?:{builder_module.PROFILE.caption_prefixes})(?![A-Za-z])",
                          (b.get("translation") or b.get("text") or "").strip(), re.I)
     ]
     body_blocks = [
@@ -222,6 +224,21 @@ def _require_figure_audit(figures_dir: Path) -> None:
 
 def cmd_build(args: argparse.Namespace) -> int:
     _require_figure_audit(args.figures)
+    if args.pilot:
+        from .acceptance import pilot_problems
+        bad = pilot_problems(json.loads(args.pilot.read_text(encoding="utf-8")), args.aligned)
+        if bad:
+            print("pilot gate failed: " + "; ".join(bad), file=sys.stderr)
+            return 5
+    draft_reasons: list[str] = []
+    if args.release_acceptance:
+        from .acceptance import verify_acceptance
+        draft_reasons = verify_acceptance(
+            json.loads(args.release_acceptance.read_text(encoding="utf-8")), args.aligned)
+        if draft_reasons:
+            args.out = args.out.with_name(args.out.stem + ".DRAFT" + args.out.suffix)
+            if args.pdf_out:
+                args.pdf_out = args.pdf_out.with_name(args.pdf_out.stem + ".DRAFT" + args.pdf_out.suffix)
     paths = BookPaths(
         aligned=args.aligned,
         figures_dir=args.figures,
@@ -237,9 +254,23 @@ def cmd_build(args: argparse.Namespace) -> int:
         breaks = payload.get("breaks")
         if isinstance(breaks, list):
             key_breaks = {str(item) for item in breaks}
+    from .builder import apply_profile
+    from .profile import StyleProfile, validate_aligned
+
+    profile = StyleProfile.from_file(args.profile) if args.profile else StyleProfile()
+    apply_profile(profile)
+    schema_errors = validate_aligned(load_aligned(args.aligned))
+    if schema_errors and args.strict_schema:
+        print("aligned schema errors: " + "; ".join(schema_errors[:10]), file=sys.stderr)
+        return 6
     data = build(args.out, page_map, paths, meta, key_breaks)
     report = _report(data, args.figures, meta)
-    report.update({"out_docx": str(args.out), "page_map_entries": len(page_map)})
+    report.update({"profile": profile.name, "profile_sha256": profile.sha256(),
+                   "schema_errors": schema_errors})
+    report.update({"out_docx": str(args.out), "page_map_entries": len(page_map),
+                   "release_status": ("release" if args.release_acceptance and not draft_reasons
+                                      else "draft"),
+                   "draft_reasons": draft_reasons})
     pdf = None
     if args.pdf:
         pdf = _convert_pdf(args.out, args.pdf_out)
@@ -250,6 +281,9 @@ def cmd_build(args: argparse.Namespace) -> int:
           f"content_missing={report['untranslated_content_blocks']} figures={report['figures']}")
     if pdf:
         print(f"pdf={pdf}")
+    if draft_reasons:
+        print("DRAFT, release refused: " + "; ".join(draft_reasons), file=sys.stderr)
+        return 4
     return 0
 
 
@@ -974,6 +1008,7 @@ def cmd_qa(args: argparse.Namespace) -> int:
     problems = structure_problems + layout_problems + text_problems
     report["problems"] = problems
     report["ok"] = not problems
+    report["manuscript_sha256"] = sha256_file(args.aligned)
     _write_json(args.out, report)
     print(json.dumps({"ok": report["ok"], "stage1": len(structure_problems),
                       "stage2": len(layout_problems),
@@ -1104,6 +1139,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             problems.append(f"cannot read PDF: {exc}")
     report["problems"] = problems
     report["ok"] = not problems
+    report["manuscript_sha256"] = sha256_file(args.aligned)
     _write_json(args.out, report)
     print(json.dumps({"ok": report["ok"], "problems": problems, "source_pages": report["source_pages"]},
                      ensure_ascii=False))
@@ -1119,6 +1155,17 @@ def cmd_normalize(args: argparse.Namespace) -> int:
     print(json.dumps({"out": str(out), "changed_blocks": report["changed_blocks"],
                       "changed_pages": report["changed_pages"]}, ensure_ascii=False))
     return 0
+
+
+def cmd_kana_check(args: argparse.Namespace) -> int:
+    """Issue #37: kana left in a non-reference block of an English book."""
+    from .paragraphs import kana_residue
+
+    found = kana_residue(load_aligned(args.aligned))
+    report = {"ok": not found, "kana_blocks": found}
+    _write_json(args.out, report)
+    print(json.dumps({"ok": report["ok"], "kana_blocks": len(found)}, ensure_ascii=False))
+    return 0 if report["ok"] else 1
 
 
 def cmd_key_align(args: argparse.Namespace) -> int:
@@ -1296,12 +1343,74 @@ def cmd_gate(args: argparse.Namespace) -> int:
         problems.append(f"{len(key['breaks'])} key couplets still need a forced break")
     if key.get("defects"):
         problems.append(f"{len(key['defects'])} key leader defects remain")
+    for style_path in args.style_report or []:  # scripts/taxostyle.py compare|audit 的 JSON 报告
+        style = json.loads(style_path.read_text(encoding="utf-8"))
+        if not style.get("ok"):
+            problems.append(f"taxonomic typography not ok ({style_path.name}): "
+                            f"{style.get('errors', '?')} errors")
     report = {"ok": not problems, "problems": problems,
               "files": {"qa": str(args.qa), "check": str(args.check),
-                        "key_report": str(args.key_report)}}
+                        "key_report": str(args.key_report),
+                        "style_reports": [str(x) for x in args.style_report or []]}}
     if args.out:
         _write_json(args.out, report)
     print(json.dumps(report, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
+def cmd_profile(args: argparse.Namespace) -> int:
+    """Print the default style profile (a template to edit) or validate a file."""
+    from .profile import StyleProfile
+
+    if args.validate:
+        prof = StyleProfile.from_file(args.validate)
+        print(json.dumps({"ok": True, "name": prof.name, "sha256": prof.sha256()}, ensure_ascii=False))
+    else:
+        print(json.dumps(StyleProfile().to_dict(), ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_validate_aligned(args: argparse.Namespace) -> int:
+    from .profile import validate_aligned
+
+    errors = validate_aligned(load_aligned(args.aligned))
+    print(json.dumps({"ok": not errors, "errors": errors[:50], "count": len(errors)}, ensure_ascii=False))
+    return 0 if not errors else 1
+
+
+def cmd_quality_gate(args: argparse.Namespace) -> int:
+    """Issue #26: metrics + quality_baseline.toml -> receipt; exit 0/1/2 = pass/fail/indeterminate."""
+    from . import quality as q
+
+    metrics = json.loads(args.metrics.read_text(encoding="utf-8"))
+    result = q.evaluate(metrics, q.load_baseline(args.baseline))
+    receipt = q.make_receipt(result, metrics, args.manuscript, args.baseline)
+    _write_json(args.out, receipt)
+    print(json.dumps({"status": receipt["status"], "fail": result["fail_reasons"],
+                      "indeterminate": result["indeterminate_reasons"]}, ensure_ascii=False))
+    return q.EXIT[receipt["status"]]
+
+
+def cmd_verify_receipt(args: argparse.Namespace) -> int:
+    from . import quality as q
+
+    problems = q.verify_receipt(json.loads(args.receipt.read_text(encoding="utf-8")), args.manuscript)
+    print(json.dumps({"ok": not problems, "problems": problems}, ensure_ascii=False))
+    return 0 if not problems else 1
+
+
+def cmd_acceptance(args: argparse.Namespace) -> int:
+    """Issue #19: one acceptance report; exit 0 only when status is `release`."""
+    from .acceptance import build_acceptance
+
+    files = {"translation_review": args.translation_review, "technical": args.technical,
+             "qa": args.qa, "check": args.check, "key_report": args.key_report,
+             "pilot": args.pilot, "visual": args.visual}
+    report = build_acceptance(args.aligned, files, args.receipt, command=args.command or "")
+    _write_json(args.out, report)
+    print(json.dumps({"status": report["status"],
+                      "stages": {k: v["status"] for k, v in report["stages"].items()}},
+                     ensure_ascii=False))
     return 0 if report["ok"] else 1
 
 
@@ -1320,6 +1429,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="key_report.json: couplets whose target must start a leader-filled line",
     )
+    b.add_argument("--profile", type=Path,
+                   help="style profile JSON/TOML (page size, margins, fonts, sizes); default = Vol. 48 layout")
+    b.add_argument("--strict-schema", action="store_true",
+                   help="refuse to build when the aligned JSON violates the block schema (exit 6)")
+    b.add_argument("--pilot", type=Path,
+                   help="pilot report; the full build is refused (exit 5) unless every pilot item passed")
+    b.add_argument("--release-acceptance", type=Path,
+                   help="acceptance.json from `booklayout acceptance`; without a valid one the output "
+                        "is renamed *.DRAFT.* and the command exits 4")
     b.add_argument("--out", type=Path, required=True, help="output DOCX")
     b.add_argument("--pdf", action="store_true", help="convert DOCX to PDF with LibreOffice")
     b.add_argument("--pdf-out", type=Path, help="PDF path when --pdf is used")
@@ -1363,6 +1481,11 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--out", type=Path, help="output JSON (default: rewrite --aligned)")
     n.add_argument("--report", type=Path, help="write normalization_report.json")
     n.set_defaults(func=cmd_normalize)
+
+    kc = sub.add_parser("kana-check", help="fail if kana remain outside reference blocks (EN edition)")
+    kc.add_argument("--aligned", type=Path, required=True)
+    kc.add_argument("--out", type=Path)
+    kc.set_defaults(func=cmd_kana_check)
 
     ka = sub.add_parser(
         "key-align",
@@ -1412,8 +1535,43 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--qa", type=Path, required=True)
     g.add_argument("--check", type=Path, required=True)
     g.add_argument("--key-report", type=Path, required=True)
+    g.add_argument("--style-report", type=Path, action="append",
+                   help="taxostyle JSON report (compare/audit); repeatable; not ok blocks delivery")
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
+    from . import alignmd, keymodel, pdffigures
+
+    alignmd.add_parser(sub)
+    pdffigures.add_parser(sub)
+    keymodel.add_parser(sub)
+
+    pr = sub.add_parser("profile", help="print the default style profile, or --validate a profile file")
+    pr.add_argument("--validate", type=Path)
+    pr.set_defaults(func=cmd_profile)
+
+    va = sub.add_parser("validate-aligned", help="schema-check aligned JSON (generic block model)")
+    va.add_argument("--aligned", type=Path, required=True)
+    va.set_defaults(func=cmd_validate_aligned)
+
+    qg = sub.add_parser("quality-gate", help="numeric quality gate -> receipt (0 pass / 1 fail / 2 indeterminate)")
+    qg.add_argument("--metrics", type=Path, required=True)
+    qg.add_argument("--manuscript", type=Path, required=True, help="aligned JSON the receipt is bound to")
+    qg.add_argument("--baseline", type=Path, default=Path("quality_baseline.toml"))
+    qg.add_argument("--out", type=Path, required=True)
+    qg.set_defaults(func=cmd_quality_gate)
+
+    vr = sub.add_parser("verify-receipt", help="check a quality receipt against the current manuscript")
+    vr.add_argument("--receipt", type=Path, required=True)
+    vr.add_argument("--manuscript", type=Path, required=True)
+    vr.set_defaults(func=cmd_verify_receipt)
+
+    ac = sub.add_parser("acceptance", help="unified release acceptance report (structure, visual, quality)")
+    ac.add_argument("--aligned", type=Path, required=True)
+    for opt in ("translation-review", "technical", "qa", "check", "key-report", "pilot", "visual", "receipt"):
+        ac.add_argument(f"--{opt}", type=Path)
+    ac.add_argument("--command", help="the reproducible build command, recorded verbatim")
+    ac.add_argument("--out", type=Path, required=True)
+    ac.set_defaults(func=cmd_acceptance)
     return ap
 
 

@@ -27,11 +27,22 @@ def test_apply_lean_sets_kinds_and_risky():
     a = argparse.Namespace(lean=True, rewrite_kinds="", risky_only=False)
     te.apply_lean(a)
     assert a.rewrite_kinds == te.LEAN_REWRITE_KINDS
+    assert "caption" in a.rewrite_kinds.split(",")
+    assert "narrative" in a.rewrite_kinds
     assert a.risky_only is True
     # 已显式设置的不覆盖
     b = argparse.Namespace(lean=True, rewrite_kinds="description", risky_only=True)
     te.apply_lean(b)
     assert b.rewrite_kinds == "description"
+
+
+def test_guard_tier_release_requires_verify_and_chapters():
+    te.guard_tier("draft", verify_engine="none", chaptered=False)
+    te.guard_tier("release", verify_engine="codex-sol", chaptered=True)
+    with pytest.raises(SystemExit, match="verify"):
+        te.guard_tier("release", verify_engine="none", chaptered=True)
+    with pytest.raises(SystemExit, match="章"):
+        te.guard_tier("release", verify_engine="codex-sol", chaptered=False)
 
 
 def test_budget_stops(monkeypatch):
@@ -43,3 +54,11 @@ def test_budget_stops(monkeypatch):
         te.record_usage({"input_tokens": 30, "output_tokens": 0, "cache_read_tokens": 0})
     te.reset_spent(0)
     monkeypatch.delenv("YZZ_TOKEN_BUDGET")
+
+
+def test_guard_engine_blocks_expensive_unless_forced():
+    assert te.guard_engine("auto") == "auto"
+    assert te.guard_engine("deepseek-flash") == "deepseek-flash"
+    with pytest.raises(SystemExit, match="force-engine"):
+        te.guard_engine("claude-opus")
+    assert te.guard_engine("claude-opus", force=True) == "claude-opus"

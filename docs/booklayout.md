@@ -212,3 +212,43 @@ booklayout qa \
 ## 交付复盘（2026-11-17）
 
 三卷交付后的根因复盘见 `docs/research/2026-11-17/booklayout-delivery-postmortem.md`。结论：`gate.json` 只覆盖 qa/check/key-report；三审文本检查仅针对 `role == "body"`（约 25% 的块），不含 caption/entry/citation 译文，也不含 `zh check`。在 gate 扩展与覆盖率闸口落地前，`ok: true` 不能当作“全书无翻译错误”的证据。
+
+## Release gates, quality receipt, style profile (issues #19, #26, #27, #37)
+
+```bash
+# #26 numeric quality gate: metrics JSON + quality_baseline.toml -> receipt
+# exit 0 pass / 1 fail / 2 indeterminate; receipt binds manuscript+builder+baseline hashes
+python3 -m booklayout quality-gate --metrics m.json --manuscript aligned.json --out receipt.json
+python3 -m booklayout verify-receipt --receipt receipt.json --manuscript aligned.json
+
+# #19 one acceptance report (translation review, technical, structure, pilot, visual, quality)
+python3 -m booklayout acceptance --aligned aligned.json --translation-review tr.json \
+  --technical zh.json --qa qa.json --check check.json --key-report key.json \
+  --pilot pilot.json --visual visual.json --receipt receipt.json --command "<build cmd>" --out acceptance.json
+# status: release | rejected | incomplete; exit 0 only for release
+
+# gates in the build itself
+python3 -m booklayout build ... --pilot pilot.json            # exit 5 unless all pilot items passed
+python3 -m booklayout build ... --release-acceptance acceptance.json
+#   invalid/stale -> output renamed *.DRAFT.docx, exit 4, report.release_status = "draft"
+
+# #27 style profile and generic blocks
+python3 -m booklayout profile > my.json        # default (Vol. 48) profile as a template
+python3 -m booklayout build ... --profile my.json --strict-schema
+python3 -m booklayout validate-aligned --aligned aligned.json
+
+# #37
+python3 -m booklayout kana-check --aligned en_aligned.json --out kana.json   # kana outside ref blocks
+```
+
+* Metrics/receipt/stage JSON shapes: docstrings of `booklayout/quality.py` and `booklayout/acceptance.py`.
+  Thresholds: `quality_baseline.toml` (all PROVISIONAL, each with evidence link; changes need a `[[history]]` entry).
+  The receipt `integrity` hash catches edits and stale files; it is not a signature, so human-review fields
+  are only as trustworthy as the named reviewers. Model-named reviewers are rejected.
+* `qa` and `check` reports now embed `manuscript_sha256`; acceptance rejects reports built from another manuscript.
+* Generic block roles: `table` (rows, colspan, repeated header rows), `list`, `quote`, `box`, `footnote`
+  (legacy roles unchanged). `normalize` splits multi-entry `ref` blocks into one block per entry (hanging indent
+  is applied by the builder). `booklayout.paragraphs.merge_continuation_paragraphs` merges OCR line-break
+  paragraph splits (library function, for use in prep scripts).
+
+多语言一条龙出版命令与新模块见 `docs/publish_pipeline.md`。

@@ -15,8 +15,9 @@
           只把本段用到的术语表、转写表条目送进提示词（省 token）；固定的规则放 system 前部，便于 DeepSeek 前缀缓存。
           护栏：页标记数、数字、斜体学名、检索表编号、异常文字（天城文等）、禁用词。不过护栏的段把问题清单发回重做一次，
           仍不过则取护栏问题更少的一份并在报告里标出。
-3 check   意义核对：deepseek-flash 关思考逐句对照原文找错，只返回 JSON 最小改动 {pdf_page, old, new, reason}；
-          再由第二个模型（--verify-engine，默认 codex-sol、medium）逐条对照原文 ACCEPT/REJECT，只落实两者都认可的。
+3 check   意义核对：默认 --verify-engine none（省 token：质控至多 1 次 LLM，其余靠脚本护栏）；
+          显式开第二模型（--verify-engine）则找错后逐条 ACCEPT/REJECT，只落实两者都认可的。
+          Lean 默认开；跨书 book_memory 默认加载；贵模型需 --force-engine。
           依据：2026-11-14 Marinov 全书实测，flash 报 76 处，sol 只认可 12 处（flash 把 цифта「对」当成单个等系统性误判）。
           落实护栏：old 在该页唯一出现；改动不得丢数字、学名；new 不得比 old 长出 2 倍+80 字符（防止整段重写）。
           DeepSeek 只在夜间调用（llm_engines 内 wait_offpeak 自动等待）；白天加 --day-engine codex-luna 才用 Codex。
@@ -415,6 +416,12 @@ def _page_no(p: Any) -> int | None:
     return None
 
 
+_EDIT_NOISE = re.compile(r"\[\?\]|\(\?\)|\[sic\]")
+_EDIT_NO_FIX = re.compile(
+    r"no (?:real )?(?:error|fix|change|problem) needed|do not (?:report|change)|"
+    r"same meaning|term usage only", re.I)
+
+
 def apply_edits(src: str, tgt: str, edits: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
     """逐条落实；返回新译文与每条的结果（applied / rejected: 原因）。
 
@@ -430,6 +437,10 @@ def apply_edits(src: str, tgt: str, edits: list[dict[str, Any]]) -> tuple[str, l
         why = None
         if not old or old == new:
             why = 'old 为空或无变化'
+        elif _EDIT_NOISE.search(new):
+            why = 'new 含不确定标记（[?]/(?)/[sic]）'
+        elif _EDIT_NO_FIX.search(str(e.get('reason', ''))):
+            why = 'reason 自述无需修改'
         elif seg is None:
             why = f'无此页 {e.get("pdf_page")}'
         elif seg.count(old) != 1:
@@ -554,6 +565,8 @@ def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str,
 def chunk_entities(src: str, cid: str, work: Path, a: argparse.Namespace) -> list[dict[str, Any]]:
     """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。--no-entities 关闭。"""
     if not getattr(a, 'entities', True) or not wants_chinese_names(a.tl):
+        return []
+    if getattr(a, 'engine', '') == 'none':   # 零模型档不得暗调专名抽取
         return []
     f = work / f'entities/{cid}.json'
     dg = _digest(src, a.tl, entities.EXTRACT_SYS)
@@ -694,7 +707,9 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
                 stats['fallback_to_model'] += 1
             todo.append(s)
         stats['segments'] += len(segs)
-        stats['sent_to_model'] += len(todo)
+        # lean 候选段数；engine=none 时不会真调模型
+        stats['sent_to_model'] += len(todo) if engine != 'none' else 0
+        stats['lean_candidates'] += len(todo)
         dg = _digest(src, '\n'.join(dmap.values()), sysmsg, PROMPT_VERSION, engine, ','.join(bad),
                      json.dumps(abbr, ensure_ascii=False), ','.join(sorted(kinds)),
                      '' if gl_in_prefix else table_md(relevant(gl, src)))
@@ -711,12 +726,17 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
     issues, parts = {}, []
     for job, rec in zip(jobs, recs, strict=True):
         stats['attempts'] += int(rec.get('attempts', 0))
+        stats['llm_calls'] += int(rec.get('attempts', 0))
         stats['chunks_reworked'] += int(rec.get('attempts', 0) > 1)
         stats['chunks'] += 1
         chunk = render(job['tpl'], {**job['texts'], **rec['texts']}).rstrip('\n') + '\n'
         if rec['issues']:
             issues[job['cid']] = rec['issues']
         parts.append(chunk)
+    if engine == 'none':
+        stats['llm_calls'] = 0
+        print(f'[auto] engine=none：llm_calls=0（lean 候选段 {stats["lean_candidates"]} 保留 Google+术语表）',
+              flush=True)
     _write(work / 'revise_issues.json', json.dumps(issues, ensure_ascii=False, indent=1))
     _write(work / 'revise_stats.json', json.dumps(dict(stats), ensure_ascii=False, indent=1))
     revised = ''.join(parts)
@@ -818,12 +838,18 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
     # 1 找错
     risk = negation_risk(src, tgt, a.sl, a.tl)
     engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
+    # 零模型档：不调 LLM，只保留稿 + 后面的 transqa/taxoformat（脚本）
+    if engine == 'none':
+        print(f'check {cid} engine=none skipped_llm risk_pages={risk}', flush=True)
+        return {'new': join(full_tgt, ps), 'log': [{'chunk': cid, 'result': 'skipped: engine=none'}],
+                'failed': failed, 'human': human}
     dg = _digest(src, tgt, gtab, csys, engine, PROMPT_VERSION, str(getattr(a, 'risky_only', False)))   # 换模型必须重跑，不得复用别的模型的结果
     rec = _cached(work / f'check/{cid}.json', dg)
     if rec is None:
-        if engine == a.verify_engine and not getattr(a, 'allow_same_verify', False):
+        if (a.verify_engine not in ('none', '') and engine == a.verify_engine
+                and not getattr(a, 'allow_same_verify', False)):
             raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine'
-                             f'（用户 2026-11-17 规定第二模型也用 deepseek-flash 时加 --allow-same-verify）')
+                             f'（同模型复核须加 --allow-same-verify；默认 verify=none 不做第二轮）')
         user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
             f'## Original\n{src}\n\n## Translation\n{tgt}'
         if risk:
@@ -1047,10 +1073,13 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--no-entities', dest='entities', action='store_false',
                     help='不做专名解析（默认：每段抽取专名，查 yiku/Wikidata 通行中文名，注入提示词并核对）')
     ap.add_argument('--domain', default='进化生物学', help='yiku 领域（专名与术语查询）')
-    ap.add_argument('--engine', default='auto', help='改写与找错：auto（按时段）或 llm_engines 引擎名')
+    ap.add_argument('--engine', default='auto',
+                    help='改写与找错：auto（最省合适）/ none（零模型）/ llm_engines 名；贵模型需 --force-engine')
     ap.add_argument('--day-engine', default=None, help='白天用的引擎（默认 revise=codex-luna；找错等到夜间）')
-    ap.add_argument('--verify-engine', default='codex-sol',
-                    help='第二模型裁定找错结果（默认须不同于找错模型；none = 不裁定，不推荐）')
+    ap.add_argument('--verify-engine', default='none',
+                    help='第二模型裁定（默认 none：质控至多 1 次 LLM，脚本护栏收尾；显式开启才费第二轮）')
+    ap.add_argument('--force-engine', action='store_true',
+                    help='允许 claude-opus / deepseek-v4-pro / codex-astra（默认禁用，省 token）')
     ap.add_argument('--allow-same-verify', action='store_true',
                     help='允许找错与复核用同一模型（用户 2026-11-17 起第二模型也用 deepseek-flash 时用）')
     ap.add_argument('--risky-only', action='store_true', help='check 只送风险段和叙述/讨论段，段数不齐则保留整页')
@@ -1063,21 +1092,46 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--rewrite-kinds', default='',
                     help='分类文献：只把这些块类型交模型改写（如 narrative,remarks），其余用术语规范化后的 Google 稿；'
                          '意义核对仍覆盖全文。类型见 transqa/taxoblocks.py；空 = 全部改写（旧行为）')
-    ap.add_argument('--lean', action='store_true',
-                    help='省 token：只改写 narrative,remarks；check 只送风险段；术语表逐段相关条目。'
-                         '分类描述文献强烈推荐（见 skill/TOKEN_ECONOMY.md）')
+    ap.add_argument('--lean', action=argparse.BooleanOptionalAction, default=True,
+                    help='省 token（默认开）：只改写 narrative,remarks,caption；check 风险段；术语表逐段相关条目。'
+                         '--no-lean=全文改写（费，见 skill/TOKEN_ECONOMY.md）')
+    ap.add_argument('--no-memory', action='store_true',
+                    help='不加载跨书共享异写库（默认加载 ~/.cache/yzz-translate/memory/）')
+    ap.add_argument('--tier', choices=['draft', 'release'], default='draft',
+                    help='draft=试译省 token；release=交付（须异模型 --verify-engine + --chaptered）')
+    ap.add_argument('--chaptered', action='store_true',
+                    help='声明本 run 属于分章流水线（release 档必需；translate_corpus --chapters 自动加）')
     ap.add_argument('--stop-after', choices=['draft', 'revise'], default=None,
                     help='只做到这一步（例：白天用 Codex 改写，夜间再 check 让 DeepSeek 找错、Codex 复核）')
     a = ap.parse_args(argv)
-    from token_economy import apply_lean
+    from token_economy import apply_lean, guard_engine, guard_tier
     apply_lean(a)
+    guard_engine(a.engine, force=a.force_engine)
+    if a.verify_engine not in ('none', ''):
+        guard_engine(a.verify_engine, force=a.force_engine)
+    a.tier = guard_tier(a.tier, verify_engine=a.verify_engine, chaptered=bool(a.chaptered))
     if a.cmd == 'report':
         print(report(Path(a.src)))
         return
     work = Path(a.work or 'auto_work')
+    work.mkdir(parents=True, exist_ok=True)
+    (work / 'tier.txt').write_text(a.tier + '\n', encoding='utf-8')
+    print(f'[auto] tier={a.tier} engine={a.engine!r} verify={a.verify_engine!r}；'
+          f'lean 默认开、跨书 memory 默认加载（见 skill/TOKEN_ECONOMY.md）', flush=True)
+    if a.engine == 'auto':
+        print('[auto] 注意：--engine auto 会对 lean 候选段调模型（仍费 token）；'
+              '要 0 token 请加 --engine none', flush=True)
+    if not a.no_memory:
+        import book_memory
+        merged = book_memory.merge_glossary(
+            a.glossary, a.sl, a.tl, getattr(a, 'domain', '分类学') or '分类学',
+            work / '_merged_glossary.tsv')
+        a.glossary = str(merged)
+        print(f'[auto] 跨书 memory 已合并 → {merged}', flush=True)
     src_pg = pages(Path(a.src).read_text(encoding='utf-8'))
     if getattr(a, 'lean', False):
-        print(f'[auto] Lean：rewrite_kinds={a.rewrite_kinds!r} risky_only={a.risky_only}', flush=True)
+        print(f'[auto] Lean：rewrite_kinds={a.rewrite_kinds!r} risky_only={a.risky_only} '
+              f'verify={a.verify_engine!r}', flush=True)
     if a.cmd == 'run':
         dfile = work / 'draft.md'
         draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl, a.cache)
@@ -1092,6 +1146,26 @@ def main(argv: list[str] | None = None) -> None:
         if not a.tgt:
             ap.error('check 需要 TGT.md')
         final = stage_check(src_pg, pages(Path(a.tgt).read_text(encoding='utf-8')), work, a)
+    # 书末挖异写候选 → 跨书积累（0 token）；审核后 book_memory absorb
+    draft_p = work / 'draft.md'
+    final_p = work / 'checked.md' if (work / 'checked.md').exists() else work / 'final.md'
+    if draft_p.exists() and final_p.exists():
+        try:
+            import csv
+
+            import mine_corrections as mc
+            rows = mc.mine(draft_p.read_text(encoding='utf-8'), final_p.read_text(encoding='utf-8'))
+            cand = work / 'memory_candidates.tsv'
+            with open(cand, 'w', encoding='utf-8', newline='') as fp:
+                w = csv.DictWriter(
+                    fp, fieldnames=['old', 'new', 'count', 'segments_with_old', 'consistency', 'approve'],
+                    delimiter='\t')
+                w.writeheader()
+                w.writerows(rows)
+            print(f'[auto] 跨书候选 {len(rows)} 条 → {cand}（approve=y 后：'
+                  f'python3 scripts/book_memory.py absorb {cand} --sl {a.sl} --tl {a.tl}）', flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f'[auto] mine_corrections 跳过：{exc}', flush=True)
     print(report(work, src_pg, final))
 
 

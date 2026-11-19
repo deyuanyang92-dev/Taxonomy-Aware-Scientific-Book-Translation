@@ -25,6 +25,9 @@ References 节）建立「年份 → 姓氏」「姓氏集合」索引；斜体�
   italic_check.py md <译文.md ...> [--caption-names italic|roman] [--report out.tsv]
   italic_check.py docx <交付.docx ...> [--fix] [--aligned aligned.json] [--out 输出.docx]
   italic_check.py pdf <原书.pdf> [--pages 20-40]
+  italic_check.py rendered <交付.docx|交付.pdf> [--report out.json] [--profile zoology] [--no-worms]
+      渲染产物审计（委托 taxostyle.py）：学名应斜体、sp./cf./aff. 与科级名称、命名人+年份应正体；
+      DOCX 看 run.italic（含表格），PDF 看 span flags/字体名；有 error 退出码 1。
 退出码：md/docx 有 critical/major 问题时 1，否则 0；pdf 只审计，恒 0。
 """
 from __future__ import annotations
@@ -421,7 +424,22 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--aligned", type=Path, help="aligned JSON，用其中的 ref 块建文献索引")
         if cmd == "pdf":
             p.add_argument("--pages", help="如 20-40，缺省全书")
+    rp = sub.add_parser("rendered", help="审计渲染后 DOCX/PDF 的学名体例（taxostyle）")
+    rp.add_argument("files", nargs="+", type=Path)
+    rp.add_argument("--report", type=Path)
+    rp.add_argument("--profile", choices=("zoology", "source"), default="zoology")
+    rp.add_argument("--no-worms", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.cmd == "rendered":
+        import taxostyle
+
+        sub_args = [str(args.files[0]), "--profile", args.profile]
+        if args.no_worms:
+            sub_args.append("--no-worms")
+        if args.report:
+            sub_args += ["--report", str(args.report)]
+        return taxostyle.main(["audit", *sub_args])
 
     if args.cmd == "pdf":
         rows: list[str] = []

@@ -1894,6 +1894,33 @@ def apply_block_edits(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, 
     return {"applied": applied, "removed": removed, "missing": missing}
 
 
+def _split_reference_blocks(blocks: list[dict], changed: list[dict]) -> None:
+    """Issue #37: one ``ref`` block per bibliography entry (hanging indent)."""
+    from booklayout.paragraphs import split_reference_entries
+
+    out: list[dict] = []
+    for block in blocks:
+        parts = (split_reference_entries(block.get("translation") or "")
+                 if block.get("role") == "ref" else [])
+        if len(parts) < 2:
+            out.append(block)
+            continue
+        src_parts = split_reference_entries(block.get("text") or "")
+        if len(src_parts) != len(parts):
+            src_parts = [block.get("text") or ""] + [""] * (len(parts) - 1)
+        for i, (tr, src) in enumerate(zip(parts, src_parts)):
+            new = dict(block)
+            new["translation"] = tr
+            if "text" in block:
+                new["text"] = src
+            if i:
+                new["block_id"] = f"{block.get('block_id', 'ref')}-r{i + 1}"
+            out.append(new)
+        changed.append({"block_id": block.get("block_id"), "rule": "reference_entries_split",
+                        "entries": len(parts)})
+    blocks[:] = out
+
+
 def normalize_aligned(data: dict[str, Any]) -> dict[str, Any]:
     """Apply every deterministic repair in place; return a change report."""
     changed: list[dict] = []
@@ -1933,6 +1960,7 @@ def normalize_aligned(data: dict[str, Any]) -> dict[str, Any]:
         _spanish_y(blocks, changed)
         _trim_embedded_duplicate_list(blocks, page, changed)
         _leading_punctuation(blocks, changed)
+        _split_reference_blocks(blocks, changed)
         page["blocks"] = [b for b in blocks if not b.get("_drop")]
     # Trim overfilled blocks first: once a page-break continuation is joined
     # into the previous page, the duplicated tail can no longer be matched.

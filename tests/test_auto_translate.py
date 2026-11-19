@@ -1,7 +1,10 @@
 import argparse
+import json
 import datetime as dt
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -632,3 +635,81 @@ def test_issue5_entities_skipped_for_non_chinese_target(tmp_path):
     import auto_translate as at
     a = argparse.Namespace(entities=True, tl='en', domain='x')
     assert at.chunk_entities('Onuphis eremita', 'c1', tmp_path, a) == []
+
+
+def test_apply_edits_rejects_uncertain_and_no_fix_edits():
+    tgt = "<!-- PDF p.1 -->\nNo ventral cirri.\nIt is absent.\n"
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nKeine Ventralcirren.\n", tgt, [
+        {"pdf_page": 1, "old": "No ventral cirri.", "new": "No ventral cirri mentioned.",
+         "reason": "no fix needed"}])
+    assert "无需修改" in log[0]["result"]
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nEs fehlt.\n", tgt, [
+        {"pdf_page": 1, "old": "It is absent.", "new": "It is absent [?].", "reason": "uncertain"}])
+    assert "不确定" in log[0]["result"]
+
+
+def test_engine_none_skips_entity_llm_even_if_entities_on(tmp_path, monkeypatch):
+    """零模型档不得因专名抽取暗调 deepseek（曾导致 anthropic 缺失时卡 3 次×30s）。"""
+    import argparse
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM")))
+    a = argparse.Namespace(sl="de", tl="en", engine="none", entities=True, domain="分类学")
+    assert at.chunk_entities("Prostomium mit 4 Augen.", "c000", tmp_path, a) == []
+
+
+def test_engine_none_full_pipeline_never_calls_llm(tmp_path, monkeypatch):
+    """draft→revise→check 全程 --engine none 时 llm() 一次都不得调用。"""
+    import argparse
+    calls = []
+
+    def boom(*a_, **k):
+        calls.append((a_, k))
+        raise AssertionError(f"unexpected LLM: {a_[:1]}")
+
+    monkeypatch.setattr(at, "llm", boom)
+    g = tmp_path / "g.tsv"
+    g.write_text("source\ttarget\tvariants\tnote\nAugen\teyes\t\t\n", encoding="utf-8")
+    a = argparse.Namespace(
+        sl="de", tl="en", glossary=str(g), names=None, bad_terms="", engine="none",
+        day_engine=None, abbr=None, entities=True, lean=True, rewrite_kinds="narrative,remarks,caption",
+        risky_only=True, verify_engine="none", verify_mode="review", workers=1, pitfalls=None,
+        domain="分类学", allow_same_verify=False,
+    )
+    from token_economy import apply_lean
+    apply_lean(a)
+    src = at.pages(
+        "<!-- PDF p.1 -->\nProstomium mit 4 Augen.\n\n"
+        "Bemerkung. Die Art ist neu.\n"
+    )
+    draft = at.pages(
+        "<!-- PDF p.1 -->\nProstomium with 4 peepers.\n\n"
+        "Remark. The species is new.\n"
+    )
+    revised = at.stage_revise(src, draft, tmp_path, a)
+    assert "eyes" in revised.lower() or "peepers" in revised  # 术语表或保留稿
+    checked = at.stage_check(src, at.pages(revised), tmp_path, a)
+    assert "<!-- PDF p.1 -->" in checked
+    assert calls == []
+    stats = json.loads((tmp_path / "revise_stats.json").read_text(encoding="utf-8"))
+    assert stats.get("llm_calls", 0) == 0
+    assert stats.get("sent_to_model", 0) == 0
+
+
+def test_main_defaults_lean_verify_none_and_force_engine(tmp_path, monkeypatch):
+    seen = {}
+    src = tmp_path / "s.md"
+    src.write_text("<!-- PDF p.1 -->\nHallo.\n", encoding="utf-8")
+    monkeypatch.setattr(at, "stage_draft", lambda *a_, **k: at.pages(src.read_text(encoding="utf-8")))
+
+    def fake_revise(sp, dp, work, a):
+        seen["a"] = a
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(at, "stage_revise", fake_revise)
+    with pytest.raises(RuntimeError):
+        at.main(["run", str(src), "-o", str(tmp_path / "w"), "--sl", "de", "--tl", "en", "--no-memory"])
+    a = seen["a"]
+    assert a.lean is True and a.verify_engine == "none"
+    assert a.rewrite_kinds == "narrative,remarks,caption"
+    with pytest.raises(SystemExit, match="force-engine"):
+        at.main(["run", str(src), "-o", str(tmp_path / "w2"), "--sl", "de", "--tl", "en",
+                 "--engine", "claude-opus", "--no-memory"])

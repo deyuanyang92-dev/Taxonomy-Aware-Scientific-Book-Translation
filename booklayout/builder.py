@@ -28,6 +28,7 @@ from docx.shared import Mm, Pt, RGBColor
 from docx.image.image import Image as DocxImage
 
 from booklayout.english import is_english_word, worms_genera
+from booklayout.profile import StyleProfile
 
 BODY_FONT = "Garamond"
 # 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
@@ -35,6 +36,19 @@ CJK_FONT = os.environ.get("BOOKLAYOUT_CJK_FONT", BODY_FONT)
 _CJK = re.compile(r"[⺀-鿿＀-￯]")
 TEXT_W = 134.0  # mm
 PAGE_W, PAGE_H = 170.0, 240.0
+# Page design lives in booklayout/profile.py (issue #27); the defaults there
+# equal the constants above, so output is unchanged unless a profile is applied.
+PROFILE = StyleProfile()
+
+
+def apply_profile(profile: StyleProfile) -> None:
+    """Make ``profile`` the active page design (module-level, per process)."""
+    global PROFILE, BODY_FONT, CJK_FONT, TEXT_W, PAGE_W, PAGE_H
+    profile.validate()
+    PROFILE = profile
+    BODY_FONT = profile.body_font
+    CJK_FONT = profile.cjk_font or os.environ.get("BOOKLAYOUT_CJK_FONT", profile.body_font)
+    TEXT_W, PAGE_W, PAGE_H = profile.text_w, profile.page_w, profile.page_h
 
 # 属名后跟这些词时不是种加词：「Rouse y Fauchald」「Torrea and」被整段排成斜体，
 # 根因是 build_genus_set 把段首作者名当成属名、add_runs 又把连词当种加词。
@@ -299,13 +313,13 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
 def setup(doc: Any):
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Mm(PAGE_W), Mm(PAGE_H)
-    sec.top_margin, sec.bottom_margin = Mm(20), Mm(19)
-    sec.left_margin, sec.right_margin = Mm(18), Mm(18)
-    sec.header_distance, sec.footer_distance = Mm(9), Mm(10)
+    sec.top_margin, sec.bottom_margin = Mm(PROFILE.margin_top), Mm(PROFILE.margin_bottom)
+    sec.left_margin, sec.right_margin = Mm(PROFILE.margin_left), Mm(PROFILE.margin_right)
+    sec.header_distance, sec.footer_distance = Mm(PROFILE.header_distance), Mm(PROFILE.footer_distance)
     sec.different_first_page_header_footer = True
     st = doc.styles['Normal']
     st.font.name = BODY_FONT
-    st.font.size = Pt(10.5)
+    st.font.size = Pt(PROFILE.body_size)
     st._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     st.paragraph_format.space_before = Pt(0)
     st.paragraph_format.space_after = Pt(0)
@@ -314,14 +328,14 @@ def setup(doc: Any):
     # especially around long taxonomic names and citations.
     rpr = st._element.get_or_add_rPr()
     lang = OxmlElement("w:lang")
-    lang.set(qn("w:val"), "en-US")
-    lang.set(qn("w:eastAsia"), "en-US")
+    lang.set(qn("w:val"), PROFILE.lang)
+    lang.set(qn("w:eastAsia"), PROFILE.lang_east_asia)
     rpr.append(lang)
     settings = doc.settings.element
     anchor = settings.find(qn("w:compat"))
     index = list(settings).index(anchor) if anchor is not None else len(settings)
     for tag, value in (
-        ("w:autoHyphenation", "true"),
+        ("w:autoHyphenation", "true" if PROFILE.hyphenation else "false"),
         ("w:consecutiveHyphenLimit", "2"),
         ("w:hyphenationZone", "357"),
     ):
@@ -337,17 +351,17 @@ def set_header_footer(sec, meta: BookMeta):
     hp.text = ''
     hp.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT)
     r = hp.add_run(meta.running_left)
-    r.font.name, r.font.size, r.italic = BODY_FONT, Pt(8), True
+    r.font.name, r.font.size, r.italic = BODY_FONT, Pt(PROFILE.header_size), True
     r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     r2 = hp.add_run('\t' + meta.running_right)
-    r2.font.name, r2.font.size, r2.italic = BODY_FONT, Pt(8), True
+    r2.font.name, r2.font.size, r2.italic = BODY_FONT, Pt(PROFILE.header_size), True
     r2._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     ft = sec.footer
     fp = ft.paragraphs[0]
     fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
     def fld_run(kind=None, instr=None):
         r = fp.add_run()
-        r.font.name, r.font.size = BODY_FONT, Pt(9)
+        r.font.name, r.font.size = BODY_FONT, Pt(PROFILE.footer_size)
         if kind:
             e = OxmlElement('w:fldChar')
             e.set(qn('w:fldCharType'), kind)
@@ -791,6 +805,10 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
                 prev_body = None
                 continue
+            if role in GENERIC_ROLES:
+                render_generic_block(doc, b, genera)
+                prev_body = None
+                continue
             if not text:
                 continue
             if p["kind"] == "index" and text.upper().startswith("ALPHABETICAL INDEX"):
@@ -868,6 +886,76 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 continue
             prev_body = prev_body if role == "body" else None
     render_index(doc, data, genera, page_map, meta)
+
+
+GENERIC_ROLES = frozenset({"table", "list", "quote", "box", "footnote"})
+
+
+def _cell_text(cell: Any) -> tuple[str, int]:
+    """A table cell is a string or {"text": ..., "colspan": n}."""
+    if isinstance(cell, dict):
+        return clean_text(str(cell.get("translation") or cell.get("text") or "")), int(cell.get("colspan", 1))
+    return clean_text(str(cell or "")), 1
+
+
+def render_generic_block(doc, b: dict, genera) -> None:
+    """Generic block model (issue #27): table, list, quote, box, footnote.
+
+    Table: ``rows`` = list of rows, a cell is text or {"text", "colspan"};
+    ``header_rows`` (default 1) repeat on every page.  List: ``items`` plus
+    optional ``ordered``.  All text comes from ``translation`` (or ``text``).
+    """
+    role = b["role"]
+    size = PROFILE.body_size
+    text = clean_text(b.get("translation") or b.get("text") or "")
+    if role == "table":
+        rows = b["rows"]
+        ncols = max(sum(_cell_text(c)[1] for c in r) for r in rows)
+        table = doc.add_table(rows=len(rows), cols=ncols)
+        table.style = "Table Grid"
+        header_rows = int(b.get("header_rows", 1))
+        for ri, row in enumerate(rows):
+            ci = 0
+            for cell in row:
+                txt, span = _cell_text(cell)
+                c = table.cell(ri, ci)
+                if span > 1:
+                    c = c.merge(table.cell(ri, ci + span - 1))
+                c.text = ""
+                add_runs(c.paragraphs[0], txt, size - 1.5, bold=ri < header_rows, genera=genera)
+                ci += span
+            if ri < header_rows:
+                trpr = table.rows[ri]._tr.get_or_add_trPr()
+                hdr = OxmlElement("w:tblHeader")
+                hdr.set(qn("w:val"), "true")
+                trpr.append(hdr)
+            cant = OxmlElement("w:cantSplit")
+            table.rows[ri]._tr.get_or_add_trPr().append(cant)
+        if text:
+            para(doc, text, size=size - 1.5, italic=True, before=2, after=6, genera=genera)
+        else:
+            para(doc, "", after=4)
+    elif role == "list":
+        for i, item in enumerate(b["items"], 1):
+            label = f"{i}. " if b.get("ordered") else "\u2022 "
+            para(doc, label + clean_text(str(item)), size=size, left=6, first=-4, after=1,
+                 genera=genera)
+    elif role == "quote":
+        para(doc, text, size=size - 0.5, italic=True, left=8, before=3, after=3,
+             align=WD_ALIGN_PARAGRAPH.JUSTIFY, genera=genera)
+    elif role == "box":
+        p = para(doc, text, size=size - 0.5, left=3, before=4, after=4, genera=genera)
+        ppr = p._p.get_or_add_pPr()
+        bdr = OxmlElement("w:pBdr")
+        for side in ("top", "left", "bottom", "right"):
+            e = OxmlElement(f"w:{side}")
+            e.set(qn("w:val"), "single")
+            e.set(qn("w:sz"), "4")
+            e.set(qn("w:space"), "4")
+            bdr.append(e)
+        ppr.append(bdr)
+    elif role == "footnote":
+        para(doc, text, size=size - 2, before=1, after=1, genera=genera)
 
 
 def can_join(a: str, b: str) -> bool:
@@ -990,8 +1078,8 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
         para(doc, intro, size=8.8, italic=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=8)
     sec = doc.add_section(WD_SECTION.CONTINUOUS)
     sec.page_width, sec.page_height = Mm(PAGE_W), Mm(PAGE_H)
-    sec.top_margin, sec.bottom_margin = Mm(20), Mm(19)
-    sec.left_margin, sec.right_margin = Mm(18), Mm(18)
+    sec.top_margin, sec.bottom_margin = Mm(PROFILE.margin_top), Mm(PROFILE.margin_bottom)
+    sec.left_margin, sec.right_margin = Mm(PROFILE.margin_left), Mm(PROFILE.margin_right)
     cols = sec._sectPr.xpath('./w:cols')
     if cols:
         cols[0].set(qn('w:num'), '2')

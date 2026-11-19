@@ -18,8 +18,9 @@ import os
 import threading
 from typing import Any
 
-# 分类文献 Lean：只改写叙述/讨论；描述/产地/生态走 Google + 术语表（0 token）
-LEAN_REWRITE_KINDS = "narrative,remarks"
+# 分类文献 Lean：叙述/讨论/图注送模型；描述/产地/生态走 Google + 术语表（0 token）
+# caption 纳入：Marinov 实测图注 Google 可用率最低
+LEAN_REWRITE_KINDS = "narrative,remarks,caption"
 LEAN_STABLE_LIMIT = 20_000  # Lean 下术语表不整本塞 system，逐段只送相关条目
 
 # 任务 → 输出 token 上限。None = 按 user 篇幅动态估，再封顶。
@@ -130,3 +131,37 @@ def check_budget() -> None:
     limit = budget_limit()
     if limit is not None and spent() > limit:
         raise BudgetExceeded(f"token 预算已超：累计约 {spent()} > YZZ_TOKEN_BUDGET={limit}")
+
+
+# 贵模型：批量翻译/校正禁止默认使用（军师/架构才允许 --force-engine）
+EXPENSIVE_ENGINES = frozenset({"claude-opus", "deepseek-v4-pro", "codex-astra"})
+
+
+def guard_engine(engine: str, *, force: bool = False) -> str:
+    """拒绝默认贵模型；force=True 才放行。none/auto 原样返回。"""
+    if engine in ("none", "auto", ""):
+        return engine
+    if engine in EXPENSIVE_ENGINES and not force:
+        raise SystemExit(
+            f"引擎 {engine} 属贵模型（军师档），批量翻译/校正默认禁用；"
+            f"确需使用请加 --force-engine。主力请用 deepseek-flash / claude-sonnet / auto。"
+        )
+    return engine
+
+
+def guard_tier(tier: str, *, verify_engine: str, chaptered: bool) -> str:
+    """试译档放行；交付档必须异模型 verify + 分章。
+    见 docs/plans/2026-11-17-translation-approach-optimization.md（仅 /root/github 份）。"""
+    t = (tier or "draft").strip().lower()
+    if t in ("draft", "试译", ""):
+        return "draft"
+    if t not in ("release", "交付", "publish"):
+        raise SystemExit(f"未知 --tier {tier!r}，可选 draft / release")
+    problems: list[str] = []
+    if verify_engine in ("none", ""):
+        problems.append("release 须设异模型 --verify-engine（不可为 none）")
+    if not chaptered:
+        problems.append("release 须按章（fast_book chapters，或加 --chaptered）")
+    if problems:
+        raise SystemExit("交付档（--tier release）未满足：\n- " + "\n- ".join(problems))
+    return "release"

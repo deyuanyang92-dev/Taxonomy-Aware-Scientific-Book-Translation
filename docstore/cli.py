@@ -293,6 +293,9 @@ def cmd_postfix(st: Store, a) -> None:
     from .store import make_version
 
     vocabs: dict[str, object] = {}
+    protect = _read_wordlist(a.protect) if getattr(a, "protect", None) else None
+    dictionary = {w.lower() for w in _read_wordlist(a.dictionary)} if getattr(a, "dictionary", None) else None
+    review_all: list[dict] = []
     audit = st.root / "_audit"
     audit.mkdir(exist_ok=True)
     for key in a.keys:
@@ -309,14 +312,20 @@ def cmd_postfix(st: Store, a) -> None:
                 pg = st.read_page(key, n) or {}
                 if not (pg.get("text") or "").strip():  # 规则幂等：已改过的页再跑只会应用新加的规则
                     continue
-                new, ch = latinfix.fix_page(pg["text"], vocab)  # type: ignore[arg-type]
+                detail: list[dict] = []
+                rv: list[dict] = []
+                new, ch = latinfix.fix_page(pg["text"], vocab, lang=lang or None, protect=protect,  # type: ignore[arg-type]
+                                            review=rv, dictionary=dictionary, detail=detail)
+                review_all += [{"key": key, "page": n, **r} for r in rv]
                 if not ch:
                     continue
                 n_pages += 1
                 n_changes += len(ch)
-                for rule, old, rep in ch:
+                for (rule, old, rep), dt in zip(ch, detail, strict=True):
                     stats[rule] = stats.get(rule, 0) + 1
-                    log.write(json.dumps({"page": n, "rule": rule, "old": old, "new": rep, "dry": a.dry},
+                    log.write(json.dumps({"page": n, "rule": rule, "old": old, "new": rep, "dry": a.dry,
+                                          "lang": lang or None, "engine": pg.get("engine"),
+                                          **{k: dt[k] for k in ("n_old", "n_new") if k in dt}},
                                          ensure_ascii=False) + "\n")
                 if a.dry:
                     continue
@@ -327,7 +336,15 @@ def cmd_postfix(st: Store, a) -> None:
                                  conf=(pg.get("quality") or {}).get("ocr_conf"),
                                  extra={"latinfix": {"changes": len(ch), "base_producer": base}})
                 st.put_version(key, n, v, promote=True)
-        print(f"{key}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+        print(f"{key}\t{lang or '-'}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+    if getattr(a, "review_out", None):
+        Path(a.review_out).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in review_all),
+                                      encoding="utf-8")
+        print(f"复核队列 {len(review_all)} 条 → {a.review_out}")
+
+
+def _read_wordlist(path: str) -> set[str]:
+    return {ln.strip() for ln in Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()}
 
 
 def cmd_proofread(st: Store, a) -> None:
@@ -354,8 +371,22 @@ def cmd_attest(st: Store, a) -> None:
 
 def cmd_keys(st: Store, a) -> None:
     """检索表偶句重建：读 PP-OCR 行框缓存，零 token，不触发 OCR（issue #38）。"""
-    from . import keys
+    from . import keyblocks, keys
 
+    if a.keys_cmd == "blocks":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        out = json.dumps(keyblocks.couplet_blocks(data), ensure_ascii=False, indent=1)
+        Path(a.out).write_text(out, encoding="utf-8") if a.out else print(out)
+        return
+    if a.keys_cmd == "plan":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        plan = keyblocks.repair_plan(data)
+        Path(a.out).write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
+        if a.pdf:
+            for p in keyblocks.render_pages(Path(a.pdf), plan["pages_to_check"], Path(a.render_dir)):
+                print(p)
+        print(f"{len(plan['fixes'])} 处待核，页 {plan['pages_to_check']}；填 why 后用 extract --fix 应用", file=sys.stderr)
+        return
     if a.keys_cmd == "check":
         data = json.loads(Path(a.file).read_text(encoding="utf-8"))
         rep = keys.check_couplets(data["couplets"])
@@ -582,7 +613,10 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("postfix", help="拉丁字母语种 OCR 后处理（♂♀、小型大写、µm、全库词频纠错；零 token）")
     s.add_argument("keys", nargs="+")
-    s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本")
+    s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本；按语种、规则报数")
+    s.add_argument("--protect", help="受保护词表文件（每行一词：学名、作者、地名等，可由 yiku/taxadb 导出）")
+    s.add_argument("--dictionary", help="词典文件（每行一词），只用于标疑进复核队列，绝不用来替换")
+    s.add_argument("--review-out", help="复核队列 JSONL（歧义候选、词典标疑），不改正文")
     s.set_defaults(fn=cmd_postfix)
 
     s = sub.add_parser("proofread", help="Proofread low-confidence OCR against page images")
@@ -625,6 +659,14 @@ def main(argv: list[str] | None = None) -> int:
     c = ks.add_parser("check", help="对 keys.json 重做按表图检查（人工补完条目后用）")
     c.add_argument("file")
     c.add_argument("--problems", action="store_true")
+    b = ks.add_parser("blocks", help="keys.json → 偶句翻译单元（终点与条目号不交模型）")
+    b.add_argument("file")
+    b.add_argument("--out")
+    pl = ks.add_parser("plan", help="缺陷 → keys_fix.json 骨架（why 留空，人对照页面图像填）；可渲出待核页 PNG")
+    pl.add_argument("file")
+    pl.add_argument("--out", required=True)
+    pl.add_argument("--pdf", help="原件 PDF；给了就把待核页渲成 PNG")
+    pl.add_argument("--render-dir", default="keys_pages")
     s.set_defaults(fn=cmd_keys)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")

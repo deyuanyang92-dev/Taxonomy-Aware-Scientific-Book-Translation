@@ -15,6 +15,8 @@ PDF：只在「新旧字数相同，且新字的字形已在同一个嵌入字�
 用法:
     python3 -X utf8 patch_release.py <书.docx|书.pdf> <替换表.tsv> [-o 输出文件] [--dry] [--pages 5-8,613]
   缺省输出 <原名>_patched.<扩展名>；--dry 只报告次数不写文件。
+  另有子命令 ``scan`` / ``fix``（错字发现、写前核字体、闸报告），用法见 typo_scan.py 的 docstring：
+    python3 -X utf8 patch_release.py scan <书.docx|书.pdf> --rules typos.tsv --report out.json
   Windows 上的 Python 务必加 -X utf8（否则打印生僻字会因 GBK 崩溃）。
 一条都没替换时不写输出文件。原件只读，输出一律写到 -o 指定的副本。
 退出码: 0 全部命中；1 有未命中或被拒绝的条目（或一条都没替换）；2 参数错误。
@@ -483,6 +485,11 @@ def parse_pages(spec: str) -> set[int]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args_in = sys.argv[1:] if argv is None else argv
+    if args_in and args_in[0] in ("scan", "fix"):  # 错字发现与字体安全修补：见 typo_scan.py（issue #24）
+        import typo_scan
+
+        return typo_scan.main(args_in)
     ap = argparse.ArgumentParser(description="对 docx/PDF 成品做定点替换（替换表 旧<TAB>新）")
     ap.add_argument("file", help=".docx 或 .pdf")
     ap.add_argument("table", help="替换表 TSV")

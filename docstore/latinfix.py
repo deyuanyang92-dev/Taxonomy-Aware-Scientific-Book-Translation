@@ -17,8 +17,15 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterable
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover
+    import tomli as tomllib  # type: ignore[no-redef]
 
 WORD = re.compile(r"[^\W\d_]+", re.UNICODE)
 
@@ -125,7 +132,75 @@ def fix_glyphs(text: str) -> tuple[str, list[tuple[str, str]]]:
     return text, changes
 
 
+# ---- 0. 规范化（#22）：先于一切规则，只动 Unicode 表示，不动拼写 ----
+_INVISIBLE = re.compile("[­​‌‍⁠﻿]")
+_LIGATURE = re.compile("[ﬀ-ﬆ]")
+_FULLWIDTH_RUN = re.compile("[！-～]+")
+_COMBINING_WORD = re.compile(r"\w*[̀-ͯ]\w*")
+_CJK = re.compile("[⺀-鿿　-〿가-힯＀-￯]")
+_HOMOGLYPH = {
+    **dict(zip("аеорсухіјѕАВЕКМНОРСТХУ", "aeopcyxijsABEKMHOPCTXY", strict=True)),   # Cyrillic
+    **dict(zip("οανιρτΑΒΕΙΚΜΝΟΡΤΧ", "oavipt" + "ABEIKMNOPTX", strict=True)),         # Greek
+}
+_HG_CHARS = "".join(_HOMOGLYPH)
+_LATIN_LETTER = re.compile(r"[A-Za-zÀ-ɏ]")
+_OTHER_SCRIPT = re.compile("[Ѐ-ӿͰ-Ͽ]")
+
+
+def normalize(text: str) -> tuple[str, list[tuple[str, str, str]]]:
+    """规范化；返回 (新文本, [(规则, 原, 新)])。规则名：norm.invisible / norm.ligature / norm.fullwidth /
+    norm.nfc / norm.homoglyph。µ（U+00B5）不动；全角字符紧挨 CJK 时不动（中文语境不归本模块）。
+    不用整体 NFKC：它会把 µ 变成希腊 μ、把 ² 变成 2。"""
+    log: list[tuple[str, str, str]] = []
+
+    def sub(rx: re.Pattern[str], rule: str, fn, t: str) -> str:  # type: ignore[no-untyped-def]
+        def rep(m: re.Match[str]) -> str:
+            new = fn(m)
+            if new != m.group(0):
+                log.append((rule, m.group(0), new))
+            return new
+        return rx.sub(rep, t)
+
+    text = sub(_INVISIBLE, "norm.invisible", lambda m: "", text)
+    text = sub(_LIGATURE, "norm.ligature", lambda m: unicodedata.normalize("NFKC", m.group(0)), text)
+
+    def fw(m: re.Match[str]) -> str:
+        b, e = m.start(), m.end()
+        if (b > 0 and _CJK.match(m.string[b - 1])) or (e < len(m.string) and _CJK.match(m.string[e])):
+            return m.group(0)
+        return unicodedata.normalize("NFKC", m.group(0))
+
+    text = sub(_FULLWIDTH_RUN, "norm.fullwidth", fw, text)
+    text = sub(_COMBINING_WORD, "norm.nfc", lambda m: unicodedata.normalize("NFC", m.group(0)), text)
+
+    def hg(m: re.Match[str]) -> str:
+        w = m.group(0)
+        if not any(c in _HOMOGLYPH for c in w) or not _LATIN_LETTER.search(w):
+            return w
+        if any(_OTHER_SCRIPT.match(c) and c not in _HOMOGLYPH for c in w):
+            return w  # 含非同形字的西里尔/希腊字母：是真正的该文字词，不动
+        return "".join(_HOMOGLYPH.get(c, c) for c in w)
+
+    text = sub(WORD, "norm.homoglyph", hg, text)
+    return text, log
+
+
 # ---- 2. 全库词频纠错 ----
+_RULES_PATH = Path(__file__).parent / "rules" / "latin_confusions.toml"
+_TABLES: dict[str, list[tuple[str, str]]] | None = None
+
+
+def confusion_table(lang: str | None) -> list[tuple[str, str]]:
+    """语种混淆表：base + 该语种表；lang 为 None 时沿用旧行为（CONFUSIONS 全表）；未知语种只用 base。"""
+    global _TABLES
+    if lang is None:
+        return CONFUSIONS
+    if _TABLES is None:
+        d = tomllib.loads(_RULES_PATH.read_text(encoding="utf-8"))
+        _TABLES = {k: [(a, b) for a, b in v] for k, v in d.items()}
+    return _TABLES["base"] + _TABLES.get(lang, [])
+
+
 def build_vocab(texts: Iterable[str]) -> Counter:
     c: Counter = Counter()
     for t in texts:
@@ -134,9 +209,9 @@ def build_vocab(texts: Iterable[str]) -> Counter:
     return c
 
 
-def candidates(w: str) -> set[str]:
+def candidates(w: str, lang: str | None = None) -> set[str]:
     out = set()
-    for a, b in CONFUSIONS:
+    for a, b in confusion_table(lang):
         i = w.find(a)
         while i != -1:
             out.add(w[:i] + b + w[i + len(a):])
@@ -145,44 +220,120 @@ def candidates(w: str) -> set[str]:
     return out
 
 
-def fix_vocab(text: str, vocab: Counter, *, rare: int = 2, common: int = 5, ratio: float = 5.0,
-              min_len: int = 4) -> tuple[str, list[tuple[str, str]]]:
-    changes = []
-    cache: dict[str, str] = {}
+def learn_confusions(vocab: Counter, *, common: int = 5, rare: int = 2, min_len: int = 4) -> Counter:
+    """从语料学易混字符：同长、仅一个位置不同，一个词罕见（≤rare）另一个常见（≥common）→ 计 (罕见侧字符, 常见侧字符)。
+    结果可按文档的字体/OCR 引擎分层统计，用来评估或扩充语种表，不自动写回规则。"""
+    index: dict[tuple[int, str, str], list[str]] = {}
+    for w, n in vocab.items():
+        if n >= common and len(w) >= min_len:
+            for i in range(len(w)):
+                index.setdefault((len(w), w[:i], w[i + 1:]), []).append(w)
+    out: Counter = Counter()
+    for w, n in vocab.items():
+        if n > rare or len(w) < min_len:
+            continue
+        for i in range(len(w)):
+            for c in index.get((len(w), w[:i], w[i + 1:]), ()):
+                if c[i] != w[i]:
+                    out[(w[i], c[i])] += 1
+    return out
 
-    def best(w: str) -> str:
+
+_ITALIC = re.compile(r"\*[^*\n]+\*|_[^_\n]+_")
+_AUTHORITY = re.compile(r"\([^()\n]*\b(?:1[5-9]|20)\d\d[a-z]?\)")
+_INTERNAL_CAPS = re.compile(r"[a-zäöüß][A-ZÄÖÜ]")
+
+
+def protected_spans(text: str) -> list[tuple[int, int]]:
+    """受保护区间：斜体/强调、命名人括注 (… 1776)。"""
+    return [(m.start(), m.end()) for rx in (_ITALIC, _AUTHORITY) for m in rx.finditer(text)]
+
+
+def _is_protected_token(w: str, protect: set[str] | None) -> bool:
+    if protect and (w in protect or w.lower() in protect):
+        return True
+    letters = [c for c in w if c.isalpha()]
+    if len(letters) >= 2 and all(c.isupper() for c in letters):  # 小型大写人名
+        return True
+    return bool(_INTERNAL_CAPS.search(w))  # glauCopsis、McIntosh
+
+
+def fix_vocab(text: str, vocab: Counter, *, rare: int = 2, common: int = 5, ratio: float = 5.0,
+              min_len: int = 4, lang: str | None = None, protect: set[str] | None = None,
+              review: list[dict] | None = None, dictionary: set[str] | None = None,
+              detail: list[dict] | None = None) -> tuple[str, list[tuple[str, str]]]:
+    """全库词频纠错。自动替换只限「库内有证据、唯一候选」的词；有歧义的、词典标疑的进 review 队列，不改正文。
+    protect：学名/作者/地名等受保护词；斜体、命名人括注、全大写、词内大写永远受保护。
+    dictionary（小写词集合）只用于标疑（reason=not_in_dictionary），绝不用来替换。"""
+    changes: list[tuple[str, str]] = []
+    spans = protected_spans(text)
+    cache: dict[str, tuple[str, str, list[tuple[str, int]]]] = {}
+
+    def best(w: str) -> tuple[str, str, list[tuple[str, int]]]:
+        """返回 (结果词, 状态 fixed|ambiguous|ok, 候选与频次)。"""
         if w in cache:
             return cache[w]
-        res = w
+        res, state, cands = w, "ok", []
         n = vocab.get(w, 0)
         if len(w) >= min_len and n <= rare:
-            scored = [(vocab.get(c, 0), c) for c in candidates(w)]
+            scored = [(vocab.get(c, 0), c) for c in candidates(w, lang)]
             scored = [x for x in scored if x[0] >= common and x[0] >= ratio * max(n, 1)]
+            scored.sort(key=lambda x: (-x[0], x[1]))
+            cands = [(c, k) for k, c in scored]
             if scored:
-                scored.sort(reverse=True)
                 # 两个候选都常见且接近（≤2 倍）时不替换：无从判断
                 if len(scored) == 1 or scored[0][0] >= 2 * scored[1][0]:
-                    res = scored[0][1]
-        cache[w] = res
-        return res
+                    res, state = scored[0][1], "fixed"
+                else:
+                    state = "ambiguous"
+        cache[w] = (res, state, cands)
+        return cache[w]
 
-    def rep(m: re.Match) -> str:
+    def rep(m: re.Match[str]) -> str:
         w = m.group(0)
-        b = best(w)
-        if b != w:
-            changes.append((w, b))
-        return b
+        b, e = m.start(), m.end()
+        if _is_protected_token(w, protect) or any(s <= b and e <= t for s, t in spans):
+            return w
+        res, state, cands = best(w)
+        if state == "fixed":
+            changes.append((w, res))
+            if detail is not None:
+                detail.append({"old": w, "new": res, "n_old": vocab.get(w, 0), "n_new": vocab.get(res, 0),
+                               "lang": lang})
+            return res
+        if review is not None and len(w) >= min_len:
+            if state == "ambiguous":
+                review.append({"token": w, "candidates": cands, "reason": "ambiguous", "lang": lang, "pos": b})
+            elif dictionary is not None and vocab.get(w, 0) <= rare and w.lower() not in dictionary:
+                review.append({"token": w, "candidates": [], "reason": "not_in_dictionary", "lang": lang, "pos": b})
+        return w
 
     return WORD.sub(rep, text), changes
 
 
-def fix_page(text: str, vocab: Counter | None = None) -> tuple[str, list[tuple[str, str, str]]]:
-    """全部规则依次执行；返回 (新文本, [(规则, 原, 新)])。"""
+def fix_page(text: str, vocab: Counter | None = None, *, lang: str | None = None, protect: set[str] | None = None,
+             review: list[dict] | None = None, dictionary: set[str] | None = None,
+             detail: list[dict] | None = None) -> tuple[str, list[tuple[str, str, str]]]:
+    """全部规则依次执行；返回 (新文本, [(规则, 原, 新)])。detail（可选）按同序追加每处改动的审计字典
+    （含规则、原、新、语种；词频改动另含 n_old/n_new 证据频次）。review（可选）收集待复核词。"""
     log: list[tuple[str, str, str]] = []
+
+    def add(rule: str, ch: list[tuple[str, str]]) -> None:
+        log.extend((rule, a, b) for a, b in ch)
+        if detail is not None:
+            detail.extend({"rule": rule, "old": a, "new": b, "lang": lang} for a, b in ch)
+
+    text, nch = normalize(text)
+    log += nch
+    if detail is not None:
+        detail.extend({"rule": r, "old": a, "new": b, "lang": lang} for r, a, b in nch)
     for name, fn in (("sex", fix_sex), ("smallcaps", fix_smallcaps), ("units", fix_units), ("glyphs", fix_glyphs)):
         text, ch = fn(text)
-        log += [(name, a, b) for a, b in ch]
+        add(name, ch)
     if vocab is not None:
-        text, ch = fix_vocab(text, vocab)
+        vd: list[dict] = []
+        text, ch = fix_vocab(text, vocab, lang=lang, protect=protect, review=review, dictionary=dictionary, detail=vd)
         log += [("vocab", a, b) for a, b in ch]
+        if detail is not None:
+            detail.extend({"rule": "vocab", **d} for d in vd)
     return text, log
