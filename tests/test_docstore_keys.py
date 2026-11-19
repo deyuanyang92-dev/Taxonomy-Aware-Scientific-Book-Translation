@@ -234,7 +234,7 @@ def test_cli_extract_needs_key_or_cache_with_last(tmp_path):
 # ---- 真实三卷回归：行框缓存不入库，缺则跳过。数字是 issue #38 记录的原型结果（只有计数，无书文）----
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
-    "966b8423a9d4": (406, 14, 419, 9, 7),    # 2001
+    "966b8423a9d4": (406, 14, 420, 9, 6),    # 2001（孤立「…」作条目横线后 419→420、缺陷 7→6）
     "858f37873e50": (363, 8, 253, 1, 21),    # 2007
     "c1ac037a042b": (361, 10, 493, 2, 28),   # 2009
 }
@@ -262,3 +262,30 @@ def test_real_volumes_match_recorded_counts():
         ran += 1
     if not ran:
         pytest.skip("本机没有 Imajima 行框缓存")
+
+
+# ---- 结构化终点与整页版面（交给排版：名称栏 / 目标栏 / 整页替换）----
+
+def test_slots_split_name_column_and_target_column():
+    gr = keys.default_grammar()
+    assert keys.term_struct(gr, "12") == {"kind": "jump", "num": "12"}
+    assert keys.term_struct(gr, "Syllis spongicola (図63) -> 14") == {
+        "kind": "name_jump", "name": "Syllis spongicola (図63)", "num": "14"}
+    assert keys.term_struct(gr, "ウロコムシ亜科 -> Harmothoe sp. (図12)") == {
+        "kind": "group_taxon", "group": "ウロコムシ亜科", "taxon": "Harmothoe sp. (図12)"}
+    # OCR 把「図」认成「区」只在其后紧跟图号时改回；前导点线丢掉
+    assert keys.term_struct(gr, "…Nothria paxtonae(区106)")["taxon"] == "Nothria paxtonae(図106)"
+    assert keys.term_struct(gr, "区別")["taxon"] == "区別"
+
+
+def test_layout_lists_page_items_in_reading_order():
+    res = parse(basic_page())
+    items = res["layout"]["1"]
+    assert [i["t"] for i in items] == ["heading", "couplet", "couplet", "couplet", "couplet"]
+    assert [i["i"] for i in items if i["t"] == "couplet"] == [0, 1, 2, 3]
+    assert res["couplets"][0]["slots"][0]["kind"] in {"jump", "taxon", "group_taxon", "name_jump"}
+
+
+def test_lone_ellipsis_in_lead_column_is_a_dash_lead():
+    gr = keys.default_grammar()
+    assert gr.is_dash("…") and gr.is_marker("…")

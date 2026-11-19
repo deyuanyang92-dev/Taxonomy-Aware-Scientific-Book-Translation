@@ -58,9 +58,15 @@ class Grammar:
         self.group_taxon, self.heading, self.caption, self.taxon = (
             c["group_taxon"], c["heading"], c["caption"], c["taxon"])
         self.g: dict[str, float] = d["geometry"]
+        self.term_fixes = [(re.compile(a), b) for a, b in d.get("fixes", {}).get("terminal", [])]
 
     def is_dash(self, t: str) -> bool:
         return bool(t) and all(c in self.dash for c in t)
+
+    def fix_term(self, v: str) -> str:
+        for rx, rep in self.term_fixes:
+            v = rx.sub(rep, v)
+        return v.strip()
 
     def is_marker(self, t: str) -> bool:
         return bool(self.lead_num.match(t)) or self.is_dash(t)
@@ -123,6 +129,8 @@ class KeyParser:
         self.in_key = False
         self.key_id = 0
         self.marked = False
+        # 版面项（按解析顺序）：("couplet", Lead) / ("heading", 文本, 表号) / ("rest", 文本, 原因)
+        self.items: dict[int, list[tuple[Any, ...]]] = {}
 
     # ---- 条目簿记
     def _close(self) -> Lead | None:
@@ -143,6 +151,10 @@ class KeyParser:
             lab = f"{self.n or '?'}" + "'" * self.primes
         self.cur = {"page": pg, "key": self.key_id, "lead": lab, "kind": kind, "text": "", "term": [],
                     "ty1": None, "last_y1": y1, "prev": prev, "reopen": reopen, "lx1": None}
+        self.items.setdefault(pg, []).append(("couplet", self.cur))
+
+    def _rest(self, pg: int, text: str, why: str) -> None:
+        self.items.setdefault(pg, []).append(("rest", text, why))
 
     def _start_inline(self, pg: int, n: str, primes: int, y1: float) -> None:
         """G1b：「N.正文」/「N'.正文」；重复出现的号是备择条目。"""
@@ -190,6 +202,8 @@ class KeyParser:
             self.key_id += 1
             self.in_key = True
             self.events.append((pg, "HEADING", hd[0]["t"]))
+            self.items.setdefault(pg, []).append(
+                ("heading", " ".join(r["t"] for r in sorted(hd, key=lambda r: r["y0"])), self.key_id))
             self._rows(width, below, pg, cal)
         elif self.in_key:
             self._rows(width, rows, pg, calibrate(gr, width, rows))
@@ -267,12 +281,15 @@ class KeyParser:
                 else:  # 条目栏里的非条目行：小标题，结束该表
                     self._reset_key()
                     self.events.append((pg, "SUBHEAD", t))
+                    self._rest(pg, t, "subhead")
                     continue
             if self.cur is None:
+                self._rest(pg, t, "outside")
                 continue
             if gr.caption.match(t):  # G9
                 self._reset_key()
                 self.events.append((pg, "ENDKEY", t[:20]))
+                self._rest(pg, t, "caption")
                 continue
             c = self.cur
             tg = self._is_target(r, width, cal)
@@ -280,6 +297,7 @@ class KeyParser:
                 kind, val = tg
                 if kind == "jump" and c["page"] == pg and r["y0"] > c["last_y1"] + g["pageno_gap"]:
                     self.events.append((pg, "PAGENO", val))
+                    self._rest(pg, val, "pageno")
                     continue
                 self._term(val, r["y1"])
                 continue
@@ -345,17 +363,47 @@ def check_couplets(couplets: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     return check_by_key(leads)
 
 
+def term_struct(gr: Grammar, v: str) -> dict[str, str]:
+    """终点字符串 → 版式栏位：jump(号) / name_jump(名称+号) / group_taxon(类群+学名) / taxon(学名)。"""
+    v = gr.fix_term(v)
+    if " -> " in v:
+        left, right = (x.strip() for x in v.split(" -> ", 1))
+        if right.isdigit():
+            return {"kind": "name_jump", "name": left, "num": right}
+        return {"kind": "group_taxon", "group": left, "taxon": right}
+    if v.isdigit():
+        return {"kind": "jump", "num": v}
+    return {"kind": "taxon", "taxon": v}
+
+
 def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | None = None) -> dict[str, Any]:
     """pages: (页号, 页宽, 行框) 按页序。返回可直接写 keys.json 的字典。"""
     kp = KeyParser(grammar)
     for pg, width, rows in pages:
         kp.feed_page(width, rows, pg)
     leads = kp.finish()
+    gr = kp.gr
+    index = {id(ld): i for i, ld in enumerate(leads)}
     couplets = [{"key": ld["key"], "lead": ld["lead"], "kind": ld["kind"], "page": ld["page"],
-                 "text": ld["text"], "terminals": ld["term"]} for ld in leads]
+                 "text": ld["text"], "terminals": ld["term"],
+                 "slots": [term_struct(gr, v) for v in ld["term"]]} for ld in leads]
+    # 整页版面：每页按阅读顺序的 {couplet 下标 | heading | rest}；下游据此整页替换检索表页
+    layout: dict[str, list[dict[str, Any]]] = {}
+    for pg in sorted(kp.items):
+        out: list[dict[str, Any]] = []
+        for it in kp.items[pg]:
+            if it[0] == "couplet":
+                if id(it[1]) in index:
+                    out.append({"t": "couplet", "i": index[id(it[1])]})
+            elif it[0] == "heading":
+                out.append({"t": "heading", "text": it[1], "key": it[2]})
+            else:
+                out.append({"t": "rest", "text": it[1], "why": it[2]})
+        layout[str(pg)] = out
     by_key = check_by_key(leads)
     return {"couplets": couplets,
             "keys": [{"key": k, **v} for k, v in by_key.items()],
+            "layout": layout,
             "events": [{"page": p, "event": e, "detail": d} for p, e, d in kp.events]}
 
 
