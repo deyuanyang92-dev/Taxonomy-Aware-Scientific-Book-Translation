@@ -99,16 +99,22 @@ def _mode_margin(xs: list[float], bin_px: float) -> float:
     return best[len(best) // 2]
 
 
-def calibrate(gr: Grammar, width: float, rows: list[Row]) -> tuple[float, float]:
-    """G6：返回 (Tm 文本左缘, R 右缘)。优先用条目号自己定位，退回全页众数。"""
+def calibrate(gr: Grammar, width: float, rows: list[Row], min_markers: int = 2) -> tuple[float, float]:
+    """G6：返回 (Tm 文本左缘, R 右缘)。优先用条目号自己定位，退回全页众数。
+    min_markers：定位所需的独立条目号数；表在进行中的续页只剩一两个条目时可降到 1（2001 p383）。"""
     g = gr.g
     x1s = sorted(r["x1"] for r in rows)
     right = x1s[int(len(x1s) * g["right_edge_pct"])] if x1s else width
     mk = [r for r in rows if r["x1"] - r["x0"] < g["marker_max_width"] * width
           and r["x0"] < g["marker_zone"] * width and gr.is_marker(r["t"])]
-    if len(mk) >= 2:
+    # 条目号右边必有同一行的正文框；页眉页脚的页码（如「244.」）孤零零一个，不算（2007 p341）
+    mk = [m for m in mk if any(o is not m and o["x0"] > m["x0"] and o["y0"] < m["y1"] and o["y1"] > m["y0"]
+                               for o in rows)]
+    merged = [r for r in rows if r["x0"] < g["marker_zone"] * width and gr.lead_merged.match(r["t"])]
+    if len(mk) >= min_markers or (len(mk) == 1 and 1 <= len(merged) < g["inline_min_rows"]):  # 一个独立条目号 + 并进正文的条目号，也够定位（2007 p220）
         mx1 = sorted(r["x1"] for r in mk)[len(mk) // 2]
-        xs = [r["x0"] for r in rows if len(r["t"]) >= g["min_marker_text"] and mx1 < r["x0"] < mx1 + g["margin_probe"] * width]
+        xs = [r["x0"] for r in rows if len(r["t"]) >= g["min_marker_text"]
+              and mx1 - g["marker_overlap"] * width < r["x0"] < mx1 + g["margin_probe"] * width]
         if xs:
             return _mode_margin(xs, g["margin_bin"]), right
     il = [r["x0"] for r in rows if len(r["t"]) >= g["min_row_chars"] and r["x0"] < g["marker_zone"] * width
@@ -176,6 +182,28 @@ class KeyParser:
         self.n, self.primes = None, 0
         self.in_key = False
 
+    def _pending_jumps(self) -> set[str]:
+        """本表已出现的跳转号里，还没作为条目号出现过的（表被插图版打断时用）。"""
+        mine = [ld for ld in self.leads if ld["key"] == self.key_id]
+        if self.cur is not None:
+            mine.append(self.cur)
+        have = {ld["lead"] for ld in mine}
+        out: set[str] = set()
+        for ld in mine:
+            for v in ld["term"]:
+                m = re.search(r"(\d+)$", v.split("->")[-1].strip())
+                if m and "図" not in v and m.group(1) not in have:
+                    out.add(m.group(1))
+        return out
+
+    def _is_plate(self, width: float, rows: list[Row]) -> bool:
+        """整页插图版（有图题、条目栏里没有条目号）且表里还有没到的跳转号：表在这页之后续。"""
+        gr, g = self.gr, self.gr.g
+        if not any(gr.caption.match(r["t"]) for r in rows) or not self._pending_jumps():
+            return False
+        return not any(r["x0"] < g["marker_zone"] * width and (gr.lead_num.match(r["t"]) or gr.is_dash(r["t"]))
+                       for r in rows)
+
     def _drop_page_number(self) -> None:
         """G5：上页末尾的空条目其实是页码，恢复状态并重开上一条。"""
         c = self.cur
@@ -212,7 +240,12 @@ class KeyParser:
                 ("heading", " ".join(r["t"] for r in sorted(hd, key=lambda r: r["y0"])), self.key_id))
             self._rows(width, below, pg, cal)
         elif self.in_key:
-            self._rows(width, rows, pg, calibrate(gr, width, rows))
+            if self._is_plate(width, rows):
+                for r in rows:
+                    self._rest(pg, r["t"], "plate", r)
+                self.events.append((pg, "PLATE", f"跳转号 {sorted(self._pending_jumps())[:3]} 还没到，表在下页续"))
+                return
+            self._rows(width, rows, pg, calibrate(gr, width, rows, min_markers=1))
             if self.in_key and not self.marked:  # G7：先吃完这页再结束该表
                 self._reset_key()
 

@@ -296,9 +296,9 @@ def test_cli_extract_applies_fix_file(tmp_path, capsys):
 # ---- 真实三卷回归：行框缓存不入库，缺则跳过。数字是 issue #38 记录的原型结果（只有计数，无书文）----
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
-    "966b8423a9d4": (406, 14, 422, 11, 3),   # 2001（孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5；整行拉丁名认作终点、同行按 x 排序后 420→422、缺陷 5→3）
-    "858f37873e50": (363, 8, 288, 4, 9),     # 2007（同上；条目号框贴近正文也算条目号后 p219 的 28 个偶句找回，253→288）
-    "c1ac037a042b": (361, 10, 555, 6, 6),    # 2009（内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
+    "966b8423a9d4": (406, 14, 424, 12, 2),   # 2001（插图版页打断检索表后，p383 续表接回 4''，422→424、缺陷 3→2；孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5；整行拉丁名认作终点、同行按 x 排序后 420→422、缺陷 5→3）
+    "858f37873e50": (363, 8, 295, 5, 5),     # 2007（页眉页码不参与校准、长横线框与正文左缘重叠、单个独立条目号加并框条目号也能校准，288→295、缺陷 9→5；同上；条目号框贴近正文也算条目号后 p219 的 28 个偶句找回，253→288）
+    "c1ac037a042b": (361, 10, 555, 6, 4),    # 2009（条目号后紧跟「数字+汉字」的正文不再被当成跳转号，缺陷 6→4；内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
 }
 
 
@@ -377,6 +377,56 @@ def test_number_box_touching_the_text_margin_is_still_a_lead():
     res = parse(rows)
     assert [c["lead"] for c in res["couplets"]] == ["1", "2"], res["events"]
     assert terms(res)["2"] == ["Harmothoe imbricata"]
+
+
+def test_lone_page_number_does_not_shift_calibration():
+    # 页眉页码「244.」孤零零一个框，右边同一行没有正文：不算条目号（2007 p341）
+    body = (heading() + lead(200, "1.", "体は細長く頭部が明瞭", "……2")
+            + lead(280, "—", "体は短く頭部がない", "……ウロコムシ科"))
+    stray = [row(600, 30, 700, 60, "244.")]
+    gr = keys.default_grammar()
+    base = keys.calibrate(gr, W, keys.rows_from_raw(body))
+    assert keys.calibrate(gr, W, keys.rows_from_raw(body + stray)) == base
+    assert base[0] == TM
+
+
+def test_single_marker_plus_merged_lead_calibrates():
+    # 一个独立条目号 + 一个并进正文框的条目号，也够定位文本左缘（2007 p220）
+    rows = (heading() + lead(200, "1.", "体は細長く頭部が明瞭", "……2")
+            + [row(190, 280, 1100, 320, "2.背面に鱗片がある"), row(1550, 280, 1750, 320, "……Harmothoe imbricata")])
+    res = parse(rows)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "2"], res["events"]
+    assert terms(res)["2"] == ["Harmothoe imbricata"]
+
+
+def test_dash_box_overlapping_text_margin_is_still_a_lead():
+    # 长横线的 OCR 框右缘伸进正文左缘（2007 p341）
+    rows = (heading() + lead(200, "1.", "体は細長く頭部が明瞭", "……2")
+            + [row(190, 280, TM + 12, 320, "——")]
+            + lead(280, None, "体は短く頭部がない", "……ウロコムシ科"))
+    res = parse(rows)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "1'"], res["events"]
+    assert terms(res)["1'"] == ["ウロコムシ科"]
+
+
+def test_plate_page_suspends_key_and_next_page_continues_it():
+    # 插图版页（有图题、条目栏里没有条目号）打断检索表，表里还有没到的跳转号：续页接回（2001 p381-383）
+    p1 = (heading() + lead(200, "1.", "体は細長く頭部が明瞭", "……2")
+          + lead(280, "—", "体は短く頭部がない", "……3"))
+    plate = [row(TM, 100, 900, 140, "図5.ウロコムシ科の剛毛"), row(TM, 800, 900, 840, "scale bar")]
+    p3 = lead(200, "2.", "背面に鱗片がある", "……Harmothoe imbricata") + lead(280, "—", "背面に鱗片がない", "……Lepidonotus clava")
+    res = parse(p1, plate, p3)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "1'", "2", "2'"], res["events"]
+    assert len({c["key"] for c in res["couplets"]}) == 1
+    assert any(e["event"] == "PLATE" and e["page"] == 2 for e in res["events"])
+
+
+def test_number_followed_by_digit_and_counter_kanji_is_a_lead():
+    # 「26.６本の主枝…」：条目号后的正文以「数字+汉字」开头，不是跳转号（2009 p295）
+    gr = keys.default_grammar()
+    assert gr.inline.match("26.6本の主枝は前方に立ち上がり").group(1) == "26"
+    assert gr.lead_merged.match("30.1剛毛束内の複剛毛上端部の形は").group(1) == "30"
+    assert not gr.lead_merged.match("30.12")
 
 
 def test_term_struct_splits_single_ellipsis_and_glued_group_name():
