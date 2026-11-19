@@ -154,8 +154,36 @@ CLAUDE_LEAN = ["--tools", "", "--setting-sources", "", "--strict-mcp-config", "-
                "--exclude-dynamic-system-prompt-sections", "--output-format", "json"]
 
 
+# 2026-11-19：每次调用不落会话文件；单次预算默认 1 美元（防失控，可用 YZZ_CLAUDE_MAX_USD 改，off 关闭）；
+# 思考档位默认不传（用 CLI 默认），可用 YZZ_CLAUDE_EFFORT=low|medium|high|xhigh|max 指定。
+# claude 2.x 的 `claude -p --help` 没有 --max-turns；CLAUDE_LEAN 已关掉全部工具，本来就只有一轮。
+CLAUDE_GUARD = ["--no-session-persistence"]
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+CLAUDE_DEFAULT_MAX_USD = "1"
+
+
+def _claude_guard_args() -> list[str]:
+    args = list(CLAUDE_GUARD)
+    usd = os.environ.get("YZZ_CLAUDE_MAX_USD", CLAUDE_DEFAULT_MAX_USD).strip()
+    if usd.lower() not in ("off", "none", "0"):
+        try:
+            ok = float(usd) > 0
+        except ValueError:
+            ok = False
+        if not ok:
+            raise EngineError(f"YZZ_CLAUDE_MAX_USD={usd!r} 无效：需正数，或 off 关闭")
+        args += ["--max-budget-usd", usd]
+    effort = os.environ.get("YZZ_CLAUDE_EFFORT", "").strip().lower()
+    if effort:
+        if effort not in CLAUDE_EFFORTS:
+            raise EngineError(f"YZZ_CLAUDE_EFFORT={effort!r} 无效：可选 {', '.join(CLAUDE_EFFORTS)}")
+        args += ["--effort", effort]
+    return args
+
+
 def _claude(engine: str, system: str, user: str) -> tuple[str, dict[str, Any]]:
-    cmd = ["claude", "-p", "--model", CLAUDE_ENGINES[engine], *CLAUDE_LEAN, "--system-prompt", system]
+    cmd = ["claude", "-p", "--model", CLAUDE_ENGINES[engine], *CLAUDE_LEAN, *_claude_guard_args(),
+           "--system-prompt", system]
     r = _cli(cmd, user, engine)
     if r.returncode != 0 or not r.stdout.strip():
         raise EngineError(f"{engine} 退出码 {r.returncode}：{r.stderr[-300:].strip()}")

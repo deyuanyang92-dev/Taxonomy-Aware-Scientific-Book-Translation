@@ -213,6 +213,55 @@ def test_claude_cli_command_and_stdin(monkeypatch):
     assert seen["cmd"][3] == "sonnet"
 
 
+def _capture_claude_cmd(monkeypatch):
+    seen = {}
+    out = json.dumps({"result": "ok", "is_error": False, "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(le.subprocess, "run", fake_run)
+    return seen
+
+
+def test_claude_cli_has_cost_guards_by_default(monkeypatch):
+    # 2026-11-19：claude -p 原先没有单次预算上限，也每次落一份会话文件
+    monkeypatch.delenv("YZZ_CLAUDE_MAX_USD", raising=False)
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT", raising=False)
+    seen = _capture_claude_cmd(monkeypatch)
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert "--no-session-persistence" in cmd
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "1"
+    assert "--effort" not in cmd
+    assert cmd[-2:] == ["--system-prompt", "S"]
+
+
+def test_claude_cli_budget_and_effort_from_env(monkeypatch):
+    seen = _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "0.25")
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "low")
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "0.25"
+    assert cmd[cmd.index("--effort") + 1] == "low"
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "off")
+    le.call("claude-sonnet", "S", "U")
+    assert "--max-budget-usd" not in seen["cmd"]
+
+
+def test_claude_cli_rejects_bad_env(monkeypatch):
+    _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "ultra")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_EFFORT"):
+        le.call("claude-sonnet", "S", "U")
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT")
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "-3")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_MAX_USD"):
+        le.call("claude-sonnet", "S", "U")
+
+
 def test_claude_cli_empty_result(monkeypatch):
     out = json.dumps({"result": "", "is_error": True})
     monkeypatch.setattr(le.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, out, ""))
