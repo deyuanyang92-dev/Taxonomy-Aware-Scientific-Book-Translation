@@ -75,3 +75,10 @@ Lean 试点（1971，见 `docs/research/2026-11-15/taxo_token_economy.md`）：�
 - 块类型：`transqa/taxoblocks.py`（`narrative` / `remarks` / `description` …）
 - 统一入口：`scripts/llm_engines.call(..., profile=...)`
 - 用量账本：各书 `usage.tsv` 与 `~/.cache/yzz-translate/usage.tsv`
+
+## 源术语前置替换：同类书越译越省（2026-11-20，Imajima 日→英实测）
+
+- 每译完一本：`python3 scripts/term_presub.py learn SRC.md FINAL.md [...] -o map.tsv [--deny 错配.txt]`（段落对齐 + 共现统计，零模型）；错配（如 体長→width）人工审后写进 deny。
+- 下一本：`auto_translate.py run ... --presub map.tsv`，送 Google 前把映射里的源术语换成英文词。留出实测（120 段）：映射术语在初稿命中 27%，前置替换后 95.6%（模型改写稿 90.7%）；日文术语词次 80–86% 在另两卷出现过，每卷只需补几十到一百个新词。
+- 改写（revise）差异里涉及术语库专业词的只占约 7%，其余是文体改动；描述段是电报语，默认 `--engine none --lean`，不要 `--no-lean`/付费引擎跑全文（Imajima 三卷 72–94% 段送模型，没有利用重复）。
+- 未验证：文体规则（缩写、压缩）能补回多少；译文可读性无人工评估。

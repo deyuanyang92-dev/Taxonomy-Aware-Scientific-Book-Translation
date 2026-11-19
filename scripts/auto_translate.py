@@ -48,6 +48,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：transqa
 
 import entities  # noqa: E402
+import term_presub  # noqa: E402
 import taxoformat  # noqa: E402
 import transqa  # noqa: E402
 from transqa import taxoblocks  # noqa: E402
@@ -540,18 +541,20 @@ def cache_path(cache: str | Path | None = None) -> Path:
 
 
 def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str,
-                cache: str | Path | None = None) -> dict[int, str]:
+                cache: str | Path | None = None, presub: dict[str, str] | None = None) -> dict[int, str]:
     """Google 初稿。按 transqa 模板逐段处理，保证初稿与原文段 ID 一一对应；
-    异名录/文献/索引块不送 Google（改写阶段走确定性处理）。全书先并发预取，再顺序拼回。"""
+    异名录/文献/索引块不送 Google（改写阶段走确定性处理）。全书先并发预取，再顺序拼回。
+    presub：源术语→英文词映射（term_presub.py 从已译书学得），送 Google 前先替换；原文与段 ID 不变。"""
     g = Google(sl, tl, cache_path(cache))
+    pre = (lambda t: term_presub.presub(t, presub)[0]) if presub else (lambda t: t)
     src_re = SCRIPT_RE.get(sl, r'\w')
     split = {p: split_template(src_pg[p]) for p in sorted(src_pg)}
     send = [s.text for segs, _ in split.values() for s in segs
             if classify(s.text, sl) not in PROTECTED and re.search(src_re, s.text)]
-    g.g.prefetch(send, 8)
+    g.g.prefetch([pre(t) for t in send], 8)
     out = {}
     for p, (segs, tpl) in split.items():
-        texts = {s.id: (g.one(s.text) if s.text in send else s.text) for s in segs}
+        texts = {s.id: (g.one(pre(s.text)) if s.text in send else s.text) for s in segs}
         out[p] = render(tpl, texts).rstrip('\n') + '\n'
     _write(work / 'draft_stats.json', json.dumps({'requests': g.requests, 'failed': g.failed,
                                                   'segments': sum(len(x[0]) for x in split.values()),
@@ -1067,6 +1070,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument('--sl', default='bg')
     ap.add_argument('--tl', default='en')
     ap.add_argument('--glossary')
+    ap.add_argument('--presub', help='源术语→英文映射 TSV（term_presub.py learn 产出，须先审）；送 Google 前前置替换，描述段术语命中率实测 27%%→95%%（Imajima）')
     ap.add_argument('--names')
     ap.add_argument('--bad-terms', default='')
     ap.add_argument('--abbr', help='引文缩写表（两列：原文缩写、译文），补充 transqa.blocks.ABBR')
@@ -1134,7 +1138,8 @@ def main(argv: list[str] | None = None) -> None:
               f'verify={a.verify_engine!r}', flush=True)
     if a.cmd == 'run':
         dfile = work / 'draft.md'
-        draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl, a.cache)
+        draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl, a.cache,
+                                                                                         term_presub.load_map(a.presub) if getattr(a, 'presub', None) else None)
         if a.stop_after == 'draft':
             return
         revised = stage_revise(src_pg, draft_pg, work, a)
