@@ -57,6 +57,7 @@ class Grammar:
         self.jump, self.tail_jump, self.name_jump = c["jump"], c["tail_jump"], c["name_jump"]
         self.group_taxon, self.heading, self.caption, self.taxon = (
             c["group_taxon"], c["heading"], c["caption"], c["taxon"])
+        self.latin_row = c["latin_row"]
         self.g: dict[str, float] = d["geometry"]
         self.term_fixes = [(re.compile(a), b) for a, b in d.get("fixes", {}).get("terminal", [])]
 
@@ -233,6 +234,8 @@ class KeyParser:
             return "taxon", (grp + " -> " if grp else "") + m.group(2).strip()
         if r["x0"] >= far and gr.taxon.search(t) and len(t) < 70:
             return "taxon", t.strip(". …")
+        if r["x0"] >= tm + g["indent_tol"] * width and len(t) < 90 and gr.latin_row.match(t):
+            return "taxon", t.strip(". …")
         return None
 
     def _page_has_target(self, width: float, rows: list[Row], cal: tuple[float, float]) -> bool:
@@ -266,6 +269,34 @@ class KeyParser:
                                    and gr.inline.match(r["t"])) >= 2
         return marker, mys, inline, marked or inline
 
+    @staticmethod
+    def _same_line_left_to_right(rows: list[Row], marker: Any) -> list[Row]:
+        """同一视觉行上的框按 x0 从左到右排。
+
+        只按行中心 y 排序时，右栏的跳转号（框矮，中心偏下）有时排在左边描述行之前，
+        于是号码被并给上一条、描述行再被误判为隐含条目（2007 p218 的 15'/19'/22'/23'/25'）。
+        条目号框保持原来的 lead_y_pull 次序，不参与重排。
+        """
+        out: list[Row] = []
+        i = 0
+        while i < len(rows):
+            first = rows[i]
+            if marker(first):
+                out.append(first)
+                i += 1
+                continue
+            line = [first]
+            mid = (first["y0"] + first["y1"]) / 2
+            j = i + 1
+            while (j < len(rows) and not marker(rows[j])
+                   and first["y0"] < (rows[j]["y0"] + rows[j]["y1"]) / 2 < first["y1"]
+                   and rows[j]["y0"] < mid < rows[j]["y1"]):
+                line.append(rows[j])
+                j += 1
+            out.extend(sorted(line, key=lambda r: r["x0"]))
+            i = j
+        return out
+
     def _rows(self, width: float, rows: list[Row], pg: int, cal: tuple[float, float]) -> None:  # noqa: C901
         gr, g = self.gr, self.gr.g
         tm, right = cal
@@ -276,6 +307,7 @@ class KeyParser:
         tail_page = (not self.marked and self.cur is not None and bool(self.cur["term"])
                      and not self._page_has_target(width, rows, cal))
         rows = sorted(rows, key=lambda r: (r["y0"] + r["y1"]) / 2 - (g["lead_y_pull"] if marker(r) else 0))
+        rows = self._same_line_left_to_right(rows, marker)
         for r in rows:
             t = r["t"]
             if inline and r["x0"] < tm + g["inline_tol"] * width:

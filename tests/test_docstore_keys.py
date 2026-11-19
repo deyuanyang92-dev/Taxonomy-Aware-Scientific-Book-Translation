@@ -234,8 +234,8 @@ def test_cli_extract_needs_key_or_cache_with_last(tmp_path):
 # ---- 真实三卷回归：行框缓存不入库，缺则跳过。数字是 issue #38 记录的原型结果（只有计数，无书文）----
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
-    "966b8423a9d4": (406, 14, 420, 10, 5),   # 2001（孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5）
-    "858f37873e50": (363, 8, 253, 2, 18),    # 2007（同上，缺陷 21→18）
+    "966b8423a9d4": (406, 14, 422, 11, 3),   # 2001（孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5；整行拉丁名认作终点、同行按 x 排序后 420→422、缺陷 5→3）
+    "858f37873e50": (363, 8, 288, 4, 9),     # 2007（同上；条目号框贴近正文也算条目号后 p219 的 28 个偶句找回，253→288）
     "c1ac037a042b": (361, 10, 555, 6, 6),    # 2009（内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
 }
 
@@ -289,6 +289,32 @@ def test_layout_lists_page_items_in_reading_order():
 def test_lone_ellipsis_in_lead_column_is_a_dash_lead():
     gr = keys.default_grammar()
     assert gr.is_dash("…") and gr.is_marker("…")
+
+
+def test_long_taxon_line_folded_below_description_is_a_target_and_number_sorts_after_text():
+    # 长学名折到下一行，起点（x0=600）比 target_far 更靠左；右栏的「6」框中心略高于描述行，
+    # 只按中心 y 排序会把它并给上一条、描述行再被判成隐含条目。
+    rows = (heading()
+            + [row(190, 200, 240, 240, "5."),
+               row(TM, 200, 1750, 240, "下部剛毛束に針状複剛毛と被嚢二叉鉤状複剛毛が生じる ………"),
+               row(600, 245, 1750, 285, "Marphysa bellii (Audouin & Milne Edwards) (図122)"),
+               row(TM, 290, 1100, 330, "下部剛毛束に針状複剛毛か被嚢二叉鉤状複剛毛のいずれかがある"),
+               row(1700, 285, 1750, 315, "6")]
+            + lead(340, "6.", "下部剛毛束に針状複剛毛のみ", "……Marphysa kinbergi"))
+    res = parse(rows)
+    t = terms(res)
+    assert t["5"] == ["Marphysa bellii (Audouin & Milne Edwards) (図122)"], t
+    assert t["5'"] == ["6"], t
+    assert [c["kind"] for c in res["couplets"][:2]] == ["num", "implicit"]
+
+
+def test_number_box_touching_the_text_margin_is_still_a_lead():
+    rows = (heading() + lead(200, "1.", "体は細長く頭部が明瞭", "……2")
+            + [row(220, 280, TM - 2, 320, "2.")]
+            + lead(280, None, "背面に鱗片がある", "……Harmothoe imbricata"))
+    res = parse(rows)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "2"], res["events"]
+    assert terms(res)["2"] == ["Harmothoe imbricata"]
 
 
 def test_term_struct_splits_single_ellipsis_and_glued_group_name():
