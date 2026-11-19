@@ -235,6 +235,20 @@ class KeyParser:
             return "taxon", t.strip(". …")
         return None
 
+    def _page_has_target(self, width: float, rows: list[Row], cal: tuple[float, float]) -> bool:
+        """本页有没有终点行；页底孤立在右下角的纯数字是页码，不算。"""
+        ordered = sorted(rows, key=lambda r: r["y0"])
+        gap = self.gr.g["pageno_gap"]
+        for i, r in enumerate(ordered):
+            tg = self._is_target(r, width, cal)
+            if not tg:
+                continue
+            is_foot = (tg[0] == "jump" and i == len(ordered) - 1
+                       and (i == 0 or r["y0"] > ordered[i - 1]["y1"] + gap))
+            if not is_foot:
+                return True
+        return False
+
     def _scan(self, width: float, rows: list[Row], cal: tuple[float, float]) -> tuple[Any, list[float], bool, bool]:
         """一页的条目号概况：(条目栏判定函数, 条目号 y 列表, 是否内联型, 页上有无条目号)。"""
         gr, g = self.gr, self.gr.g
@@ -257,6 +271,10 @@ class KeyParser:
         tm, right = cal
         lx0, lx1 = tm - g["lead_left"] * width, tm - g["lead_right"] * width
         marker, mys, inline, self.marked = self._scan(width, rows, cal)
+        # 无条目号、也没有一个终点行的页放不下完整偶句：上一条若已有终点，这页是表后的正文（种记述等），
+        # 不得再按 G4 开隐含条目（否则整页正文变成一串隐含条目）。
+        tail_page = (not self.marked and self.cur is not None and bool(self.cur["term"])
+                     and not self._page_has_target(width, rows, cal))
         rows = sorted(rows, key=lambda r: (r["y0"] + r["y1"]) / 2 - (g["lead_y_pull"] if marker(r) else 0))
         for r in rows:
             t = r["t"]
@@ -297,6 +315,11 @@ class KeyParser:
                 self._rest(pg, t, "caption", r)
                 continue
             c = self.cur
+            if tail_page and c["term"]:
+                self._reset_key()
+                self.events.append((pg, "NOTKEY", t[:20]))
+                self._rest(pg, t, "outside", r)
+                continue
             tg = self._is_target(r, width, cal)
             if tg:
                 kind, val = tg
@@ -305,6 +328,12 @@ class KeyParser:
                     self._rest(pg, val, "pageno", r)
                     continue
                 self._term(val, r["y1"])
+                continue
+            if _BARE_NUM.match(t) and r["x0"] < tm + g["indent_tol"] * width:
+                # 左缘孤立的纯数字不是描述：多为页码（OCR 偶把「46」认成「46e」）。
+                # 不让它开出隐含条目（2009 卷有 10 处「62」「104」「166」…被当成条目正文）。
+                self.events.append((pg, "PAGENO", t))
+                self._rest(pg, t, "pageno", r)
                 continue
             m = gr.tail_jump.match(t) if r["x1"] >= right - g["right_tol"] * width else None
             body, tail = (m.group(1), m.group(2)) if m else (t, None)
@@ -424,6 +453,38 @@ def pull_text_from_slots(c: dict[str, Any]) -> bool:
     return False
 
 
+_BARE_NUM = re.compile(r"^\s*\d{1,4}[a-z]?\s*$")
+_LEAD_JUNK = r"[…‥⋯.．·]"
+# 描述句末粘着学名 +（図N）：OCR 把点线吞了，学名没有进右栏框。学名须含「図」才拆，避免误伤正文里的拉丁词。
+_TAIL_TAXON = re.compile(r"^(.*?[^A-Za-z\s(（])\s*" + _LEAD_JUNK + r"*\s*"
+                         r"([A-Z][A-Za-z（）() .\-]*[（(]\s*図[^)）]*[)）])\s*$")
+# 「……Perinereis…21」「….Hmipodia …3」：点线 + 名称 + 点线 + 号。
+_TAIL_NAME_JUMP = re.compile(r"^(.*?)\s*" + _LEAD_JUNK + r"{2,}\s*([A-Z][a-z]+)\s*" + _LEAD_JUNK +
+                             r"+\s*(\d{1,3})$")
+# 「…6」「..*11」「ある.17」：末尾点线（可夹 OCR 杂点 *）+ 号。描述须以汉字/假名/中日标点收尾，
+# 才认单个句点（「var. 2」「2.5」这类拉丁、小数不拆）。
+_TAIL_JUMP = re.compile(r"^(.*?[\u3000-\u9fff\uff00-\uffef])\s*[…‥⋯.．·][*.．·…\s]*(\d{1,3})$")
+
+
+def recover_tail_target(gr: Grammar, c: dict[str, Any]) -> str | None:
+    """条目没有终点栏位、但描述末尾粘着终点：拆回栏位，返回所用规则名（没改返回 None）。"""
+    if c["slots"] or not c["text"].strip():
+        return None
+    t = c["text"].strip()
+    for name, rx in (("tail_name_jump", _TAIL_NAME_JUMP), ("tail_taxon", _TAIL_TAXON),
+                     ("tail_jump", _TAIL_JUMP)):
+        m = rx.match(t)
+        if not m or not m.group(1).strip(" —一-…."):
+            continue
+        head = m.group(1).rstrip(" …‥⋯.．·*")
+        term = f"{m.group(2)} -> {m.group(3)}" if name == "tail_name_jump" else m.group(2)
+        c["text"] = head
+        c["terminals"].append(term)
+        c["slots"].append(term_struct(gr, term))
+        return name
+    return None
+
+
 def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | None = None) -> dict[str, Any]:
     """pages: (页号, 页宽, 行框) 按页序。返回可直接写 keys.json 的字典。"""
     kp = KeyParser(grammar)
@@ -439,6 +500,9 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
                  "slots": [term_struct(gr, v) for v in ld["term"]]} for ld in leads]
     for c in couplets:
         pull_text_from_slots(c)
+        fix = recover_tail_target(gr, c)
+        if fix:
+            c["fix"] = fix
     # 整页版面：每页按阅读顺序的 {couplet 下标 | heading | rest}；下游据此整页替换检索表页
     layout: dict[str, list[dict[str, Any]]] = {}
     for pg in sorted(kp.items):

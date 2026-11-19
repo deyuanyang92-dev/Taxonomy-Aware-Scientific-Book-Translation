@@ -234,9 +234,9 @@ def test_cli_extract_needs_key_or_cache_with_last(tmp_path):
 # ---- 真实三卷回归：行框缓存不入库，缺则跳过。数字是 issue #38 记录的原型结果（只有计数，无书文）----
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
-    "966b8423a9d4": (406, 14, 420, 9, 6),    # 2001（孤立「…」作条目横线后 419→420、缺陷 7→6）
-    "858f37873e50": (363, 8, 253, 1, 21),    # 2007
-    "c1ac037a042b": (361, 10, 566, 2, 23),   # 2009（内联页按条目号行自校准后 493→566：p200 等偏左页原先整页丢失）
+    "966b8423a9d4": (406, 14, 420, 10, 5),   # 2001（孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5）
+    "858f37873e50": (363, 8, 253, 2, 18),    # 2007（同上，缺陷 21→18）
+    "c1ac037a042b": (361, 10, 555, 6, 6),    # 2009（内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
 }
 
 
@@ -337,3 +337,42 @@ def test_pull_text_from_slots_moves_description_back_into_text():
     jp = {"text": "", "terminals": ["シンカイウロコムシ亜科 -> Branchinotogluminae"],
           "slots": [{"kind": "group_taxon", "group": "シンカイウロコムシ亜科", "taxon": "Branchinotogluminae"}]}
     assert not keys.pull_text_from_slots(jp)
+
+
+# ---- 幽灵条目：页码、表后正文页、粘在描述末尾的终点（2009 卷实测）----
+
+def test_bare_number_at_left_margin_is_a_page_number_not_an_implicit_couplet():
+    foot = [row(TM, 1850, TM + 50, 1890, "62")]  # 文本左缘的页脚页码，离最后一条很远
+    res = parse(basic_page() + foot)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "1'", "2", "2'"]
+    assert any(e["event"] == "PAGENO" and e["detail"] == "62" for e in res["events"])
+    assert res["layout"]["1"][-1] == {"t": "rest", "text": "62", "why": "pageno", "x0": TM, "y0": 1850}
+
+
+def test_page_after_the_key_without_markers_or_targets_does_not_spawn_couplets():
+    prose = [row(100, 300, 1100, 340, "Brania Quatrefages, 1865"),
+             row(100, 400, 1100, 440, "ホソテシリス 体長2.5~3mm，体幅約0.6mm"),
+             row(100, 500, 1100, 540, "分布 日本各地；世界各地")]
+    folio = [row(1500, 1850, 1560, 1890, "7")]  # 右下角页码形似「跳到 7」，不能算终点
+    res = parse(basic_page(), prose + folio)
+    assert [c["lead"] for c in res["couplets"]] == ["1", "1'", "2", "2'"]
+    assert [i["why"] for i in res["layout"]["2"] if i["t"] == "rest"][:3] == ["outside"] * 3
+
+
+def test_target_glued_to_description_tail_is_split_back_into_a_slot():
+    ok = lambda text: {"text": text, "terminals": [], "slots": []}  # noqa: E731
+    gr = keys.Grammar()
+    for text, kind, head in (
+        ("背剛毛は太く短い..*11", "jump", "背剛毛は太く短い"),
+        ("指状か樹枝状の鰓がある.17", "jump", "指状か樹枝状の鰓がある"),
+        ("刺葉は平滑.Nephtyslongosetosa(図145)", "taxon", "刺葉は平滑"),
+        ("背叶が短い……Perinereis…21", "name_jump", "背叶が短い"),
+    ):
+        c = ok(text)
+        assert keys.recover_tail_target(gr, c), text
+        assert c["text"] == head and c["slots"][0]["kind"] == kind, text
+    for text in ("体長は2.5mm.", "var. 2", "背面は平滑…", "口前葉は2.5"):  # 小数、拉丁缩写、无号的点线都不拆
+        c = ok(text)
+        assert keys.recover_tail_target(gr, c) is None and c["slots"] == [], text
+    done = {"text": "体は小さい…6", "terminals": ["2"], "slots": [{"kind": "jump", "num": "2"}]}
+    assert keys.recover_tail_target(gr, done) is None  # 已有栏位的条目不动
