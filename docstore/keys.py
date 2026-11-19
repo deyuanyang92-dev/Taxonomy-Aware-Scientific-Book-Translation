@@ -490,6 +490,7 @@ def term_struct(gr: Grammar, v: str) -> dict[str, str]:
 
 _LEADER_RUN = re.compile(r"\s*[…‥⋯.．·]{2,}\s*")
 _DESC_PUNCT = re.compile(r"[，；、。;,]")
+_JA_CHAR = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 
 
 def pull_text_from_slots(c: dict[str, Any]) -> bool:
@@ -497,17 +498,22 @@ def pull_text_from_slots(c: dict[str, Any]) -> bool:
 
     OCR 偶尔把一整行（描述 + 点线 + 名称/号）并成一个右栏框，于是整句落进终点。
     - name_jump：名称里还有点线 → 最后一段点线之前是描述，之后才是名称；
+      正文不空时（折行的描述续行被并进终点框，2001 卷第 267 页条目 13），描述含日文和标点才接到正文后面；
     - group_taxon：类群部分带标点或过长 → 它其实是描述，终点只剩学名。"""
-    if c["text"].strip(" —一-"):
-        return False
+    has_text = bool(c["text"].strip(" —一-"))
     for i, s in enumerate(c["slots"]):
         if s["kind"] == "name_jump":
             parts = _LEADER_RUN.split(s["name"])
             if len(parts) >= 2 and parts[-1].strip() and parts[0].strip():
-                c["text"] = _LEADER_RUN.sub(" ", " ".join(parts[:-1])).strip()
+                desc = _LEADER_RUN.sub(" ", " ".join(parts[:-1])).strip()
+                if has_text and not (_DESC_PUNCT.search(desc) and _JA_CHAR.search(desc)):
+                    continue
+                c["text"] = c["text"].rstrip(" ;；.．。") + "；" + desc if has_text else desc
                 s["name"] = parts[-1].strip()
                 c["terminals"][i] = f"{s['name']} -> {s['num']}"
                 return True
+        elif has_text:
+            continue
         elif s["kind"] == "group_taxon":
             g = s["group"]
             if _DESC_PUNCT.search(g) or len(g) > 14:

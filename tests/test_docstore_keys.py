@@ -472,6 +472,16 @@ def test_pull_text_from_slots_moves_description_back_into_text():
     assert d["text"].startswith("鰓先端") and d["slots"] == [{"kind": "taxon", "taxon": "Euphrosine sp.C（図155)"}]
     ok = {"text": "体は小さい", "terminals": ["2"], "slots": [{"kind": "jump", "num": "2"}]}
     assert not keys.pull_text_from_slots(ok)
+    # 折行的描述续行被并进终点框：正文不空，描述（含日文和标点）接到正文后面（2001 卷第 267 页条目 13）
+    w = {"text": "両歯板の基部は靭帯で連結される；.",
+         "terminals": ["第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色………Scoletoma -> 14"],
+         "slots": [{"kind": "name_jump", "name": "第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色………Scoletoma", "num": "14"}]}
+    assert keys.pull_text_from_slots(w)
+    assert w["text"] == "両歯板の基部は靭帯で連結される；第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色"
+    assert w["slots"] == [{"kind": "name_jump", "name": "Scoletoma", "num": "14"}]
+    keep = {"text": "体は小さい", "terminals": ["Eunoe……14"],
+            "slots": [{"kind": "name_jump", "name": "Eunoe", "num": "14"}]}
+    assert not keys.pull_text_from_slots(keep)  # 正常的「学名……号」不动
     jp = {"text": "", "terminals": ["シンカイウロコムシ亜科 -> Branchinotogluminae"],
           "slots": [{"kind": "group_taxon", "group": "シンカイウロコムシ亜科", "taxon": "Branchinotogluminae"}]}
     assert not keys.pull_text_from_slots(jp)
