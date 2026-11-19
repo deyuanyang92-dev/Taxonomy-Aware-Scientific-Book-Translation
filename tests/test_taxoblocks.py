@@ -30,3 +30,70 @@ def test_description_vs_narrative():
          "Laubier und Storch lag mir zur Untersuchung vor. An dieser Stelle möchte ich den Herren nochmals danken.")
     assert kind(d) == "description"
     assert kind(n) == "narrative"
+
+
+def test_reference_entries():
+    assert kind("——, 1970. Contribution à la faunistique du coralligène. — Ann. Inst. Océanogr., 46: 79-107.") == "reference"
+    assert kind("FAUVEL, P., 1923. Polychètes errantes. — Faune de France, 5: 1-494.") == "reference"
+
+
+def test_risk_signals():
+    from transqa.taxoblocks import risk
+    gl = [("Tentakelcirren", "tentacular cirri")]
+    assert risk("Zwei Paar Tentakelcirren.", "Two pairs of tentacle cirrus.", terms=gl) == ["term"]
+    assert risk("Zwei Paar Tentakelcirren.", "Two pairs of tentacular cirri.", terms=gl) == []
+    assert "number" in risk("mit 48 Borstensegmenten 6 mm lang", "6 mm long with 46 setigers")
+    assert "negation" in risk("Augen fehlen.", "Eyes present.")
+    assert "residue" in risk("aus Ghardaqa", "aus Ghardaqa")
+    assert "name" in risk("wie bei Eulalia microphylla", "as in E. microphylla")
+    assert risk("x", "y", rewritten=True) == ["rewritten"]
+
+
+def test_risk_term_whole_word():
+    from transqa.taxoblocks import risk
+    gl = [("Borsten", "setae"), ("von hinten", "in posterior view")]
+    assert risk("mit 32 Borstensegmenten", "with 32 setigers", terms=gl) == []
+    assert risk("die hinteren Parapodien", "the posterior parapodia", terms=gl) == []
+    assert risk("13. von hinten", "13th from behind", terms=gl) == ["term"]
+
+
+# ---- risk() 误报修复（2026-11-19）：数字写法、CJK 长度比、解剖词不是学名 ----
+
+def test_risk_number_notation_is_not_a_difference():
+    # 小数逗号 = 小数点；千分位写法不同不算数字不一致（德→英常见）
+    from transqa.taxoblocks import risk
+    assert "number" not in risk("Länge 1,5 mm, Tiefe 2,5 m", "Length 1.5 mm, depth 2.5 m")
+    assert "number" not in risk("bis 1.200 m Tiefe", "to 1,200 m depth")
+    assert "number" not in risk("136 000 Exemplare", "136,000 specimens")
+    # 真数字差异仍须报
+    assert "number" in risk("Länge 1,5 mm", "Length 1.6 mm")
+    assert "number" in risk("mit 48 Borstensegmenten", "with 46 setigers")
+
+
+def test_risk_length_is_language_aware():
+    from transqa.taxoblocks import risk
+    en = "The dorsal cirri are slender and about twice as long as the parapodial lobes in most segments."
+    zh = "背须细长，在大多数体节中约为足叶长度的两倍。"
+    assert "length" not in risk(en, zh, "en", "zh")          # 中文字数约为英文的 0.47（实测 Rouse 2022 ch05-09）
+    assert "length" not in risk(en, zh, "en", "zh-CN")
+    assert "length" in risk(en, "背须细长。", "en", "zh")     # 明显漏译
+    assert "length" in risk(en, en * 3, "en", "zh")          # 明显重复
+    assert "length" in risk(zh * 2, "Dorsal cirri slender.", "zh", "en")      # zh→en 漏译
+    assert "length" not in risk(zh * 2, en, "zh", "en")                          # zh→en 正常（比值≈2.2）
+    # 同文字体系的旧阈值不变
+    assert "length" in risk("Zwei Paar Tentakelcirren am Prostomium.", "Two.", "de", "en")
+
+
+def test_risk_length_empty_target_and_short_labels():
+    from transqa.taxoblocks import risk
+    assert "length" in risk("Fig. 4. Vorderende von dorsal.", "", "de", "en")   # 空译文必报
+    assert "length" not in risk("Dorsal cirrus", "背须", "en", "zh")             # 极短标签不按比例判
+
+
+def test_risk_anatomical_adjective_is_not_a_taxon():
+    from transqa.taxoblocks import risk
+    assert "name" not in risk("Dorsal cirrus long.", "背须长。", "en", "zh")
+    assert "name" not in risk("Ventral cirri short.", "腹须短。", "en", "zh")
+    # 真学名丢失仍须报
+    assert "name" in risk("as in Eulalia microphylla", "如同该属", "en", "zh")
+    assert "name" in risk("wie bei Eulalia microphylla", "as in E. microphylla")

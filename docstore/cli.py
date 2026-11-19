@@ -14,6 +14,7 @@ from .store import LEVELS, Store, agent
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
 WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix"}
+WRITE_CMDS.add("proofread")
 
 
 def _by(args) -> str:
@@ -59,6 +60,7 @@ def cmd_text(st: Store, a) -> None:
             vlm=a.vlm,
             pages=_parse_pages(a.pages),
             fix=not a.no_fix,
+            layer_only=a.layer_only,
             ocr_threads=a.ocr_threads,
             log=lambda m: print(m, flush=True),
         )
@@ -199,12 +201,16 @@ def cmd_cite(st: Store, a) -> None:
 
 def cmd_export(st: Store, a) -> None:
     fmt = "translate" if a.translate else "marked" if a.marked else "md" if a.md else "txt"
-    txt = st.export(a.key, fmt, _parse_pages(a.pages))
+    want = _parse_pages(a.pages)
+    txt = st.export(a.key, fmt, want)
     if a.out:
         Path(a.out).write_text(txt, encoding="utf-8")
         print(a.out)
     else:
         sys.stdout.write(txt)
+    if getattr(a, "strict", False) and st.missing_pages(a.key, want):
+        print("--strict：存在缺页，导出视为失败", file=sys.stderr)
+        raise SystemExit(3)
 
 
 def cmd_status(st: Store, a) -> None:
@@ -316,11 +322,85 @@ def cmd_postfix(st: Store, a) -> None:
                     continue
                 base = pg.get("producer") if not str(pg.get("producer") or "").startswith("latinfix") else \
                     (pg.get("extra") or {}).get("latinfix", {}).get("base_producer")
-                v = make_version(new, "ocr", producer="latinfix", engine=f"{pg.get('engine') or ''} + latinfix",
+                v = make_version(new, pg.get("method") or "ocr", producer="latinfix", engine=f"{pg.get('engine') or ''} + latinfix",
                                  dpi=pg.get("dpi"), level=pg.get("verify_level"), source=f"{d['path']}#latinfix",
+                                 conf=(pg.get("quality") or {}).get("ocr_conf"),
                                  extra={"latinfix": {"changes": len(ch), "base_producer": base}})
                 st.put_version(key, n, v, promote=True)
         print(f"{key}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+
+
+def cmd_proofread(st: Store, a) -> None:
+    from .proofread import proofread_doc, rejudge_doc
+
+    if a.rejudge:
+        result = rejudge_doc(st, a.key, pages=_parse_pages(a.pages), dry=a.dry, by=_by(a))
+    else:
+        result = proofread_doc(st, a.key, below=a.below, pages=_parse_pages(a.pages), limit=a.limit,
+                              engine=a.engine, workers=a.workers, include_unknown=a.include_unknown,
+                              dry=a.dry, by=_by(a))
+    print(json.dumps(result, ensure_ascii=False), flush=True)
+
+
+def cmd_attest(st: Store, a) -> None:
+    """短语在本地库某语种资料里的佐证（页数、资料数）；多个短语时按资料数排序，判断哪个译法是实际用法。"""
+    from .attest import attest
+
+    rows = [attest(st, p, a.lang, a.kind) for p in a.phrases]
+    for r in sorted(rows, key=lambda r: (-r["docs"], -r["pages"])) if len(rows) > 1 else rows:
+        cap = "+" if r.get("capped") else ""
+        print(f"{r['docs']}\t{r['pages']}{cap}\t{r['phrase']}\t{','.join(r['sample_keys'])}")
+
+
+def cmd_keys(st: Store, a) -> None:
+    """检索表偶句重建：读 PP-OCR 行框缓存，零 token，不触发 OCR（issue #38）。"""
+    from . import keys
+
+    if a.keys_cmd == "check":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        rep = keys.check_couplets(data["couplets"])
+    else:
+        if not a.key and not (a.cache and a.last):
+            print("需要 key，或同时给 --cache 与 --last", file=sys.stderr)
+            sys.exit(1)
+        if a.cache:
+            cache = Path(a.cache)
+        else:
+            from .engines import ppocr
+
+            d = st.doc(a.key)
+            if not d["path"] or not Path(d["path"]).exists():
+                print(f"{a.key}：登记表里没有可用的原件 PDF，无法定位行框缓存；可用 --cache 指定目录", file=sys.stderr)
+                sys.exit(1)
+            cache = ppocr._cache_file(d["path"], 1, a.dpi).parent
+        last = a.last or int(st.doc(a.key)["pages"] or 0)
+        if not cache.is_dir() or last < a.first:
+            print(f"行框缓存不存在或页范围为空：{cache}（先 docstore text --engines ppocr）", file=sys.stderr)
+            sys.exit(1)
+        pages, missing = keys.read_cache_pages(cache, a.first, last)
+        data = keys.extract(pages)
+        data["missing_pages"] = missing
+        if a.fix:
+            try:
+                keys.apply_fixes(data, json.loads(Path(a.fix).read_text(encoding="utf-8")))
+            except keys.FixError as exc:
+                print(f"{a.fix}：{exc}", file=sys.stderr)
+                sys.exit(1)
+            print(f"已应用 {len(data['fixes'])} 条人工改正（{a.fix}）", file=sys.stderr)
+        if a.out:
+            Path(a.out).write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        rep = keys.check_couplets(data["couplets"])
+        if missing:
+            print(f"缺行框缓存 {len(missing)} 页（不 OCR）：{missing[:10]}", file=sys.stderr)
+    n_ok = 0
+    for kid, v in rep.items():
+        ok = not v["problems"]
+        n_ok += ok
+        print(f"表{kid}\tp{v['first_page']}-{v['last_page']}\t偶句 {v['couplets']}\t{'自洽' if ok else str(len(v['problems'])) + ' 处缺陷'}")
+        if a.problems:
+            for pr in v["problems"]:
+                print(f"    {pr}")
+    print(f"共 {len(rep)} 张表，{n_ok} 张自洽", file=sys.stderr)
 
 
 def cmd_rename(st: Store, a) -> None:
@@ -390,6 +470,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--dpi", type=int, default=300)
     s.add_argument("--limit", type=int, help="每本最多处理多少页（估时用）")
     s.add_argument("--pages", help="只处理这些页（PDF 页码，1 起），如 655-671,700")
+    s.add_argument("--layer-only", action="store_true",
+                   help="只取 PDF 自带文本层，不 OCR（大批文献先建检索/语料；之后去掉此参数再跑即补 OCR）")
     s.add_argument("--no-fix", action="store_true", help="不对共识文本再跑 lexicon 编辑距离纠错（保留引擎原文）")
     s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
     s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
@@ -456,6 +538,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--marked", action="store_true",
                    help="翻译用原文：每页前一行 <!-- p.N -->（印刷页码），供种名按页规范（species_format.py）")
     s.add_argument("--pages", help="只导出这些 PDF 页（1 起），如 24-30,32")
+    s.add_argument("--strict", action="store_true", help="有缺页（无页面记录）就以非零退出码结束；默认只在 stderr 警告")
     s.add_argument("-o", "--out")
     s.set_defaults(fn=cmd_export)
 
@@ -502,6 +585,24 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本")
     s.set_defaults(fn=cmd_postfix)
 
+    s = sub.add_parser("proofread", help="Proofread low-confidence OCR against page images")
+    s.add_argument("key")
+    s.add_argument("--rejudge", action="store_true", help="Recheck stored proofread alternates without model calls")
+    s.add_argument("--below", type=float, default=0.92)
+    s.add_argument("--pages", help="PDF page ranges, e.g. 1-30,35")
+    s.add_argument("--limit", type=int)
+    s.add_argument("--engine", default="codex-sol")
+    s.add_argument("--workers", type=int, default=3)
+    s.add_argument("--include-unknown", action="store_true")
+    s.add_argument("--dry", action="store_true", help="List candidates without rendering, model calls, or writes")
+    s.set_defaults(fn=cmd_proofread)
+
+    s = sub.add_parser("attest", help="短语在本地库某语种资料中的佐证（资料数、页数；0 token）")
+    s.add_argument("phrases", nargs="+")
+    s.add_argument("--lang", default="en")
+    s.add_argument("--kind")
+    s.set_defaults(fn=cmd_attest)
+
     s = sub.add_parser("lang", help="识别资料语言（纯脚本：文本层或快速 OCR + 功能词，零 token）")
     s.add_argument("items", nargs="+", help="PDF、目录或已登记 key")
     s.add_argument("--k", type=int, default=8, help="抽样页数（默认 8）")
@@ -509,6 +610,22 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--set", action="store_true", help="结果写回登记表 lang/kind")
     s.add_argument("--json", action="store_true")
     s.set_defaults(fn=cmd_lang)
+
+    s = sub.add_parser("keys", help="检索表偶句重建（读 PP-OCR 行框缓存；零 token，不 OCR）")
+    ks = s.add_subparsers(dest="keys_cmd", required=True)
+    e = ks.add_parser("extract", help="从行框缓存重建偶句，图检查，可写 keys.json")
+    e.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
+    e.add_argument("--cache", help="行框缓存目录（含 pNNNN.json）；缺省由 key 的 PDF 指纹推出")
+    e.add_argument("--dpi", type=int, default=200)
+    e.add_argument("--first", type=int, default=1)
+    e.add_argument("--last", type=int, default=0, help="末页（默认到资料末页；用 --cache 时必须给）")
+    e.add_argument("--out", help="写 keys.json（couplets、keys、events、missing_pages）")
+    e.add_argument("--fix", help="keys_fix.json：对照页面图像人工核对后的改正（set/drop/add，必须写 why）")
+    e.add_argument("--problems", action="store_true", help="列出每张表的具体缺陷")
+    c = ks.add_parser("check", help="对 keys.json 重做按表图检查（人工补完条目后用）")
+    c.add_argument("file")
+    c.add_argument("--problems", action="store_true")
+    s.set_defaults(fn=cmd_keys)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")

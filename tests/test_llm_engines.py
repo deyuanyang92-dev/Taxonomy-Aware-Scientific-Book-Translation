@@ -49,6 +49,7 @@ def make_client(*outcomes):
 def isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_USAGE_TSV", str(tmp_path / "usage.tsv"))
     monkeypatch.setattr(le, "wait_offpeak", lambda *a, **k: None)
+    monkeypatch.setattr(le, "seconds_to_offpeak", lambda *a, **k: 0)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.delenv("LLM_SKIP_OFFPEAK", raising=False)
 
@@ -63,12 +64,31 @@ def test_deepseek_returns_text_and_usage_and_logs(monkeypatch, tmp_path):
     text, usage = le.call("deepseek-flash", "系统", "用户", tag="c00")
     assert text == "你好"
     assert usage["input_tokens"] == 123 and usage["output_tokens"] == 10 and usage["cache_read_tokens"] == 7
-    assert calls[0]["model"] == "deepseek-flash" and calls[0]["max_tokens"] == 64000
-    assert calls[0]["system"] == "系统" and calls[0]["messages"] == [{"role": "user", "content": "用户"}]
+    assert calls[0]["model"] == "deepseek-flash" and calls[0]["max_tokens"] == 8192  # profile=default
+    # DeepSeek system 带 cache_control，稳定前缀走缓存价
+    assert calls[0]["system"] == [{"type": "text", "text": "系统", "cache_control": {"type": "ephemeral"}}]
+    assert calls[0]["messages"] == [{"role": "user", "content": "用户"}]
     rows = (tmp_path / "usage.tsv").read_text(encoding="utf8").splitlines()
     assert rows[0].startswith("时间\tengine") and len(rows) == 2
     cols = rows[1].split("\t")
     assert cols[1] == "deepseek-flash" and cols[2] == "c00" and cols[3] == "123" and cols[4] == "10"
+
+
+def test_deepseek_profile_json_caps_tokens(monkeypatch):
+    client, calls = make_client(make_msg("[]"))
+    monkeypatch.setattr(le, "_make_client", lambda: client)
+    le.call("deepseek-flash", "s", "u", profile="json")
+    assert calls[0]["max_tokens"] == 4096
+
+
+def test_deepseek_budget_blocks_before_call(monkeypatch):
+    import token_economy as te
+    te.reset_spent(60)  # 已超预算，call 应在发请求前拒绝
+    monkeypatch.setenv("YZZ_TOKEN_BUDGET", "50")
+    with pytest.raises(te.BudgetExceeded):
+        le.call("deepseek-flash", "s", "u")
+    te.reset_spent(0)
+    monkeypatch.delenv("YZZ_TOKEN_BUDGET")
 
 
 def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
@@ -81,6 +101,13 @@ def test_deepseek_waits_offpeak_unless_skipped(monkeypatch):
     monkeypatch.setenv("LLM_SKIP_OFFPEAK", "1")
     le.call("deepseek-v4-pro", "s", "u")
     assert waited == [1]
+
+
+def test_deepseek_window_closed_defers_instead_of_sleeping(monkeypatch):
+    # 用户 2026-11-17：只在折扣窗口 00:30–08:30 调用；窗口关闭时不要把进程挂 16 小时。
+    monkeypatch.setattr(le, "seconds_to_offpeak", lambda *a, **k: 16 * 3600)
+    with pytest.raises(le.EngineError, match="00:30–08:30"):
+        le.call("deepseek-flash", "s", "u")
 
 
 @pytest.fixture(autouse=True)
@@ -253,6 +280,57 @@ def test_deepseek_retry_stops_when_night_window_closes(monkeypatch):
     monkeypatch.setattr(le, "_retryable", lambda exc: True)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.setattr(le, "is_peak", lambda now=None: True)
-    with pytest.raises(le.EngineError, match="夜间窗口已结束"):
+    with pytest.raises(le.EngineError, match="折扣窗口已结束"):
         le._deepseek("deepseek-flash", "s", "u", 100, check_window=True)
     assert len(calls) == 1  # 第一次失败后不再重试
+
+
+def _capture_claude_cmd(monkeypatch):
+    seen = {}
+    out = json.dumps({"result": "ok", "is_error": False, "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(le.subprocess, "run", fake_run)
+    return seen
+
+
+def test_claude_cli_has_cost_guards_by_default(monkeypatch):
+    # 2026-11-19：claude -p 原先没有单次预算上限，也每次落一份会话文件
+    monkeypatch.delenv("YZZ_CLAUDE_MAX_USD", raising=False)
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT", raising=False)
+    seen = _capture_claude_cmd(monkeypatch)
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert "--no-session-persistence" in cmd
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "1"
+    assert "--effort" not in cmd
+    assert cmd[-2:] == ["--system-prompt", "S"]
+
+
+def test_claude_cli_budget_and_effort_from_env(monkeypatch):
+    seen = _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "0.25")
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "low")
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "0.25"
+    assert cmd[cmd.index("--effort") + 1] == "low"
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "off")
+    le.call("claude-sonnet", "S", "U")
+    assert "--max-budget-usd" not in seen["cmd"]
+
+
+def test_claude_cli_rejects_bad_env(monkeypatch):
+    _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "ultra")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_EFFORT"):
+        le.call("claude-sonnet", "S", "U")
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT")
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "-3")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_MAX_USD"):
+        le.call("claude-sonnet", "S", "U")
+
+

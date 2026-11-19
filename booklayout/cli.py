@@ -25,7 +25,10 @@ import unicodedata
 from pathlib import Path
 
 from .builder import BookMeta, BookPaths, build, load_aligned, make_page_map
+from .furniture import aligned_furniture_blocks
 from .keyalign import align_document
+from .keymarkers import lost_marker_pages
+from .structure import uncertain_boundaries
 from .normalize import apply_block_edits, apply_page_patch, backfill_source, normalize_aligned
 
 
@@ -111,7 +114,7 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         b.get("block_id") or b.get("text", "")[:50]
         for b in blocks
         if b.get("role") == "caption"
-        and not re.match(r"^(?:Fig|L[aá]m|Tabla|Plate)\b",
+        and not re.match(r"^(?:Fig\b|L[aá]m\b|Tabla\b|Plate\b|图|図|表)",
                          (b.get("translation") or b.get("text") or "").strip(), re.I)
     ]
     body_blocks = [
@@ -176,6 +179,9 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         "inline_acknowledgments": inline_acknowledgments,
         "all_caps_body": all_caps_body,
         "empty_appendix_entries": empty_appendix_entries,
+        "lost_markers": lost_marker_pages(data),
+        "uncertain_boundaries": uncertain_boundaries(data),
+        "furniture_blocks": aligned_furniture_blocks(data),
     }
 
 
@@ -447,6 +453,12 @@ def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
                         "minimum_mm": MIN_KEY_LEADER_MM,
                         "line": text[:90]})
             gaps = [line[i + 1][0] - line[i][2] for i in range(len(line) - 1)]
+            # Issue #35: the name column and the target column are separated
+            # on purpose.  When the line has a leader to the name column, the
+            # single widest gap after that leader is the column gap.
+            if leaders and leaders[-1] + 2 < len(gaps):
+                after = gaps[leaders[-1] + 1:]
+                gaps = gaps[: leaders[-1] + 1] + sorted(after)[:-1]
             if gaps and max(gaps) > 15:
                 problems.append({"reason": "wide gaps",
                                  "gap_pt": round(max(gaps), 1), "line": text[:90]})
@@ -1034,6 +1046,20 @@ def cmd_check(args: argparse.Namespace) -> int:
         problems.append(f"{len(report['inline_acknowledgments'])} acknowledgments paragraphs start inline with body text")
     if report["all_caps_body"]:
         problems.append(f"{len(report['all_caps_body'])} body blocks are set in all capitals")
+    if report["furniture_blocks"]:
+        problems.append(
+            f"{len(report['furniture_blocks'])} running header/folio blocks are rendered as body: "
+            + "; ".join(f"p.{f['page']} {f['text'][:30]!r}" for f in report["furniture_blocks"][:10]))
+    if report["uncertain_boundaries"]:
+        # Issue #16: do not guess paragraph alignment; the records are in the
+        # report file (--out).  Release stays blocked until each is reviewed.
+        problems.append(
+            f"{len(report['uncertain_boundaries'])} uncertain paragraph boundaries block release: "
+            + "; ".join(f"p.{f['page']} {f['reason']}" for f in report["uncertain_boundaries"][:10]))
+    if report["lost_markers"]:
+        problems.append(
+            f"{len(report['lost_markers'])} key pages look like lost couplet markers: "
+            + "; ".join(f"p.{f['page']} {f['reason']}" for f in report["lost_markers"][:10]))
     if report["source_pages"] == 0:
         problems.append("aligned JSON has no pages")
     if args.source:
@@ -1144,6 +1170,92 @@ def cmd_repair(args: argparse.Namespace) -> int:
     return 0
 
 
+def _leader_width(line: dict) -> float:
+    return (max(span["bbox"][2] for span in line["leaders"])
+            - min(span["bbox"][0] for span in line["leaders"]))
+
+
+def _key_breaks_from_lines(lines: list[dict],
+                           page_no: int = 0) -> tuple[list[str], list[dict]]:
+    """Couplets whose leader is too short, as rebuild input.
+
+    A couplet whose target does not fit keeps its leader at the end of the
+    line and starts the whole target on the next line (that is what
+    ``tabbed(force_break=True)`` renders).  The audit flags those short
+    leaders, so the scan must read the two halves as one couplet.  An
+    earlier version only looked at lines that end in ``(p. N)`` and missed
+    them, so a Vol. 45 couplet failed the gate however often it was rebuilt.
+    """
+    from .builder import key_signature
+
+    key_blocks = {line["block"] for line in lines
+                  if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
+    keyish = [
+        line for line in lines
+        if line["block"] in key_blocks and (
+            _TARGET_END.search(line["text"]) or _DOT_RUN.search(line["text"])
+        )
+    ]
+    # 只要有带引导点/目标的行就扫描；不再要求本页至少两条引导点行——
+    # 检索表跨页时，这一页可能只剩一条条目（Vol. 45 p. 306 的 Praxillura），
+    # 按「整页跳过」处理会让这条短引导点永远修不掉。构造出的签名若不属于
+    # 检索表，builder 不会命中，没有副作用。
+    if not keyish:
+        return [], []
+    breaks: list[str] = []
+    defects: list[dict] = []
+    pending: dict[int, str] = {}
+    wrapped: dict[int, dict] = {}
+    for line in lines:
+        block = line["block"]
+        if block not in key_blocks:
+            continue
+        text = line["text"]
+        if re.match(r"^(?:•|\d{1,2}\.)", text):
+            pending[block] = text
+            wrapped.pop(block, None)
+        elif block in pending:
+            pending[block] = pending[block].rstrip() + " " + text
+        else:
+            continue
+        if not _TARGET_END.search(text):
+            match = _DOT_RUN.search(text)
+            if match and line["leaders"]:
+                prefix = (pending[block][:-len(text)].strip()
+                          if pending[block].endswith(text) else "")
+                wrapped[block] = {"line": line, "match": match, "prefix": prefix}
+            continue
+        match = _DOT_RUN.search(text)
+        info = wrapped.pop(block, None)
+        if (not match or not line["leaders"]) and info is None:
+            pending[block] = ""
+            continue
+        if match and line["leaders"]:
+            width = _leader_width(line)
+            prefix = (pending[block][:-len(text)].strip()
+                      if pending[block].endswith(text) else "")
+            left = (prefix + " " + text[:match.start()]).strip()
+            target = text[match.end():].strip()
+            source = text
+        else:
+            assert info is not None
+            width = _leader_width(info["line"])
+            left = (info["prefix"] + " "
+                    + info["line"]["text"][:info["match"].start()]).strip()
+            target = text.strip()
+            source = info["line"]["text"]
+        pending[block] = ""
+        if not left or not target:
+            continue
+        if width >= MIN_KEY_LEADER_PT:
+            continue
+        breaks.append(key_signature(left, target))
+        defects.append({"page": page_no,
+                        "leader_mm": round(width * 25.4 / 72, 1),
+                        "line": source[:100]})
+    return breaks, defects
+
+
 def cmd_key_report(args: argparse.Namespace) -> int:
     """List key couplets whose leader is too short, as rebuild input.
 
@@ -1153,57 +1265,15 @@ def cmd_key_report(args: argparse.Namespace) -> int:
     """
     import fitz
 
-    from .builder import key_signature
-
     doc = fitz.open(args.pdf)
     breaks: list[str] = []
     defects: list[dict] = []
     for page_no, page in enumerate(doc, start=1):
         clip = fitz.Rect(0, 50, page.rect.width, page.rect.height - 45)
-        lines = _key_span_lines(page, clip)
-        key_blocks = {line["block"] for line in lines
-                      if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
-        keyish = [
-            line for line in lines
-            if line["block"] in key_blocks and (
-                _TARGET_END.search(line["text"]) or _DOT_RUN.search(line["text"])
-            )
-        ]
-        if len(keyish) < 2:
-            continue
-        pending: dict[int, str] = {}
-        for line in lines:
-            block = line["block"]
-            if block not in key_blocks:
-                continue
-            text = line["text"]
-            if re.match(r"^(?:•|\d{1,2}\.)", text):
-                pending[block] = text
-            elif block in pending:
-                pending[block] = pending[block].rstrip() + " " + text
-            else:
-                continue
-            if not _TARGET_END.search(text):
-                continue
-            match = _DOT_RUN.search(text)
-            if not match or not line["leaders"]:
-                pending[block] = ""
-                continue
-            width = (max(span["bbox"][2] for span in line["leaders"])
-                     - min(span["bbox"][0] for span in line["leaders"]))
-            accumulated = pending[block]
-            pending[block] = ""
-            if width >= MIN_KEY_LEADER_PT:
-                continue
-            prefix = accumulated[:-len(text)].strip() if accumulated.endswith(text) else ""
-            left = (prefix + " " + text[:match.start()]).strip()
-            target = text[match.end():].strip()
-            if not left or not target:
-                continue
-            breaks.append(key_signature(left, target))
-            defects.append({"page": page_no,
-                            "leader_mm": round(width * 25.4 / 72, 1),
-                            "line": text[:100]})
+        page_breaks, page_defects = _key_breaks_from_lines(
+            _key_span_lines(page, clip), page_no)
+        breaks.extend(page_breaks)
+        defects.extend(page_defects)
     doc.close()
     unique = sorted(set(breaks))
     payload = {"breaks": unique, "defects": defects}

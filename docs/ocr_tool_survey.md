@@ -17,7 +17,7 @@
 | 语言/材料 | 工具 | 状态 | 说明 |
 |---|---|---|---|
 | 中日英印刷体 | PP-OCRv5 server | 已测（主引擎） | 见 docs/ocr_hard_scans.md |
-| 日文近现代活字 | NDLOCR-Lite（NDL Lab，CC BY 4.0） | 已测（第三票） | 日文争议行一致时 97%；中文 83%，不用 |
+| 日文近现代活字 | NDLOCR-Lite（NDL Lab，CC BY 4.0） | 已测（第三票，不作主引擎） | 日文争议行与 PaddleOCR 一致时 97%；中文 83%，不用。整页当主引擎：Imajima 金标准 2 页 11.0%/11.3%（PaddleOCR 0.61%/0.08%），丢斜体拉丁学名、「疣」读作「疵/坑/先」 |
 | 日文古典籍（江户以前） | NDL古典籍OCR-Lite（ndl-lab/ndlkotenocr-lite） | 未测 | NDLOCR-Lite README 提及；古籍时再测 |
 | 日文 | manga-ocr | 未测 | 漫画行识别器，对印刷体书籍效果未知 |
 | 多语种文档 | PaddleOCR-VL 0.9B | 未测 | 官方建议显存 ≥8 GB；待 12 GB 显卡电脑 |
@@ -47,3 +47,18 @@
 Tesseract 剩余错误与脚本修正（`docstore/latinfix.py`，零 token）：♂→`&`/`c&`、♀→`9`/`@`（上下文规则，D1985p6 13 处修 11）；
 小型大写人名 `KoTT`→`KOTT`；`um`→`µm`；1960 老印刷变音点丢失与 c/e 混淆（`Zahne`、`stcht`）用全库词频纠正。
 语言自动：`docstore text` 按登记表 `lang` 选 Tesseract 模型（`textify.TESS_LANG`），登记语言由 `docstore lang`（纯脚本）判定。
+
+## German OCR proofreading (2026-11-16)
+
+The supplied Codex pilot (gpt-6.1-sol, page image + Tesseract text) reduced bag-of-words error
+from 1.74% to 0.08% on six gold pages; this is a pilot result, not validation of all 17 German documents.
+Run `docstore --by codex proofread KEY --below 0.92 --pages 1-30 --limit 10 --dry` to preview
+low-confidence pages (at least 300 non-whitespace characters); remove `--dry` to process them.
+KEY is an exact registered key (e.g. a HartmannSchroder key); default concurrency is `--workers 3`.
+Missing confidence falls back to OCR alternates; otherwise pages are skipped unless `--include-unknown`.
+Each Codex call uses a fresh empty directory, the pilot prompt, read-only sandbox, and a 900-second timeout;
+empty output is retried once. Word/line counts, new capitalised words, numbers, and chatter guard promotion.
+Accepted output becomes primary without upgrading verification level; rejected output remains an alternate.
+Both outcomes prevent repeat processing. `_audit/proofread_KEY.jsonl` records decisions, author, metadata,
+and up to 200 word-diff spans; rejections also go to `_audit/proofread_rejects_KEY.jsonl`.
+Failures remain retryable, and each completed attempt prints a flushed progress line.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 CYR = 'Ѐ-ӿ'
 HAN = '一-鿿'
@@ -70,6 +71,20 @@ def numerals(lang: str) -> dict[str, int]:
 
 def base(lang: str) -> str:
     return lang.split('-')[0].lower()
+
+
+def wants_chinese_names(lang: str) -> bool:
+    """目标语言是中文时才需要「通行中文名」（yiku/Wikidata 专名核对）；其他目标语言保留原文学名与专名。"""
+    return base(lang) == 'zh'
+
+
+def gate_entities(res: list[dict[str, Any]], tl: str) -> list[dict[str, Any]]:
+    """专名解析结果按目标语言过滤：非中文目标返回空表（学名、专名保留原文，不要求中文通行名）。
+
+    用法：`entities.check(src, tgt, gate_entities(ents, tl))`；`chunk_entities` 在 `not wants_chinese_names(tl)`
+    时应跳过提取与 yiku/Wikidata 查询。
+    """
+    return list(res) if wants_chinese_names(tl) else []
 
 
 def info(lang: str) -> dict[str, str] | None:

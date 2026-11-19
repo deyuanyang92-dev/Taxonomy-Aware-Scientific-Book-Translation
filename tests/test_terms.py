@@ -35,3 +35,11 @@ def test_load_table_with_variants(tmp_path):
                  encoding="utf-8")
     t = [x for x in load(f) if x.source == "четинка"][0]
     assert t.variants == {"setae": "chaetae", "seta": "chaeta"}
+
+
+def test_longest_variant_first_across_terms():
+    from transqa.terms import Term, normalize
+    lib = [Term("Borsten", "setae", {"bristles": "setae", "bristle": "seta"}),
+           Term("Borstensegment", "setiger", {"bristle segment": "setiger"})]
+    out, _ = normalize("bis zum 9. Borstensegment; Borsten", "to the 9th bristle segment; bristles", lib)
+    assert out == "to the 9th setiger; setae"

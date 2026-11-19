@@ -19,6 +19,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -169,17 +170,32 @@ class Store:
 
     # ---------------- 登记表 ----------------
     def _load_registry(self) -> dict[str, dict]:
-        mt = self.registry_path.stat().st_mtime if self.registry_path.exists() else 0.0
-        if self._reg is not None and mt == self._reg_mtime:
-            return self._reg
-        reg: dict[str, dict] = {}
-        if self.registry_path.exists():
-            with open(self.registry_path, encoding="utf-8", newline="") as f:
-                for row in csv.DictReader(f, delimiter="\t"):
-                    check_key(row["key"])
-                    reg[row["key"]] = {k: (row.get(k) or "") for k in FIELDS}
-        self._reg, self._reg_mtime = reg, mt
-        return reg
+        """另一进程原子替换 registry.tsv 的瞬间（/mnt/p 上先删后改名）文件会短暂不存在：
+        已加载过就重试，不当成空表，也不崩（2026-11-16：Xue 入库与 proofread 并发，30 页试跑 0 页完成即崩）。"""
+        for attempt in range(40):
+            try:
+                mt = self.registry_path.stat().st_mtime
+            except FileNotFoundError:
+                if self._reg_mtime == 0.0:
+                    mt = 0.0  # 登记表从未存在过（新库），空表是对的，不等待
+                else:
+                    time.sleep(0.25)
+                    continue
+            if self._reg is not None and mt == self._reg_mtime:
+                return self._reg
+            reg: dict[str, dict] = {}
+            if mt:
+                try:
+                    with open(self.registry_path, encoding="utf-8", newline="") as f:
+                        for row in csv.DictReader(f, delimiter="\t"):
+                            check_key(row["key"])
+                            reg[row["key"]] = {k: (row.get(k) or "") for k in FIELDS}
+                except FileNotFoundError:
+                    time.sleep(0.25)
+                    continue
+            self._reg, self._reg_mtime = reg, mt
+            return reg
+        raise FileNotFoundError(f"登记表长时间不可读: {self.registry_path}")
 
     def _save_registry(self, reg: dict[str, dict]) -> None:
         buf = io.StringIO()
@@ -512,12 +528,24 @@ class Store:
         pp = f"第 {pr} 页（PDF 第 {n} 页）" if pr is not None else f"PDF 第 {n} 页（印刷页未定）"
         return f"{who}. {yr}. {d['title'] or key}. {pp}. [docstore:{key}]"
 
+    def missing_pages(self, key: str, pages: list[int] | None = None) -> list[int]:
+        """登记页数范围内（或 pages 指定的）尚无页面记录的 PDF 页号；页数未登记时无从判断，返回 []。"""
+        total = _int(self.doc(key).get("pages"))
+        if total is None:
+            return []
+        have = set(self.page_numbers(key))
+        want = range(1, total + 1) if pages is None else [n for n in pages if 1 <= n <= total]
+        return sorted(n for n in want if n not in have)
+
     def export(self, key: str, fmt: str = "txt", pages: list[int] | None = None) -> str:
         """fmt：txt｜md｜marked。marked＝翻译用原文：每页前一行 <!-- p.N -->（N＝印刷页码，没登记页码偏移就写 pdfNN），
         页间空一行，页内文本原样；译文要原样保留这些标记，种名「每页首现拉丁名」按它判断（species_format.py）。
         pages：只导出这些 PDF 页（1 起）。"""
         parts = []
         d = self.doc(key)
+        miss = self.missing_pages(key, pages)
+        if miss:
+            warn(f"警告：{key} 导出缺页 {len(miss)} 页（尚无页面记录，OCR 未完成？）：{_ranges(miss)}")
         if fmt == "md":
             parts.append(f"# {d['title'] or key}\n")
         want = None if pages is None else set(pages)
@@ -556,6 +584,18 @@ class Store:
             with fitz.open(d["path"]) as pdf:
                 pdf[int(n) - 1].get_pixmap(dpi=dpi).save(str(out))
         return out
+
+
+def _ranges(nums: list[int]) -> str:
+    out: list[str] = []
+    i = 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        out.append(str(nums[i]) if i == j else f"{nums[i]}-{nums[j]}")
+        i = j + 1
+    return ",".join(out)
 
 
 def _primary(page: dict) -> dict:

@@ -11,12 +11,28 @@ from .segments import Segment, by_page
 
 ROMAN = r'[IVXLC]+'
 PLATE_RE = re.compile(rf'\b(?:pl|tab|табл|taf|plate|plates|Таблица|Table|Tafel|図版)\.?\s*({ROMAN})\b', re.I)
-AUTH_PAREN_RE = re.compile(r'\(([A-Z][\w.\'\- ]+?),?\s(1[5-9]\d\d|20\d\d)\)')
+AUTH_PAREN_RE = re.compile(r'\(([A-Z][\w.\'&\- ]+?),?\s(1[5-9]\d\d|20\d\d)\)')
+# 作者连词（西 y/e、法/拉 et、德 und、荷 en、英 and、符号 &）译后会变化，比较签名前统一成 &
+AUTH_CONJ_RE = re.compile(r'\s+(?:y|e|et|und|en|and|&)\s+')
+
+
+def auth_signatures(t: str) -> collections.Counter[tuple[str, str]]:
+    """括号命名人签名 (作者, 年)；作者连词归一，姓氏或年份变动仍可检出。"""
+    return collections.Counter((AUTH_CONJ_RE.sub(' & ', a.strip()), y) for a, y in AUTH_PAREN_RE.findall(clean(t)))
+
+
+# 斜体定界：开标记 `*` 前不能是词字符或 `*`，后必须紧跟非空白、非数字、非 `*` 的字符（排除独立脚注星号、`*1`）；
+# 闭标记 `*` 前必须是非空白，后不能紧跟词字符（附在分类单元后的脚注星号 `P. triglanda*` 不会成为开标记）。
+# 斜体不跨行（检索表分支、段落边界），且不超过 120 字符。
+_ITALIC_RE = re.compile(r'(?<![\w*])\*(?=[^\s*\d])([^*\n]{1,120}?(?<![\s*]))\*(?!\w)')
 
 
 def latin_names(t: str) -> list[str]:
-    """斜体里含拉丁字母、不含西里尔/汉字的串，按出现顺序（规范化空白）。"""
-    return [re.sub(r'\s+', ' ', m.strip()) for m in re.findall(r'\*([^*\n]+)\*', clean(t))
+    """斜体里含拉丁字母、不含西里尔/汉字的串，按出现顺序（规范化空白）。
+
+    只认合法的成对格式定界符；独立脚注星号（`*`、`*1`、`taxon*`）不开启斜体，斜体不跨行。
+    """
+    return [re.sub(r'\s+', ' ', m.strip()) for m in _ITALIC_RE.findall(clean(t))
             if re.search(r'[A-Za-z]', m) and not re.search(r'[Ѐ-ӿ぀-ヿ一-鿿]', m)]
 
 
@@ -68,8 +84,7 @@ def check(src: list[Segment], tgt: list[Segment], config: dict[str, Any]) -> lis
             out.append(Issue('taxon.name_missing', 'critical', f'p.{p} 缺学名/斜体 {dict(miss)}', p, evidence=dict(miss)))
         elif ls and [x for x in lt if x in set(ls)] != [x for x in ls if x in set(lt)]:
             out.append(Issue('taxon.name_order', 'minor', f'p.{p} 学名出现顺序与原文不同（可能语序调整，请核）', p))
-        auth_s = collections.Counter(AUTH_PAREN_RE.findall(clean(s)))
-        auth_t = collections.Counter(AUTH_PAREN_RE.findall(clean(t)))
+        auth_s, auth_t = auth_signatures(s), auth_signatures(t)
         if auth_s - auth_t:
             out.append(Issue('taxon.authority_changed', 'critical', f'p.{p} 括号命名人/年份变动 {dict(auth_s - auth_t)}', p))
         ks, kt = key_edges(s), key_edges(t)

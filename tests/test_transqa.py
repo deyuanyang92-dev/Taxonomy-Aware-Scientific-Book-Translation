@@ -116,6 +116,13 @@ def test_repeated_latin_name_dropped_once_is_caught():
     assert codes(src, TGT)["taxon.name_missing"].severity == "critical"
 
 
+def test_footnote_asterisks_do_not_become_italic_taxa():
+    from transqa.taxonomy import latin_names
+
+    text = "Paraprionospio * 14. Gills absent ... *P. hoplura* (p. 253)"
+    assert latin_names(text) == ["P. hoplura"]
+
+
 def test_parenthesised_authority_change():
     assert "taxon.authority_changed" in codes(SRC, TGT.replace("(Vinogradov, 1949)", "(Vinogradov 1950)"))
 
@@ -208,3 +215,168 @@ def test_placeholder_count_mismatch_is_critical():
     src = "<!-- PDF p.1 -->\n\n[图版：Таблица I]\n\nТекст.\n\n<!-- PDF p.2 -->\n\n[图版：Таблица II]\n\nТекст.\n"
     tgt = "<!-- PDF p.1 -->\n\n[[PLATE I]]\n\nText.\n\n<!-- PDF p.2 -->\n\nText.\n"
     assert codes(src, tgt)["coverage.placeholder"].severity == "critical"
+
+
+# ---------------- GitHub #12：脚注星号 vs 斜体 ----------------
+def test_issue12_single_word_italic_names_are_extracted():
+    from transqa.taxonomy import latin_names
+
+    assert latin_names("Genus *Onuphis* and family *Onuphidae* occur.") == ["Onuphis", "Onuphidae"]
+    assert latin_names("*Exogone gemmifera* Pagenstecher") == ["Exogone gemmifera"]
+    assert latin_names("*Nereis* (*Neanthes*) *virens* subsp. *x*") == ["Nereis", "Neanthes", "virens", "x"]
+
+
+def test_issue12_footnote_markers_never_open_italics():
+    from transqa.taxonomy import latin_names
+
+    # 独立星号、*1、附着在分类单元后的脚注星号，都不配对
+    assert latin_names("Paraprionospio *\n14. Gills absent\nP. triglanda*\n15. other *Onuphis* here") == ["Onuphis"]
+    assert latin_names("see note * and *1 then *Onuphis* done") == ["Onuphis"]
+    assert latin_names("Paraprionospio * 14. Gills absent ... *P. hoplura* (p. 253)") == ["P. hoplura"]
+    assert latin_names("P. triglanda* and later text *Onuphidae*") == ["Onuphidae"]
+
+
+def test_issue12_italic_does_not_cross_lines_or_branches():
+    from transqa.taxonomy import latin_names
+
+    text = "1(2) Prostomium *Onuphis\n2(1) Palps absent ... *Diopatra*"
+    assert latin_names(text) == ["Diopatra"]
+
+
+def test_issue12_omitted_single_name_still_flagged():
+    src = SRC.replace("Цвят белезникав.", "Цвят белезникав, сем. *Onuphidae*.")
+    assert codes(src, TGT)["taxon.name_missing"].severity == "critical"
+
+
+# ---------------- GitHub #8：作者连词归一 ----------------
+def _auth(src_name, tgt_name, sl="es", tl="en"):
+    s = f"<!-- PDF p.1 -->\n\n*Onuphis eremita* ({src_name}, 1989) fue citada."
+    t = f"<!-- PDF p.1 -->\n\n*Onuphis eremita* ({tgt_name}, 1989) was cited."
+    return {i.code for i in check_all(s, t, sl, tl)}
+
+
+def test_issue8_spanish_y_equals_and():
+    assert "taxon.authority_changed" not in _auth("Jamieson y Rouse", "Jamieson and Rouse")
+
+
+def test_issue8_other_conjunctions_normalised():
+    for src_c, tgt_c in [("et", "&"), ("und", "and"), ("e", "and"), ("&", "and"), ("y", "&")]:
+        assert "taxon.authority_changed" not in _auth(f"Rouse {src_c} Pleijel", f"Rouse {tgt_c} Pleijel"), src_c
+
+
+def test_issue8_changed_surname_or_year_still_flagged():
+    assert "taxon.authority_changed" in _auth("Jamieson y Rouse", "Jamieson and Fauchald")
+    s = "<!-- PDF p.1 -->\n\n(Rouse y Pleijel, 1989)"
+    t = "<!-- PDF p.1 -->\n\n(Rouse and Pleijel, 1990)"
+    assert "taxon.authority_changed" in {i.code for i in check_all(s, t, "es", "en")}
+
+
+# ---------------- GitHub #5：实体检查按目标语言 ----------------
+def test_issue5_chinese_names_only_for_chinese_targets():
+    from transqa.languages import wants_chinese_names
+
+    assert wants_chinese_names("zh") and wants_chinese_names("zh-CN") and wants_chinese_names("ZH-tw")
+    assert not any(wants_chinese_names(x) for x in ("en", "es", "ja", "de", "", "und"))
+
+
+def test_issue5_gate_entities_drops_chinese_requirements_for_english_target():
+    from transqa.languages import gate_entities
+
+    res = [{"surface": "Onuphidae", "canonical": "Onuphidae", "zh": "欧努菲虫科", "status": "已核", "type": "taxon"}]
+    assert gate_entities(res, "en") == []          # 西→英：Onuphidae 保留拉丁名，不要求 欧努菲虫科
+    assert gate_entities(res, "es") == []
+    assert gate_entities(res, "zh") == res
+    assert gate_entities(res, "zh-CN") == res
+
+
+# ---------------- GitHub #10：数字检查跨页对齐 + 页眉页脚 ----------------
+def _pages(*texts):
+    return "\n\n".join(f"<!-- PDF p.{i} -->\n\n{t}" for i, t in enumerate(texts, 1))
+
+
+def test_issue10_number_shift_to_adjacent_page_is_alignment_warning_not_error():
+    src = _pages("Se midieron 60 ejemplares.", "Longitud media 300 setas largas.", "Fin del texto.")
+    tgt = _pages("60 specimens were measured. Mean length 300", "setas long. Nothing else.", "End of text.")
+    got = check_all(src, tgt, "es", "en")
+    assert not [i for i in got if i.code in ("number.missing", "number.added")]
+    shift = [i for i in got if i.code == "number.page_shift"]
+    assert shift and all(not i.blocking for i in shift)
+    assert shift[0].evidence["numbers"] and "src_context" in shift[0].evidence and "tgt_context" in shift[0].evidence
+
+
+def test_issue10_real_missing_number_still_critical():
+    src = _pages("Se midieron 60 ejemplares.", "Fin.")
+    tgt = _pages("Specimens were measured.", "End.")
+    assert "number.missing" in {i.code for i in check_all(src, tgt, "es", "en")}
+
+
+def test_issue10_strict_numbers_not_matched_across_pages():
+    # 年份、检索表编号、带单位的测量值：不允许借相邻页抵消
+    src = _pages("Rouse, 1989 es citado.", "Otra cosa.")
+    tgt = _pages("Rouse is cited.", "Other thing, 1989.")
+    got = {i.code for i in check_all(src, tgt, "es", "en")}
+    assert "number.missing" in got and "number.added" in got
+    src = _pages("Longitud 12 mm.", "Otra cosa.")
+    tgt = _pages("Length.", "Other thing 12 mm.")
+    got = {i.code for i in check_all(src, tgt, "es", "en")}
+    assert "number.missing" in got
+
+
+def test_issue10_running_header_and_folio_excluded():
+    src = _pages("16 FAUNA IBÉRICA\n\nTexto del cuerpo.", "FAUNA IBÉRICA 17\n\nOtro texto.", "18\n\nTercero.")
+    tgt = _pages("Body text.", "Other text.", "Third.")
+    got = check_all(src, tgt, "es", "en")
+    assert not [i for i in got if i.code.startswith("number.")]
+
+
+# ---------------- GitHub #17：OCR 词粘连 / 跨页残片 / 标点粘连 ----------------
+def _wj(tgt, sl="es", tl="en"):
+    return check_all(_pages(*[x for x in ["x"] * len(tgt)]), _pages(*tgt), sl, tl)
+
+
+def _codes17(tgt):
+    return [i for i in _wj(tgt) if i.code.startswith("text.")]
+
+
+def test_issue17_stopword_join_detected():
+    got = _codes17(["Specimens deposited inthe museum and also ofthe collection."])
+    assert [i.code for i in got].count("text.word_join") >= 1
+    assert all(i.severity == "major" for i in got if i.code == "text.word_join")
+
+
+def test_issue17_camelcase_institution_join_detected():
+    got = _codes17(["Held at UniversityOxford and the MuseoNacional."])
+    assert "text.word_join" in {i.code for i in got}
+
+
+def test_issue17_scientific_names_and_valid_camelcase_not_flagged():
+    ok = ["The *Onuphis eremitaRouse* and McDonald, DeLong, GenBank and PubMed; Diopatra neapolitana Delle Chiaje."]
+    assert _codes17(ok) == []
+
+
+def test_issue17_punctuation_join_detected_but_abbreviations_ok():
+    got = _codes17(["Rouse,Pleijel and also the sample.Another sample, e.g. mm, et al. Fig.3, 3.5 mm, www.example.com."])
+    pj = [i for i in got if i.code == "text.punct_join"]
+    assert len(pj) == 1 and pj[0].severity == "minor"
+    assert _codes17(["Normal text, with e.g. i.e. et al. cf. sp. nov. var. and Fig. 3."]) == []
+
+
+def test_issue17_cross_page_hyphen_and_orphan_fragment():
+    got = _codes17(["The worm has long seg-", "ments on each side."])
+    assert "text.page_hyphen" in {i.code for i in got}
+    got = _codes17(["Palps are present and the prosto", "mium is short. More text follows here."])
+    assert "text.orphan_fragment" in {i.code for i in got}
+    assert _codes17(["The worm is long.", "The next page starts normally."]) == []
+    assert _codes17(["It was found in", "the sand of the beach."]) == []
+
+
+def test_issue17_duplicated_connective_across_pages():
+    got = _codes17(["The animals live in sand and", "and mud in shallow water."])
+    assert "text.duplicate_connective" in {i.code for i in got}
+    assert _codes17(["The animals live in sand and", "mud in shallow water."]) == []
+
+
+def test_issue17_no_checks_for_chinese_target():
+    s = _pages("x")
+    t = _pages("标本保存于UniversityOxford,Rouse。")
+    assert not [i for i in check_all(s, t, "es", "zh") if i.code.startswith("text.")]

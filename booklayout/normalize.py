@@ -1767,13 +1767,20 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         # A paragraph can run over more than one page break; after a join the
         # merged block belongs to the next page, so reuse it instead of the
         # page's own last block.
+        # A figure caption standing between the two fragments (at the end of
+        # this page or the start of the next) does not end the paragraph.
+        a_flow = [x for x in a_blocks if x.get("role") != "caption"]
+        b_flow = [x for x in b_blocks if x.get("role") != "caption"]
         if carry is not None and carry[1] == prev.get("page"):
             a = carry[0]
-        elif a_blocks:
-            a = a_blocks[-1]
+        elif a_flow:
+            a = a_flow[-1]
         else:
             continue
-        b = b_blocks[0]
+        if not b_flow:
+            carry = None
+            continue
+        b = b_flow[0]
         if a.get("role") != "body" or b.get("role") != "body":
             carry = None
             continue
@@ -1791,7 +1798,7 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
             carry = None
             continue
         a["translation"] = ta + " " + tb
-        nxt["blocks"] = b_blocks[1:]
+        nxt["blocks"] = [x for x in b_blocks if x is not b]
         # Tell the coverage check that this page's opening source block moved
         # to the previous page; the words are not missing from the book.
         # Patch-rebuilt blocks have no source text, so fall back to the
@@ -1804,7 +1811,8 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         )
         nxt["_merged_first_block_into"] = prev.get("page")
         # Do not carry the paragraph past blocks that follow it on this page.
-        carry = (a, nxt.get("page")) if not nxt["blocks"] else None
+        carry = (a, nxt.get("page")) if all(
+            x.get("role") == "caption" for x in nxt["blocks"]) else None
         changed.append({
             "rule": "cross_page_paragraph_merge",
             "page": prev.get("page"),

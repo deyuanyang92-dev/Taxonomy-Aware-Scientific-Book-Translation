@@ -1,9 +1,17 @@
 ---
 name: yzz-translate
-description: 英文专业书译成中文的通用流水线，任何领域、任何模型（Claude、Codex、DeepSeek）都可执行。核心是术语：先从 yiku 术语库注入有出处的定名，库里没有的去权威资料定向查，再查不到的分类阶元依 WoRMS 和词源拟「暂定」译名；然后由一个模型初译、另一个模型逐句核译，最后由脚本闸口替换并检查一致性。按领域加载规则包（分类学/多毛类、进化生物学/物种概念/思想史，可新增）。也负责从经典译作和名家论著学术语与译风。用户提到翻译专著/教材/Handbook/Rouse/Mayr、英译中、学译法、译风、参考译作、核译、校对或润色译文、术语对照、科名中文名、译名统一时使用。排版插图不在此技能内。
+description: 专业书籍翻译的通用流水线（英→中全流程；auto 档可配 --sl/--tl，已用于保/西/德→英，限制见正文「语言对与已知限制」），任何领域、任何模型（Claude、Codex、DeepSeek）都可执行。核心是术语：先从 yiku 术语库注入有出处的定名，库里没有的去权威资料定向查，再查不到的分类阶元依 WoRMS 和词源拟「暂定」译名；然后由一个模型初译、另一个模型逐句核译，最后由脚本闸口替换并检查一致性。按领域加载规则包（分类学/多毛类、进化生物学/物种概念/思想史，可新增）。也负责从经典译作和名家论著学术语与译风。用户提到翻译专著/教材/Handbook/Rouse/Mayr、英译中、学译法、译风、参考译作、核译、校对或润色译文、术语对照、科名中文名、译名统一时使用。排版插图不在此技能内。
 ---
 
-# yzz-translate · 英译中专业翻译
+# yzz-translate · 专业书籍翻译（英→中全流程；auto 档支持多语言对）
+
+**语言对与已知限制（如实说明，2026-11-19 核对代码）**
+
+| 流水线 | 支持的语言对 | 限制 |
+|---|---|---|
+| 英→中全流程（术语表 yiku、译风 STYLE、`run_batches.py` 核译、`zh_polish.py`） | 英→中（简体）。术语库与译风规则只有中文定名 | 其他目标语没有术语库和润色规则 |
+| auto 档（`scripts/auto_translate.py run/check --sl XX --tl YY`） | 源/目标语为 Google 免费端点（gtx）认可的语言代码；脚本默认 `--sl bg --tl en`，已实际用于保加利亚语→英语、西班牙语→英语、德语→英语 | `transqa/languages.py` 只登记 bg ru uk sr el de fr es it pt nl la en ja zh ko，未登记语言的否定词、数词、文字系统检查报 `capability_missing`；`skill/pitfalls/` 只有 `bg-en.md`；专名解析 `entities.py` 只会找中文名，目标语不是中文时用 `--no-entities`（未解决，见 issue #5）；Google 免费端点有限流（429）与单请求长度限制（超长或含异常编码的段会 HTTP 400，已按句拆分重试并写诊断，见 issue #6）；两个并行作业请用 `--cache` 指定不同缓存文件（issue #4） |
+| docstore / taxadb / booklayout | 与语言无关（页文本、版面） | OCR 引擎对非拉丁文字的效果未逐语种验证 |
 
 **目标是译准。** 普通句子任何模型都能译好，所以本技能的重点是术语，其次是忠实。排版和插图留到定稿后另做。
 
@@ -131,9 +139,10 @@ description: 英文专业书译成中文的通用流水线，任何领域、任�
 流程：Google 免费初稿（`gtrans.Google`，8 线程预取、429 全体冷却）→ 3 页一段改写（夜间 deepseek-flash 关思考；白天 codex-luna）
 → 共用 QA 护栏（`transqa`）→ deepseek-flash 找错 + 第二模型（默认 codex-sol，medium）**全文复核**并出覆盖回执，
 只落实两者都认可的 major/minor 改动；critical 与仅第二模型发现的问题写 `human_review_queue.csv` → 全书 QA → `report.md`。
-省 token 的做法（2026-11-15 第二轮）：异名录/文献/索引按转写表确定性处理、不送 Google 和模型（`transqa.blocks`）；
-送模型的段带 `⟦段ID⟧`、须逐 ID 返回；system 为「规则 + 全书术语表 + 转写表」的稳定前缀（前缀缓存）；
-`report.md` 给每页 token、缓存命中率、返工率。核对只输出 JSON，不让模型重写整段。
+省 token 的做法（2026-11-15 第二轮；2026-11-17 内置 Lean）：异名录/文献/索引按转写表确定性处理、不送 Google 和模型（`transqa.blocks`）；
+送模型的段带 `⟦段ID⟧`、须逐 ID 返回；system 为「规则 + 全书术语表 + 转写表」的稳定前缀（DeepSeek `cache_control`）；
+分类文献加 `--lean`（只改写 narrative/remarks + `--risky-only`）；`profile=json|revise|translate` 限输出；
+`YZZ_TOKEN_BUDGET` 超限停机；快书调度 `scripts/fast_book.py`（块/章并行，见 `docs/fast_book.md`）。细则见 `TOKEN_ECONOMY.md`。`report.md` 给每页 token、缓存命中率、返工率。核对只输出 JSON，不让模型重写整段。
 模型分配依据 `docs/model_bench.md` 末节（9 页盲评）：改写/找错用 DeepSeek flash 关思考（性价比最高，仅夜间）；Codex luna 流畅但会编造；
 DeepSeek 找错误报率高，**必须**第二模型裁定；Sonnet 只做 8–10 页盲评抽检。对比与取舍见 `docs/comparison.md` §7。
 

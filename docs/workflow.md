@@ -153,6 +153,7 @@
 | 分类学证据 | 学名、数字、引文、图号原样保留 | `taxon_validate.py` |
 | 一致 | 同义项同译、科名不漂移 | `yiku check`、`drift_check.py` |
 | 格式 | 残留英文、引号星号、U+3000、重复括注 | `qa.py` + 全书扫描 |
+| 斜体 | 引证/作者名误斜体、图注整条斜体、图注学名正体 | `italic_check.py`（`docx --fix` 可更正；`--aligned` 建文献索引） |
 | 抽查 | 每批随机 20 条，错误率 > 5% 退回 | `核译/抽查.tsv` |
 | 交付 | 字体、乱码、版式 | `python3 /mnt/p/yzz-分类工作流/yzz.py zh check` |
 

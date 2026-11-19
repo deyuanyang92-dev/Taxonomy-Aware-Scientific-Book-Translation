@@ -519,7 +519,7 @@ def run_translate(ch: Chapter, ids: list[str], engine: str, system: str, caller:
         src = ch.text("chunks", cid, "txt")
         terms = ch.text("terms", cid, "md")
         text, _ = caller(engine, system, user_translate(terms, src, f"{ch.name}/{cid}"), tag=f"{ch.name}/{cid}",
-                         usage_file=usage_file)
+                         usage_file=usage_file, profile="translate")
         body = strip_pending(text)[0]
         if len(src) > 500 and zh_ratio(body, src) < MIN_ZH_RATIO:
             _write(ch.path("out", cid, "suspect.md"), text)
@@ -568,7 +568,7 @@ def run_review(ch: Chapter, ids: list[str], engine: str, system: str, caller: Ca
     def one(cid: str) -> str | None:
         zh, terms = zh_of(cid), ch.text("terms", cid, "md")
         user = user_review(fname, terms, ch.text("chunks", cid, "txt"), zh)
-        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/review", usage_file=usage_file)
+        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/review", usage_file=usage_file, profile="json")
         items = parse_review(text)  # 解析失败抛错：该块记为失败，不写完成文件，下次续跑会重核
         _write(ch.path("review", cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
         _write_meta(ch, "review", cid, engine, system, terms, zh)
@@ -661,7 +661,7 @@ def run_final_review(ch: Chapter, ids: list[str], engine: str, system: str, call
         zh, terms = zh_parts[cid], ch.text("terms", cid, "md")
         user = (user_polish(fname, terms, zh) if kind == "polish"
                 else user_review(fname, terms, ch.text("chunks", cid, "txt"), zh))
-        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/{kind}", usage_file=usage_file)
+        text, _ = caller(engine, system, user, tag=f"{ch.name}/{cid}/{kind}", usage_file=usage_file, profile="json")
         items = parse_review(text)
         _write(ch.path(kind, cid, "jsonl"), "".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items))
         _write_meta(ch, kind, cid, engine, system, terms, zh)

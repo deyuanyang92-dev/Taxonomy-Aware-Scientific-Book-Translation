@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from . import core, taxonomy
+from . import core, taxonomy, wordjoin
 from .issue import BLOCKING, Issue
 from .segments import Segment, page_order, segments_from_pages
 
@@ -20,6 +20,7 @@ def check_all(src_md: str, tgt_md: str, sl: str, tl: str, domain: str | None = '
     cfg = {'sl': sl, 'tl': tl, 'bad_terms': bad_terms or [], 'src_order': page_order(src_md),
            'tgt_order': page_order(tgt_md), 'src_placeholders': count_ph(src_md), 'tgt_placeholders': count_ph(tgt_md)}
     out = core.check(src, tgt, cfg)
+    out += wordjoin.check(src, tgt, cfg)
     if domain:
         out += PLUGINS[domain](src, tgt, cfg)
     if domain == 'taxonomy':

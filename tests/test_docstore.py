@@ -284,3 +284,97 @@ def test_cli_export_marked_with_pages(lib, capsys):
     assert cli.main(["--root", str(st.root), "export", key, "--marked", "--pages", "1-2"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("<!-- p.11 -->\n") and "<!-- p.12 -->" in out and "p.13" not in out
+
+
+def test_text_layer_only_skips_ocr(lib, monkeypatch):
+    st, pdf, tmp = lib
+    called = []
+    monkeypatch.setattr(textify, "OCR_FUNC", lambda *a: called.append(a) or ("x", 0.9))
+    key, _ = st.register(pdf, by="pytest")
+    r = textify.textify(st, key, workers=1, layer_only=True, log=lambda s: None)
+    assert r["layer_only"] and r["text_layer"] == 2 and r["pending_ocr"] == 1 and not called
+    assert st.page_numbers(key) == [1, 2]
+
+
+def test_attest_word_boundary(tmp_path, monkeypatch):
+    from docstore.attest import attest, prefer
+    from docstore.store import make_version
+    monkeypatch.setenv("DOCSTORE_AGENT", "pytest")
+    st = open_store(tmp_path / "lib")
+    pdf = tmp_path / "Day, 1967-A monograph.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    key, _ = st.register(pdf, by="pytest")
+    st.update_doc(key, lang="en")
+    st.put_version(key, 1, make_version("Compound setae with falcigerous blades; tentacular cirri long.", "text_layer",
+                                        producer="t"))
+    st.put_version(key, 2, make_version("Setae simple. Tentacular\ncirri short.", "text_layer", producer="t"))
+    assert attest(st, "tentacular cirri")["pages"] == 2
+    assert attest(st, "seta")["pages"] == 0          # 不把 setae 算作 seta
+    assert attest(st, "falcigerous blades", lang="de")["pages"] == 0
+    assert prefer(st, ["end phalanges", "falcigerous blades"])[0][0] == "falcigerous blades"
+
+
+def test_registry_survives_transient_absence(tmp_path):
+    """回归（2026-11-16）：别的进程原子替换 registry.tsv 时文件瞬时不存在，读取方不得崩或读成空表。"""
+    import threading
+
+    from docstore import open_store
+
+    st = open_store(tmp_path / "lib")
+    pdf = tmp_path / "Muster, 1970-Die Polychaeten der Nordsee.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    key, _ = st.register(pdf, by="pytest")
+    assert key in st._load_registry()
+    saved = st.registry_path.read_bytes()
+    st.registry_path.unlink()
+    threading.Timer(0.6, lambda: st.registry_path.write_bytes(saved)).start()
+    assert key in st._load_registry()
+
+
+def test_fresh_library_without_registry_is_empty_and_fast(tmp_path):
+    """回归（2026-11-16）：新库空表（{}）曾被当成『已加载过』，缺登记表时白等 10 秒再抛错。"""
+    import time
+
+    from docstore import open_store
+
+    st = open_store(tmp_path / "lib")
+    t = time.time()
+    assert st._load_registry() == {}
+    assert st._load_registry() == {}
+    assert time.time() - t < 2
+
+
+# ---------------------------------------------------------------- issue #3：导出缺页要明确报告
+
+def test_export_reports_missing_pages_not_silent(lib, capsys):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)   # 第 3 页（图片页）仍待 OCR
+    assert st.missing_pages(key) == [3]
+    assert st.missing_pages(key, [1, 2]) == []
+    assert cli.main(["--root", str(st.root), "export", key, "--translate"]) == 0
+    cap = capsys.readouterr()
+    assert "<!-- PDF p.2" in cap.out and "PDF p.3" not in cap.out
+    assert "缺页" in cap.err and "3" in cap.err and key in cap.err
+
+
+def test_export_strict_fails_on_missing_pages(lib, capsys):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--root", str(st.root), "export", key, "--translate", "--strict"])
+    assert e.value.code != 0
+    assert "缺页" in capsys.readouterr().err
+
+
+def test_export_after_ocr_pending_pages_has_no_missing(lib, capsys):
+    """text（文本层）→ 待 OCR 页补做 → export：全部页标记齐全，无缺页警告。"""
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
+    assert st.missing_pages(key) == []
+    assert cli.main(["--root", str(st.root), "export", key, "--translate", "--strict"]) == 0
+    cap = capsys.readouterr()
+    assert cap.out.count("<!-- PDF p.") == 3 and "缺页" not in cap.err

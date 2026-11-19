@@ -17,7 +17,7 @@ from .store import Store, agent, make_version
 ENGINE_NAMES = {"rapidocr", "tesseract", *ENGINE_MAP}
 MIN_CHARS = 30
 # 这些 producer 生成的「文本层」本身是机器 OCR，不当原生文本层
-OCR_LAYER_PRODUCERS = ("paper capture", "abbyy", "finereader", "clearscan", "ocr")
+OCR_LAYER_PRODUCERS = ("paper capture", "abbyy", "finereader", "clearscan", "ocr", "pagegenie", ".tif")
 
 _FIXER = None
 
@@ -41,10 +41,33 @@ def _run_engine(name: str, pdf_path: str, n: int, dpi: int) -> tuple[str, float 
         raise ValueError(f"未知 OCR 引擎: {name}")
     return fn(pdf_path, n, dpi)
 
+def _is_real_ocr(v: dict) -> bool:
+    """版本是否真由 OCR 引擎识出（latinfix 等后处理版继承底本 method/engine，文本层底本不算）。"""
+    eng = str(v.get("engine") or "")
+    return v.get("method") == "ocr" and "PyMuPDF" not in eng and "内嵌" not in eng
 
-def layer_is_ocr(meta: dict) -> bool:
+
+def layer_is_ocr(meta: dict, pdf=None) -> bool:
+    """PDF 自带的文本层是不是扫描件上的 OCR 层。先看 producer/creator；再看版面：抽 3 页，
+    有文字且整页被一张图覆盖（≥80% 面积）即为扫描件 OCR 层。
+    起因（2026-11-15）：Hartmann-Schröder 1992《Drei neue…》producer 为 PageGenie、1992 Ascension 无 producer，
+    文本层字母隔开、双栏乱序，却被当成原生文本层，没有重识。"""
     prod = ((meta or {}).get("producer") or "").lower() + " " + ((meta or {}).get("creator") or "").lower()
-    return any(w in prod for w in OCR_LAYER_PRODUCERS)
+    if any(w in prod for w in OCR_LAYER_PRODUCERS):
+        return True
+    if pdf is None:
+        return False
+    n = len(pdf)
+    for i in sorted({0, n // 2, n - 1}):
+        pg = pdf[i]
+        area = abs(pg.rect) or 1
+        if not pg.get_text().strip():
+            continue
+        for info in pg.get_image_info():
+            x0, y0, x1, y1 = info["bbox"]
+            if (x1 - x0) * (y1 - y0) >= 0.8 * area:
+                return True
+    return False
 
 
 def _iter_engines(path: str, n: int, dpi: int, engines: list[str]) -> Iterator[tuple[str, str, float | None, float]]:
@@ -108,6 +131,7 @@ def textify(
     pages: list[int] | None = None,
     fix: bool = True,
     ocr_threads: int | None = None,
+    layer_only: bool = False,
     log: Callable[[str], None] = print,
 ) -> dict:
     """文本化。workers>1 时 OCR（渲染+引擎）在进程池里并行，所有写库仍在本进程；每页即时落盘并提交，可续跑。
@@ -124,14 +148,14 @@ def textify(
     have = set(store.page_numbers(key))
     with fitz.open(path) as pdf:
         npages = len(pdf)
-        ocr_layer = layer_is_ocr(pdf.metadata)
+        ocr_layer = layer_is_ocr(pdf.metadata, pdf)
         todo = [n for n in range(1, npages + 1) if n not in have]
         need_ocr = []
         if ocr_layer:  # 断点续跑：只有内嵌 OCR 层、还没跑过 OCR 的页
             for n in sorted(have):
                 pg = store.read_page(key, n) or {}
                 vs = [pg] + pg.get("alternates", [])
-                if not any(v.get("method") == "ocr" for v in vs):
+                if not any(_is_real_ocr(v) for v in vs):
                     need_ocr.append(n)
         if pages is not None:
             want = {p for p in pages if 1 <= p <= npages}
@@ -158,6 +182,12 @@ def textify(
             else:
                 need_ocr.append(n)
         store.con.commit()
+    if layer_only:
+        # 只取 PDF 自带文本层（含扫描件的 OCR 层，记 ocr_raw）不做 OCR：大批文献先建检索与语料统计用
+        # （2026-11-15 薛整理-杨接力 2906 份）；无文本层的页不落库，之后不带此参数再跑即补 OCR
+        _reindex(store, key)
+        log(f"[{key}] 只取文本层：原生 {n_text} 页，OCR 层/无文本层待重识 {len(need_ocr)} 页")
+        return {"key": key, "text_layer": n_text, "ocr": 0, "pending_ocr": len(need_ocr), "layer_only": True}
     if n_text:
         _reindex(store, key)
         log(f"[{key}] 文本层 {n_text} 页")
@@ -221,8 +251,11 @@ def textify(
                 "lexicon_changes": changes,
             },
         )
-        cur = str((store.read_page(key, n) or {}).get("producer") or "")
-        store.put_version(key, n, v, promote=True if (cur in ENGINE_NAMES or cur.startswith("consensus(")) else None)
+        pg = store.read_page(key, n) or {}
+        cur = str(pg.get("producer") or "")
+        # 主版本来自 PDF 文本层（含被 latinfix 改写过的）：新 OCR 必须取代它（2026-11-15 Drei Neue 第 3 页：错层页 20.7% → 1.3%）
+        layer_primary = bool(pg) and not _is_real_ocr(pg) and str(pg.get("verify_level") or "") != "ocr_verified"
+        store.put_version(key, n, v, promote=True if (cur in ENGINE_NAMES or cur.startswith("consensus(") or layer_primary) else None)
         done += 1
         if done % 10 == 0 or done == len(need_ocr):
             el = time.perf_counter() - t0
