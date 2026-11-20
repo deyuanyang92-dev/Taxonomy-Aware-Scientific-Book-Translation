@@ -84,6 +84,11 @@ def test_legacy_aligned_valid_and_bad_detected() -> None:
     assert any("table needs" in e for e in errs) and any("unknown role" in e for e in errs)
 
 
+def test_imajima_roles_couplet_legend_are_valid() -> None:
+    ok = aligned([{"role": "couplet", "translation": "x"}, {"role": "legend", "translation": "y"}])
+    assert validate_aligned(ok) == []
+
+
 def test_generic_blocks_render(tmp_path) -> None:
     extra = [
         {"block_id": "t1", "role": "table", "header_rows": 1, "translation": "Table 1. Sizes.",

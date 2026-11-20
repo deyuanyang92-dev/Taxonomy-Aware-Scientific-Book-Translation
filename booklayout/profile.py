@@ -35,8 +35,10 @@ PROFILE_VERSION = 1
 
 # Roles of the generic block model.  The first group is the historical Vol. 48
 # vocabulary and stays valid unchanged.
+# "couplet" and "legend" are written by the Imajima volumes' pipeline (2550 + 776 blocks in
+# the three real books) and rendered by the builder, so the schema must accept them.
 LEGACY_ROLES = frozenset({"heading", "body", "caption", "key", "ref", "entry", "citation",
-                          "index", "note"})
+                          "index", "note", "couplet", "legend"})
 NEW_ROLES = frozenset({"table", "list", "quote", "box", "footnote", "figure_group"})
 ROLES = LEGACY_ROLES | NEW_ROLES
 
