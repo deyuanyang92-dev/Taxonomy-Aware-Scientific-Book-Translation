@@ -17,6 +17,7 @@ body_size, header_size, footer_size, index_size   points
 lang / lang_east_asia     w:lang values
 hyphenation               auto-hyphenation on/off
 caption_prefixes          regex alternation of caption labels (per language)
+note_italic               False: translator notes set like captions (roman, left, no indent)
 taxonomic                 True: taxonomy-specific behaviour (italic genera,
                           taxonomic index) stays on; False for other books
 ========================  ===================================================
@@ -67,6 +68,7 @@ class StyleProfile:
     hyphenation: bool = True
     caption_prefixes: str = r"Fig|L[aá]m|Tabla|Plate|图|図|表"
     taxonomic: bool = True
+    note_italic: bool = True   # False: translator notes set in roman (Imajima)
 
     @property
     def text_w(self) -> float:
@@ -130,6 +132,20 @@ def validate_aligned(data: dict[str, Any]) -> list[str]:
                 rows = b.get("rows")
                 if not isinstance(rows, list) or not rows or not all(isinstance(r, list) for r in rows):
                     errors.append(f"{where}: table needs non-empty `rows` (list of cell lists)")
+                else:
+                    for cell in (c for r in rows for c in r):
+                        cs = cell.get("colspan", 1) if isinstance(cell, dict) else 1
+                        if isinstance(cs, bool) or not isinstance(cs, int) or cs < 1:
+                            errors.append(f"{where}: table cell colspan must be a positive integer, got {cs!r}")
+                            break
+                    else:
+                        widths = b.get("col_widths_mm")
+                        if widths is not None:
+                            ncols = max(sum((c.get("colspan", 1) if isinstance(c, dict) else 1) for c in r)
+                                        for r in rows)
+                            if not isinstance(widths, list) or len(widths) > ncols:
+                                errors.append(f"{where}: col_widths_mm has more entries than the table has "
+                                              f"columns ({ncols})")
             elif role == "list":
                 if not isinstance(b.get("items"), list):
                     errors.append(f"{where}: list needs `items`")

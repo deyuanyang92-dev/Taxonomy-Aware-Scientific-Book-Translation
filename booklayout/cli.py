@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -23,7 +24,10 @@ import sys
 import tempfile
 import unicodedata
 from pathlib import Path
+from typing import Any
 
+from . import audit as audit_module
+from . import treatments as treatments_module
 from . import builder as builder_module
 from .builder import BookMeta, BookPaths, build, load_aligned, make_page_map
 from .furniture import aligned_furniture_blocks
@@ -40,11 +44,55 @@ def _meta(args: argparse.Namespace) -> BookMeta:
     return BookMeta(title=getattr(args, "title", "") or "Untitled")
 
 
+def _current_umask() -> int:
+    """Process umask without modifying it (Linux /proc; 0o022 fallback)."""
+    try:
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("Umask:"):
+                return int(line.split()[1], 8)
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0o022
+
+
 def _write_json(path: Path | None, data: dict) -> None:
+    """Atomic write: unique temp file in the target dir, then rename.
+
+    A symlinked target is resolved first so the link itself is kept.
+    """
     if path is None:
         return
+    import os
+
+    path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    # O_EXCL temp file created 0o600 so content is never world-readable while
+    # being written; the final mode is set before the rename (target's mode, or
+    # 0o666 & ~umask for a new file; umask read without changing it).
+    for n in range(100):
+        tmp_name = str(path.parent / f".{path.name}.{os.getpid()}.{n}.tmp")
+        try:
+            fd = os.open(tmp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise OSError(f"cannot create a temp file next to {path}")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, ensure_ascii=False, indent=2))
+        try:
+            mode = path.stat().st_mode & 0o7777  # keep the target's mode
+        except FileNotFoundError:
+            mode = 0o666 & ~_current_umask()
+        os.chmod(tmp_name, mode)
+        os.replace(tmp_name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 _DOT_LEADER = re.compile(r"(?:\.\s*){4,}")
@@ -1146,7 +1194,31 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def _locked_inplace(args: argparse.Namespace, fn: Any) -> int:
+    """Every command that rewrites an aligned file takes the same lock and reads the file only after it."""
+    if _reject_lock_dir_paths(args):
+        return 2
+
+    inputs = [getattr(args, k, None) for k in ("aligned", "source", "translation")]
+    if _overlap(args.report, inputs + [args.out]) or _overlap(args.out, inputs[1:]):
+        print("error: --report/--out must not overwrite the aligned book or an input file", file=sys.stderr)
+        return 2
+
+    def run() -> int:
+        try:
+            return fn()
+        except (ValueError, OSError) as exc:
+            print(f"error: {exc} (aligned file left untouched)", file=sys.stderr)
+            return 2
+
+    return _with_locks([args.aligned, args.out or args.aligned], run)
+
+
 def cmd_normalize(args: argparse.Namespace) -> int:
+    return _locked_inplace(args, lambda: _normalize_locked(args))
+
+
+def _normalize_locked(args: argparse.Namespace) -> int:
     data = load_aligned(args.aligned)
     report = normalize_aligned(data)
     out = args.out or args.aligned
@@ -1169,6 +1241,10 @@ def cmd_kana_check(args: argparse.Namespace) -> int:
 
 
 def cmd_key_align(args: argparse.Namespace) -> int:
+    return _locked_inplace(args, lambda: _key_align_locked(args))
+
+
+def _key_align_locked(args: argparse.Namespace) -> int:
     data = load_aligned(args.aligned)
     markdown = args.translation.read_text(encoding="utf-8")
     out, report = align_document(data, markdown)
@@ -1182,6 +1258,10 @@ def cmd_key_align(args: argparse.Namespace) -> int:
 
 
 def cmd_backfill(args: argparse.Namespace) -> int:
+    return _locked_inplace(args, lambda: _backfill_locked(args))
+
+
+def _backfill_locked(args: argparse.Namespace) -> int:
     data = load_aligned(args.aligned)
     source = json.loads(args.source.read_text(encoding="utf-8"))
     report = backfill_source(data, source)
@@ -1193,25 +1273,225 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lock_dir() -> Path:
+    """One shared lock root for all users, independent of TMPDIR.
+
+    ``BOOKLAYOUT_LOCK_DIR`` overrides it (tests, unusual hosts).
+    """
+    import os
+
+    return Path(os.environ.get("BOOKLAYOUT_LOCK_DIR") or "/tmp/booklayout-locks")
+
+
+def _under_lock_dir(p: Path | None) -> bool:
+    if p is None:
+        return False
+    d = _lock_dir().resolve()
+    r = p.resolve()
+    return r == d or d in r.parents
+
+
+def _lock_file(target: Path) -> int:
+    """Open (never truncate) the lock file for ``target`` in the shared lock dir.
+
+    The lock lives outside the book directory (works on a read-only source dir,
+    cannot collide with --patch/--report/--out) and is keyed by the resolved
+    path of the file that gets replaced.  Lock files are mode 0o666 so another
+    user can open them.  Hard links to the same file are not supported (the
+    replace would diverge the copies).
+    """
+    import hashlib
+    import os
+
+    import stat
+
+    d = _lock_dir()
+    try:
+        d.mkdir(parents=True, mode=0o1777)  # we created it: only now widen the mode
+        os.chmod(d, 0o1777)
+    except FileExistsError:
+        st = os.lstat(d)
+        if not stat.S_ISDIR(st.st_mode):  # symlink or file: refuse, never chmod it
+            raise OSError(f"lock dir {d} is not a plain directory") from None
+    try:  # lock by file identity so Book.json / book.json / symlink share one lock
+        st_t = os.stat(target)
+        ident = f"{st_t.st_dev}:{st_t.st_ino}"
+    except OSError:
+        ident = str(target.resolve())
+    key = hashlib.sha256(ident.encode("utf-8")).hexdigest()[:32]
+    path = d / (key + ".lock")
+    flags = os.O_RDWR | os.O_NOFOLLOW
+    for _ in range(3):
+        try:  # existing lock: open WITHOUT O_CREAT (fs.protected_regular refuses it for foreign owners)
+            fd = os.open(path, flags)
+            break
+        except FileNotFoundError:
+            pass
+        try:
+            fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o666)
+            os.fchmod(fd, 0o666)  # created by us: umask-proof
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise OSError(f"cannot open lock file {path}")
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
+        raise OSError(f"lock file {path} is not a regular file")
+    return fd
+
+
+def _lock_ident(t: Path) -> str:
+    try:
+        st_t = os.stat(t)
+        return f"{st_t.st_dev}:{st_t.st_ino}"
+    except OSError:
+        return str(t.resolve())
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """File identity, not path spelling: symlinks and case-insensitive aliases are the same file."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:  # one side does not exist yet: fall back to resolved paths
+        return a.resolve() == b.resolve()
+
+
+def _overlap(out: Path | None, others: list[Path | None]) -> Path | None:
+    for o in others:
+        if out is not None and o is not None and _same_file(out, o):
+            return o
+    return None
+
+
+def _with_locks(targets: list[Path], fn: Any) -> int:
+    import fcntl
+    import os
+
+    uniq: list[Path] = []
+    for t in targets:
+        if not any(_same_file(t, u) for u in uniq):
+            uniq.append(t)
+    for _attempt in range(50):
+        order = sorted(uniq, key=lambda t: _lock_ident(t))  # sorted: no deadlock
+        idents = [_lock_ident(t) for t in order]
+        fds: list[int] = []
+        try:
+            for t in order:
+                fds.append(_lock_file(t))
+            for fd in fds:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            # a writer that held the lock replaced the file (new inode): our key is stale, retry
+            if [_lock_ident(t) for t in order] == idents:
+                return fn()
+        finally:
+            for fd in fds:
+                os.close(fd)  # closing releases the flock
+    raise OSError("could not obtain a stable lock: target keeps being replaced")
+
+
+def _reject_lock_dir_paths(args: argparse.Namespace) -> bool:
+    for name in ("aligned", "patch", "report", "out"):
+        if _under_lock_dir(getattr(args, name, None)):
+            print(f"error: --{name} must not be inside the lock directory {_lock_dir()}", file=sys.stderr)
+            return True
+    return False
+
+
 def cmd_patch_blocks(args: argparse.Namespace) -> int:
-    data = load_aligned(args.aligned)
-    patch = json.loads(args.patch.read_text(encoding="utf-8"))
-    report = apply_block_edits(data, patch)
+    if _reject_lock_dir_paths(args):
+        return 2
+    return _with_locks([args.aligned, args.out or args.aligned], lambda: _patch_blocks_locked(args))
+
+
+def _load_patch(path: Path) -> Any:
+    """Parse a patch file; duplicate keys at any level are an error, never last-one-wins."""
+    from .builder import _no_dup_pairs
+
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_no_dup_pairs)
+
+
+def _patch_blocks_locked(args: argparse.Namespace) -> int:
+    try:
+        data = load_aligned(args.aligned)
+    except (ValueError, OSError) as exc:
+        print(f"error: bad aligned file (left untouched): {exc}", file=sys.stderr)
+        return 2
+    try:
+        patch = _load_patch(args.patch)
+    except (ValueError, OSError) as exc:
+        print(f"error: bad patch file: {exc}", file=sys.stderr)
+        return 2
+    if _overlap(args.report, [args.aligned, args.patch, args.out]):
+        print("error: --report must not overwrite --aligned, --patch or --out", file=sys.stderr)
+        return 2
+    if _overlap(args.out, [args.patch]):
+        print("error: --out must not overwrite --patch", file=sys.stderr)
+        return 2
+    try:
+        report = apply_block_edits(data, patch, allow_partial=getattr(args, "allow_partial", False))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     out = args.out or args.aligned
-    _write_json(out, data)
+    strict = patch.get("version", 1) >= 2
+    conflicts = (bool(report["stale"]) or bool(report["invalid"])
+                 or (strict and bool(report["missing"])))
+    allow = getattr(args, "allow_partial", False)
+    reject = conflicts and not allow
+    if reject:
+        report["rejected"] = True
+        report["not_written"] = report.pop("not_applied", None) or report.get("applied", [])
+        report["not_written_removed"] = report.pop("not_applied_removed", None) or report.get("removed", [])
+        report["applied"] = []
+        report["removed"] = []
+    else:
+        _write_json(out, data)  # data first, report second
+    if _overlap(args.report, [args.aligned, args.patch, args.out, out]):  # re-check: out may now exist as an alias
+        print("error: --report resolves to the aligned book/patch/out; report not written", file=sys.stderr)
+        return 2
     _write_json(args.report, report)
-    print(json.dumps({"out": str(out), "applied": len(report["applied"]),
+    print(json.dumps({"out": None if reject else str(out),
+                      "applied": len(report["applied"]),
                       "removed": len(report["removed"]),
-                      "missing": report["missing"]}, ensure_ascii=False))
-    return 0
+                      "not_written": report.get("not_written", []),
+                      "missing": report["missing"], "stale": report["stale"],
+                      "invalid": report["invalid"]},
+                     ensure_ascii=False))
+    return 1 if reject else 0
 
 
 def cmd_repair(args: argparse.Namespace) -> int:
-    data = load_aligned(args.aligned)
-    patch = json.loads(args.patch.read_text(encoding="utf-8"))
-    report = apply_page_patch(data, patch)
+    if _reject_lock_dir_paths(args):
+        return 2
+    return _with_locks([args.aligned, args.out or args.aligned], lambda: _repair_locked(args))
+
+
+def _repair_locked(args: argparse.Namespace) -> int:
+    try:
+        data = load_aligned(args.aligned)
+    except (ValueError, OSError) as exc:
+        print(f"error: bad aligned file (left untouched): {exc}", file=sys.stderr)
+        return 2
+    try:
+        patch = _load_patch(args.patch)
+    except (ValueError, OSError) as exc:
+        print(f"error: bad patch file: {exc}", file=sys.stderr)
+        return 2
     out = args.out or args.aligned
+    if _overlap(out, [args.patch]) or _overlap(args.report, [args.aligned, args.patch, args.out]):
+        print("error: --out/--aligned/--report must not be the --patch file or overwrite the aligned book",
+              file=sys.stderr)
+        return 2
+    try:
+        report = apply_page_patch(data, patch)
+    except ValueError as exc:
+        print(f"error: bad page patch: {exc}", file=sys.stderr)
+        return 2
     _write_json(out, data)
+    if _overlap(args.report, [args.aligned, args.patch, args.out, out]):
+        print("error: --report resolves to the aligned book/patch/out; report not written", file=sys.stderr)
+        return 2
     print(json.dumps({"out": str(out), "patched_pages": report["patched_pages"]},
                      ensure_ascii=False))
     return 0
@@ -1515,6 +1795,8 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--patch", type=Path, required=True)
     pb.add_argument("--out", type=Path, help="output JSON (default: rewrite --aligned)")
     pb.add_argument("--report", type=Path)
+    pb.add_argument("--allow-partial", action="store_true",
+                    help="write the output even when some edits are stale (old_hash mismatch)")
     pb.set_defaults(func=cmd_patch_blocks)
 
     r = sub.add_parser("repair", help="replace selected pages from a declarative patch")
@@ -1542,6 +1824,8 @@ def build_parser() -> argparse.ArgumentParser:
     from . import alignmd, keymodel, pdffigures
 
     alignmd.add_parser(sub)
+    audit_module.add_parser(sub)
+    treatments_module.add_parser(sub)
     pdffigures.add_parser(sub)
     keymodel.add_parser(sub)
 

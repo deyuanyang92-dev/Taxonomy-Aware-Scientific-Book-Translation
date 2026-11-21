@@ -252,3 +252,16 @@ python3 -m booklayout kana-check --aligned en_aligned.json --out kana.json   # k
   paragraph splits (library function, for use in prep scripts).
 
 多语言一条龙出版命令与新模块见 `docs/publish_pipeline.md`。
+
+## audit：全书缺陷计数（只读）
+
+```bash
+booklayout audit <aligned.json> [--pdf out.pdf] [--json] [--source-lang ja|es] [--strict]
+```
+
+一次输出全书缺陷计数表，不写任何文件、不调用模型，取代「一类缺陷一次整书重建」。
+计数项：检索表内联（一行多条目）、检索表拆行（引导点无页码）、文本级短引导点、图注断词、
+同页重复段、截断句、源语言残留（由 source 文本自动判定 ja/es，可用 `--source-lang` 覆盖）、
+覆盖率（有原文的块中已有译文的比例）。加 `--pdf` 另报 PDF 检索表版面、图注与图间距、
+图注断词（复用 `qa` 的版面检查）。`--json` 给出每项前 5 个示例；`--strict` 有缺陷时退出码 1。
+逻辑在 `booklayout/audit.py`，测试 `tests/test_booklayout_audit.py`。

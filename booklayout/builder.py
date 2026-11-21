@@ -112,6 +112,7 @@ class BookMeta:
     abstract_page: int | None = None
     abstract_cut: str = ""
     include_front_matter: bool = False
+    include_contents: bool = True
     authors_title: str = "AUTHORS"
     authors: list[tuple[str, str]] = field(default_factory=list)
     contributions_title: str = "CONTRIBUTIONS"
@@ -123,6 +124,8 @@ class BookMeta:
     # When the source starts a chapter part-way down a page, insert the
     # chapter title at its real position instead of moving it to page top.
     heading_in_flow: bool = False
+    # False: no synthesized chapter title (excerpts/trials whose pages carry no chapter heading).
+    chapter_headings: bool = True
     skip_after_page: int | None = None
     index_chapter: str = ""
     index_intro_prefix: str = "Only the scientific names"
@@ -169,11 +172,42 @@ def clean_text(s: str) -> str:
     s = s.replace('\ufffd', ' ')
     s = s.replace('\u3000', ' ').replace('\xa0', ' ')
     s = re.sub(r'[ \t]+', ' ', s)
+    if PROFILE.lang_east_asia.lower().startswith("zh"):
+        s = cjk_punct(s)
     return s.strip()
 
 
+_CJKP = r'[\u3040-\u30ff\u3400-\u9fff\uff00-\uffef\u3000-\u303f]'
+_FW = {",": "，", ";": "；", ":": "：", "?": "？", "!": "！"}
+
+
+def cjk_punct(s: str) -> str:
+    """Chinese text: ASCII punctuation touching CJK becomes full-width; spaces beside it go."""
+    s = re.sub(rf'(?:(?<={_CJKP})|(?<={_CJKP}\s))\s*([,;:?!])\s*|\s*([,;:?!])\s*(?={_CJKP})',
+               lambda m: _FW[m.group(1) or m.group(2)], s)
+    s = re.sub(rf'\s*\((?=\s*{_CJKP})\s*', '（', s)
+    s = re.sub(rf'(?<={_CJKP})\s*\(', '（', s)
+    s = re.sub(rf'(?<={_CJKP})\s*\)', '）', s)
+    s = re.sub(r'（([^（）]*?)\)', r'（\1）', s)
+    # 「Pettibone(1953)指出」「(Narchi, 1969)。」：括号后接汉字或中文标点时也用全角，
+    # 与同段「（原文「…」）」一致，避免半角/全角括号混排。
+    s = re.sub(rf'\(([^()（）]*?)\)(?=\s*{_CJKP})', r'（\1）', s)
+    s = re.sub(r'(?<=\d)\s*~\s*(?=\d)', '–', s)
+    return s
+
+
+def _no_dup_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k, v in pairs:
+        if k in out:
+            raise ValueError(f"duplicate JSON key {k!r}")
+        out[k] = v
+    return out
+
+
 def load_aligned(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Duplicate keys at any level are an error: last-one-wins would silently drop data on write-back."""
+    return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_no_dup_pairs)
 
 
 def build_genus_set(data: dict) -> set[str]:
@@ -221,23 +255,25 @@ def build_genus_set(data: dict) -> set[str]:
     return names
 
 
-def _markdown_chunks(text: str) -> list[tuple[str, bool]]:
-    """Split translated text into plain and *italic* chunks.
+def _markdown_chunks(text: str) -> list[tuple[str, bool, bool]]:
+    """Split translated text into (chunk, italic, bold) pieces.
 
-    The translation pass marks genus names with Markdown asterisks.  Printing
-    them literally is a layout defect (``*Arabella*``), so the markers are
-    consumed here.  Unpaired asterisks left by a split aligner are dropped.
+    ``*x*`` is italic (genus names); ``**x**`` is bold (run-in headings such
+    as 形态 / 分布).  Printing the markers literally is a layout defect
+    (``*Arabella*``), so they are consumed here.  Unpaired asterisks left by a
+    split aligner are dropped.
     """
-    chunks: list[tuple[str, bool]] = []
+    chunks: list[tuple[str, bool, bool]] = []
     pos = 0
-    for m in re.finditer(r'\*{1,2}([^*]+)\*{1,2}', text):
+    for m in re.finditer(r'(\*{1,2})([^*]+)\*{1,2}', text):
         if m.start() > pos:
-            chunks.append((text[pos:m.start()], False))
-        chunks.append((m.group(1), True))
+            chunks.append((text[pos:m.start()], False, False))
+        two = len(m.group(1)) == 2
+        chunks.append((m.group(2), not two, two))
         pos = m.end()
     if pos < len(text):
-        chunks.append((text[pos:], False))
-    return [(c.replace('*', ''), it) for c, it in chunks if c.replace('*', '')]
+        chunks.append((text[pos:], False, False))
+    return [(c.replace('*', ''), it, bd) for c, it, bd in chunks if c.replace('*', '')]
 
 
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
@@ -250,20 +286,23 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
     text = clean_text(text)
     if not text:
         return
-    pieces: list[tuple[str, bool]] = []
-    for chunk, md_italic in _markdown_chunks(text):
+    pieces: list[tuple[str, bool, bool]] = []
+    for chunk, md_italic, md_bold in _markdown_chunks(text):
+        if md_bold:
+            pieces.append((chunk, italic, True))
+            continue
         if md_italic:
             # 译者有时把连词也圈进星号（「*Audouin and* Milne Edwards」），
             # 连词移到斜体之外；整条书名/刊名仍保持斜体。
             m = re.match(r'^(.*\S)\s+(and|y|e|et|or|&)$', chunk)
             if m:
-                pieces.append((m.group(1), True))
-                pieces.append((" " + m.group(2), italic))
+                pieces.append((m.group(1), True, bold))
+                pieces.append((" " + m.group(2), italic, bold))
             else:
-                pieces.append((chunk, (not italic) if invert else True))
+                pieces.append((chunk, (not italic) if invert else True, bold))
             continue
         if not genera:
-            pieces.append((chunk, italic))
+            pieces.append((chunk, italic, bold))
             continue
         names = sorted(genera, key=len, reverse=True)
         # 属名单独出现也排斜体（分类学惯例：属名后不带种加词时同样斜体）。
@@ -287,14 +326,14 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
                     end = m.end(3)
                     name = chunk[m.start(1):end]
             if m.start() > pos:
-                pieces.append((chunk[pos:m.start()], italic))
-            pieces.append((name, (not italic) if invert else True))
+                pieces.append((chunk[pos:m.start()], italic, bold))
+            pieces.append((name, (not italic) if invert else True, bold))
             pos = end
         if pos < len(chunk):
-            pieces.append((chunk[pos:], italic))
+            pieces.append((chunk[pos:], italic, bold))
     if not pieces:
-        pieces = [(text.replace('*', ''), italic)]
-    for chunk, ital in pieces:
+        pieces = [(text.replace('*', ''), italic, bold)]
+    for chunk, ital, bd in pieces:
         run = par.add_run(chunk)
         run.font.name = BODY_FONT
         run._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
@@ -304,7 +343,7 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
         if _CJK.search(chunk):
             run._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
         run.font.size = Pt(size)
-        run.bold = bold
+        run.bold = bd
         run.italic = ital
         if color is not None:
             run.font.color.rgb = color
@@ -379,6 +418,11 @@ def set_header_footer(sec, meta: BookMeta):
     fld_run('end')
 
 
+def _sz(size: float) -> float:
+    """Hard-coded sizes are written for a 10.5 pt body; scale to PROFILE.body_size."""
+    return round(size * PROFILE.body_size / 10.5, 2)
+
+
 def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.0,
          left=0.0, before=0.0, after=0.0, keep=False, genera=None, color=None,
          line=1.0, invert=False):
@@ -393,7 +437,9 @@ def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.
     if align is not None:
         p.alignment = align
     if text:
-        add_runs(p, text, size, bold, italic, color, genera, invert)
+        add_runs(p, text, _sz(size), bold, italic, color, genera, invert)
+    if PROFILE.lang_east_asia.lower().startswith("zh"):
+        _suppress_hyphenation(p)  # CJK paragraphs: never split a Latin word at a line end
     return p
 
 
@@ -529,6 +575,41 @@ def key_signature(left: str, right: str) -> str:
     return norm(left) + "\t" + norm(right)
 
 
+def couplet_para(doc, block: dict, text: str, genera, mark_mm: float = 9.0, hang_mm: float = 16.0):
+    """One key couplet in the v7 template: hanging indent, marker, tab, text,
+    real right tab with dot leader, [name] target flush right.
+
+    Single right tab only (no name column): name and target are one atomic
+    address.  When the text's last line leaves too little room for it, the
+    address goes to its own leader-filled line.
+    """
+    c = block.get("couplet") or {}
+    marker = (c.get("marker") or c.get("lead") or "").strip()
+    right = " ".join(x for x in (c.get("name"), c.get("target")) if x)
+    size = PROFILE.body_size
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.left_indent, pf.first_line_indent = Mm(hang_mm), Mm(mark_mm - hang_mm)
+    pf.space_before, pf.space_after, pf.line_spacing = Pt(0), Pt(0), 1.15
+    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf.tab_stops.add_tab_stop(Mm(hang_mm - 0.1))
+    pf.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+    add_runs(p, f"{marker}\t{text}", size, genera=genera)
+    if right:
+        pt_mm = 25.4 / 72
+        wid = lambda s: sum(size if ord(ch) > 255 else size * 0.5 for ch in s) * pt_mm  # noqa: E731
+        line_w = TEXT_W - hang_mm
+        last = wid(text) % line_w if wid(text) > line_w else wid(text) + (mark_mm - hang_mm)
+        if last + wid(right.replace("*", "")) + 6 > line_w:
+            p.add_run().add_break()
+        p.add_run("\t")
+        start = len(p.runs)
+        add_runs(p, right, size, genera=genera)
+        _atomic_target(p, start)
+    _suppress_hyphenation(p)
+    return p
+
+
 def key_para(doc, text, genera, key_breaks: set[str] | None = None):
     text = re.sub(r'\ufffd+', ' …… ', text)
     text = clean_text(text)
@@ -550,7 +631,7 @@ def key_para(doc, text, genera, key_breaks: set[str] | None = None):
         right = m.group(1).strip() if m.re is _TARGET_SUFFIX else text[m.end():].strip()
         if left and right:
             force = key_breaks is not None and key_signature(left, right) in key_breaks
-            return tabbed(doc, left, right, 9.5, 0.0, genera, force_break=force)
+            return tabbed(doc, left, right, _sz(8.3), 0.0, genera, force_break=force)
     # Headings, introductory notes and footnotes inside a key carry no target:
     # set them ragged-right like the source, flush with the couplet markers
     # (no first-line indent, issue #35).  Justifying them would reintroduce
@@ -696,6 +777,8 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
             para(doc, meta.license_note, size=8, italic=True, before=14, align=WD_ALIGN_PARAGRAPH.JUSTIFY)
 
     # contents
+    if not meta.include_contents:
+        return
     page_break(doc)
     para(doc, meta.contents_title, size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
     seen = set()
@@ -771,7 +854,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 # A source page can hold the tail of the previous chapter
                 # before the new chapter heading.  Put the heading where the
                 # source heading sits, not above that tail.
-                for candidate in p["blocks"]:
+                for candidate in (p["blocks"] if meta.chapter_headings else []):
                     try:
                         level = int(candidate.get("level", 1))
                     except (TypeError, ValueError):
@@ -779,7 +862,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     if candidate.get("role") == "heading" and level == 1:
                         pending_heading = id(candidate)
                         break
-                if pending_heading is None:
+                if pending_heading is None and meta.chapter_headings:
                     heading(doc, title, 1, genera, chapter_start=True)
                     synthetic_heading = True
         page_figs = figs.get(p["page"], [])
@@ -843,19 +926,23 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                         level = int(level)
                     except (TypeError, ValueError):
                         level = 2
-                    heading(doc, text, min(level, 3), genera)
+                    heading(doc, text, min(level, 3), genera,
+                            chapter_start=bool(b.get("page_break_before")))
                 prev_body = None
             elif role == "note":
-                para(doc, text, size=9.5, italic=True,
-                     align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
-                     before=4, after=4, genera=genera)
+                # note_italic=False: set exactly like a caption (roman, ragged-right,
+                # no indent) so notes and captions look the same.
+                roman = not PROFILE.note_italic
+                para(doc, text, size=9.5, italic=PROFILE.note_italic,
+                     align=WD_ALIGN_PARAGRAPH.LEFT if roman else WD_ALIGN_PARAGRAPH.JUSTIFY,
+                     first=0 if roman else 5, before=4, after=4, genera=genera)
                 prev_body = None
             elif role == "body":
                 # merge a page-split sentence
                 if prev_body is not None and can_join(prev_body[0], text):
                     joined = join_texts(prev_body[0], text)
                     prev_body[1].clear()
-                    add_runs(prev_body[1], joined, 10.5, genera=genera)
+                    add_runs(prev_body[1], joined, _sz(10.5), genera=genera)
                     prev_body = (joined, prev_body[1])
                 else:
                     # A lower-case opening is a paragraph continued after an
@@ -871,8 +958,11 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             elif role == "key":
                 key_para(doc, text, genera, key_breaks)
                 prev_body = None
+            elif role == "couplet":
+                couplet_para(doc, b, text, genera)
+                prev_body = None
             elif role == "ref":
-                para(doc, text, size=8.8, left=4, first=-4, after=2.5, line=0.98, genera=genera)
+                para(doc, text, size=7.6, left=4, first=-4, after=1.5, line=0.95, genera=genera)
                 prev_body = None
             elif role == "entry":
                 for prefix in meta.entry_prefixes:
@@ -912,7 +1002,23 @@ def render_generic_block(doc, b: dict, genera) -> None:
         rows = b["rows"]
         ncols = max(sum(_cell_text(c)[1] for c in r) for r in rows)
         table = doc.add_table(rows=len(rows), cols=ncols)
-        table.style = "Table Grid"
+        if b.get("grid", True):
+            table.style = "Table Grid"
+        tsize = float(b.get("size") or (size - 1.5))
+        widths = b.get("col_widths_mm")
+        if b.get("tight"):
+            mar = OxmlElement("w:tblCellMar")
+            for side in ("left", "right"):
+                e = OxmlElement(f"w:{side}")
+                e.set(qn("w:w"), "40")
+                e.set(qn("w:type"), "dxa")
+                mar.append(e)
+            table._tbl.tblPr.append(mar)
+        if widths:
+            table.autofit = False
+            for ci, w in enumerate(widths):
+                for cell in table.columns[ci].cells:
+                    cell.width = Mm(w)
         header_rows = int(b.get("header_rows", 1))
         for ri, row in enumerate(rows):
             ci = 0
@@ -922,7 +1028,8 @@ def render_generic_block(doc, b: dict, genera) -> None:
                 if span > 1:
                     c = c.merge(table.cell(ri, ci + span - 1))
                 c.text = ""
-                add_runs(c.paragraphs[0], txt, size - 1.5, bold=ri < header_rows, genera=genera)
+                add_runs(c.paragraphs[0], txt, tsize, bold=ri < header_rows, genera=genera)
+                c.paragraphs[0].paragraph_format.space_after = Pt(0)
                 ci += span
             if ri < header_rows:
                 trpr = table.rows[ri]._tr.get_or_add_trPr()

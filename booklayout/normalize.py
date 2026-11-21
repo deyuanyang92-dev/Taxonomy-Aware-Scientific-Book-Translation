@@ -1859,39 +1859,263 @@ def backfill_source(data: dict[str, Any], source: dict[str, Any]) -> dict[str, A
     return {"filled_blocks": len(filled), "unmatched_blocks": unmatched, "changes": filled}
 
 
-def apply_block_edits(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+def block_src_hash(block: dict[str, Any]) -> str:
+    """Fingerprint of a block's SOURCE text only (32 hex chars, sha256).
+
+    Blocks without source text hash to "" so that no old_hash can match them:
+    a lock that falls back to the translation would go stale on every edit.
+    """
+    import hashlib
+
+    text = (block.get("text") or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+_EDIT_FIELDS = ("translation", "role", "level")
+_OLD_KEY = {"translation": "old_translation", "role": "old_role", "level": "old_level"}
+_EDIT_KEYS = {"block_id", "old_hash", "page", "remove", *_EDIT_FIELDS, *_OLD_KEY.values(), "old_prev", "old_next",
+              "old_struct"}
+_PATCH_KEYS = {"version", "edits"}
+NOHASH = "~"  # a neighbour exists but has no usable source hash ("" means: no neighbour at all)
+
+
+def block_struct_digest(block: dict[str, Any]) -> str:
+    """Digest of the WHOLE block (canonical JSON, every field), 32 hex chars.
+
+    A delete binds to it so that replaying the delete after any field changed
+    (table cell, list item, figure entry, couplet target/name, ...) is stale
+    instead of silently dropping the edit.
+    """
+    import hashlib
+    import json
+
+    raw = json.dumps(block, sort_keys=True, ensure_ascii=False, default=repr)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+def neighbour_hash(hashes: list[str], j: int) -> str:
+    """Hash of the block at book index ``j``: "" outside the book, NOHASH when textless."""
+    if j < 0 or j >= len(hashes):
+        return ""
+    return hashes[j] or NOHASH
+
+
+def safe_key(x: Any) -> Any:
+    """Hashable key for any JSON id: strings as-is, anything else by type+repr."""
+    return x if isinstance(x, str) else ("#nonstr", type(x).__name__, repr(x))
+
+
+def block_neighbours(data: dict[str, Any]) -> dict[Any, tuple[str, str]]:
+    """``block_id`` -> (prev, next) source hashes over the WHOLE book order.
+
+    Same semantics as ``blockid.fingerprint_table`` (neighbours cross page
+    boundaries; "" only at the book's first/last block).
+    """
+    flat = [b for p in data.get("pages", []) for b in p.get("blocks", [])]
+    hs = [block_src_hash(b) for b in flat]
+    return {safe_key(b.get("block_id")): (neighbour_hash(hs, i - 1), neighbour_hash(hs, i + 1))
+            for i, b in enumerate(flat)}
+
+
+def _old_problem(edit: dict[str, Any]) -> str:
+    for f, k in _OLD_KEY.items():
+        if k not in edit:
+            continue
+        v = edit[k]
+        if f == "level":
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 1):
+                return "old_level must be null or a positive integer"
+        elif not isinstance(v, str) and not (f == "role" and v is None):
+            return f"{k} must be a string" + (" or null" if f == "role" else "")
+    return ""
+
+
+def _role_problem(block: dict[str, Any]) -> str:
+    """Whole-block structure check, the same validator the builder input goes through."""
+    from booklayout.profile import validate_aligned
+
+    errs = validate_aligned({"pages": [{"page": 0, "blocks": [block]}]})
+    return errs[0].split(": ", 1)[-1] if errs else ""
+
+
+def _field_problem(field: str, value: Any) -> str:
+    if field == "translation":
+        return "" if isinstance(value, str) else "translation must be a string"
+    if field == "role":
+        from booklayout.profile import ROLES
+
+        return "" if isinstance(value, str) and value in ROLES else f"role must be one of {sorted(ROLES)}"
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return "level must be a positive integer"
+    return ""
+
+
+def _edit_problem(edit: Any, strict: bool = False) -> str:
+    """Why an edit is malformed, or "" when it is well formed."""
+    if not isinstance(edit, dict):
+        return "edit is not an object"
+    bid = edit.get("block_id")
+    if not isinstance(bid, str) or not bid:
+        return "block_id must be a non-empty string"
+    unknown = set(edit) - _EDIT_KEYS
+    if unknown:
+        return f"unknown field(s): {sorted(unknown)}"
+    if "remove" in edit and not isinstance(edit["remove"], bool):
+        return "remove must be a JSON boolean"
+    has_fields = any(f in edit for f in _EDIT_FIELDS)
+    if edit.get("remove") and has_fields:
+        return "remove cannot be combined with field updates"
+    if not edit.get("remove") and not has_fields:
+        return "edit has no operation"
+    for f in _EDIT_FIELDS:
+        if f in edit:
+            why = _field_problem(f, edit[f])
+            if why:
+                return why
+    for k in ("old_prev", "old_next"):
+        if k in edit and not isinstance(edit[k], str):
+            return f"{k} must be a string hash"
+    why = _old_problem(edit)
+    if why:
+        return why
+    if strict:
+        if isinstance(edit.get("page"), bool) or not isinstance(edit.get("page"), int):
+            return "version 2 requires integer page"
+        if not isinstance(edit.get("old_hash"), str):
+            return "version 2 requires old_hash (string)"
+        if edit.get("remove") and not isinstance(edit.get("old_struct"), str):
+            return "version 2 delete requires old_struct (block_struct_digest)"
+        need = list(_EDIT_FIELDS) if edit.get("remove") else [f for f in _EDIT_FIELDS if f in edit]
+        for f in need:
+            if _OLD_KEY[f] not in edit:
+                return f"version 2 requires {_OLD_KEY[f]}"
+        for k in ("old_prev", "old_next"):
+            if k not in edit:
+                return f"version 2 requires {k}"
+    return ""
+
+
+def _patch_problem(patch: Any) -> str:
+    if not isinstance(patch, dict):
+        return "patch must be a JSON object"
+    if set(patch) - _PATCH_KEYS:
+        return f"unknown top-level key(s): {sorted(set(patch) - _PATCH_KEYS, key=repr)}"
+    ver = patch.get("version", 1)
+    if type(ver) is not int or ver not in (1, 2):
+        return "version must be integer 1 or 2"
+    if not isinstance(patch.get("edits"), list):
+        return "edits must be an array"
+    return ""
+
+
+def apply_block_edits(data: dict[str, Any], patch: dict[str, Any],
+                      allow_partial: bool = False) -> dict[str, Any]:
     """Apply block-level translation edits by block_id.
 
     Companion to :func:`apply_page_patch` for repairs that touch one or two
-    blocks of a page: replace a translation, change a role, or remove a block.
-    Removed blocks are dropped; the page keeps its other blocks in order.
+    blocks of a page: replace a translation, change a role or level, or remove
+    a block.  Removed blocks are dropped; the page keeps its other blocks in order.
+
+    The patch must be an object with integer ``version`` (1 or 2) and an
+    ``edits`` array, else ``ValueError``.  Edits are validated strictly
+    (non-empty string ids, boolean ``remove``, known fields, ``role`` from the
+    builder's role set, integer ``level``, at least one operation).
+    ``old_hash`` locks the source text; ``old_translation`` / ``old_role`` /
+    ``old_level`` are preconditions on the current values.  Patch ``"version": 2``
+    makes ``old_hash``, the logical ``page``, ``old_prev`` and ``old_next``
+    mandatory, requires an ``old_*`` for every changed field (a delete needs
+    ``old_translation``, ``old_role`` and ``old_level``, null allowed), and makes the batch all-or-nothing: any invalid, missing or
+    stale edit leaves ``data`` untouched unless ``allow_partial``.  Report keys:
+    applied, removed, missing, stale, invalid.  Duplicate block ids in ``data``
+    raise ``ValueError`` (an id must name exactly one block).  Optional
+    ``old_prev`` / ``old_next`` carry the source hashes of the adjacent blocks
+    (``""`` only at the book's first/last block, same as ``fingerprint_table``);
+    a mismatch is ``stale`` (same-text re-split guard).  Residual risk: two
+    identical blocks with identical neighbours are indistinguishable without a
+    persistent docstore block id (P3).
     """
+    import copy
+    from collections import Counter
+
+    bad = _patch_problem(patch)
+    if bad:
+        raise ValueError(bad)
+    ids: list[Any] = [b.get("block_id") for p in data.get("pages", []) for b in p.get("blocks", [])]
+    counts = Counter(i for i in ids if isinstance(i, str) and i)
+    dup = sorted(i for i, n in counts.items() if n > 1)
+    if dup:
+        raise ValueError(f"duplicate block_id in aligned data: {dup[:5]}")
+    work = copy.deepcopy(data)
     by_id = {
-        b.get("block_id"): (p, b)
-        for p in data.get("pages", [])
+        safe_key(b.get("block_id")): (p, b)
+        for p in work.get("pages", [])
         for b in p.get("blocks", [])
     }
+    neigh = block_neighbours(data)
     applied: list[str] = []
     removed: list[str] = []
     missing: list[str] = []
-    for edit in patch.get("edits", []):
-        bid = edit.get("block_id")
-        if bid not in by_id:
-            missing.append(str(bid))
+    stale: list[str] = []
+    invalid: list[str] = []
+    strict = patch.get("version", 1) >= 2
+    for edit in patch["edits"]:
+        problem = _edit_problem(edit, strict)
+        if problem:
+            who = edit.get("block_id") if isinstance(edit, dict) else repr(edit)
+            invalid.append(f"{who}: {problem}")
+            continue
+        bid = edit["block_id"]
+        if safe_key(bid) not in by_id:
+            missing.append(bid)
             continue
         page, block = by_id[bid]
+        # Optimistic lock: block ids are positional (p004_01), so a re-split can
+        # make an id point at different text.  A patch that carries old_hash is
+        # applied only if the block's source text still matches.
+        locked = "old_hash" in edit or strict
+        if locked and (not edit.get("old_hash") or edit["old_hash"] != block_src_hash(block)):
+            stale.append(bid)
+            continue
+        if ("page" in edit and edit["page"] != page.get("page")) or (strict and edit["page"] != page.get("page")):
+            stale.append(bid)
+            continue
+        if "old_struct" in edit and edit["old_struct"] != block_struct_digest(block):
+            stale.append(bid)
+            continue
+        if "old_prev" in edit or "old_next" in edit:
+            # Neighbour fingerprint over the ORIGINAL book order: rejects a
+            # same-text block that a re-split moved to a different spot.
+            prev_h, next_h = neigh[bid]
+            if edit.get("old_prev", prev_h) != prev_h or edit.get("old_next", next_h) != next_h:
+                stale.append(bid)
+                continue
+        olds = {"translation": block.get("translation") or "", "role": block.get("role"),
+                "level": block.get("level")}
+        if any(k in edit and edit[k] != olds[f] for f, k in _OLD_KEY.items()):
+            stale.append(bid)
+            continue
         if edit.get("remove"):
             page["blocks"] = [b for b in page["blocks"] if b is not block]
-            removed.append(str(bid))
-            applied.append(str(bid))
+            del by_id[safe_key(bid)]
+            removed.append(bid)
+            applied.append(bid)
             continue
-        if "translation" in edit:
-            block["translation"] = edit["translation"]
-        for field in ("role", "level"):
-            if field in edit:
-                block[field] = edit[field]
-        applied.append(str(bid))
-    return {"applied": applied, "removed": removed, "missing": missing}
+        trial = {**block, **{f: edit[f] for f in _EDIT_FIELDS if f in edit}}
+        why = _role_problem(trial)
+        if why:
+            invalid.append(f"{bid}: {why}")
+            continue
+        block.update({f: edit[f] for f in _EDIT_FIELDS if f in edit})
+        applied.append(bid)
+    report: dict[str, Any] = {"applied": applied, "removed": removed, "missing": missing,
+                              "stale": stale, "invalid": invalid}
+    if strict and not allow_partial and (missing or stale or invalid):
+        return {**report, "applied": [], "removed": [],
+                "not_applied": applied, "not_applied_removed": removed}
+    data["pages"] = work.get("pages", [])
+    return report
 
 
 def _split_reference_blocks(blocks: list[dict], changed: list[dict]) -> None:
@@ -1973,34 +2197,134 @@ def normalize_aligned(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_PAGE_PATCH_TOP = {"pages", "old_page_digests", "version"}
+_PAGE_ENTRY_KEYS = {"block_id", "role", "translation", "level", "text", "rows", "items", "figures",
+                    "col_widths_mm", "couplet", "caption"}
+_PAGE_EXISTING_KEYS = ("role", "translation", "level")
+
+
+def page_digest(page: dict[str, Any]) -> str:
+    """Digest of a page's ordered block list; binds a whole-page patch to the page it was made from."""
+    import hashlib
+    import json
+
+    payload = json.dumps([block_struct_digest(b) for b in page.get("blocks", [])], ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
 def apply_page_patch(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     """Replace selected pages' block lists from a declarative patch.
 
     Patch format::
 
         {"pages": {"352": [{"block_id": "p352_b07", "role": "body",
-                            "level": 2, "translation": "..."}, ...]}}
+                            "level": 2, "translation": "..."}, ...]},
+         "old_page_digests": {"352": "<page_digest of the page the patch was made from>"}}
 
-    Existing blocks are looked up by ``block_id`` so their geometry survives;
-    blocks whose id is new are appended with only the fields given.
+    Existing blocks are looked up by ``block_id`` so their geometry survives
+    (only role/translation/level may change).  A new block must carry a valid
+    ``role`` and may carry text/rows/items/figures/col_widths_mm/couplet/caption.
+    ``old_page_digests`` is optional: when given for a page, the page must still
+    be exactly what the patch was made from, otherwise the whole batch is
+    rejected.  Everything is validated on a candidate before any page is replaced.
     """
-    applied = []
+    from booklayout.profile import validate_aligned
+
+    if not isinstance(patch, dict) or "pages" not in patch:
+        raise ValueError("page patch must be an object with an explicit `pages` key ({\"pages\": {}} is a no-op)")
+    unknown = set(patch) - _PAGE_PATCH_TOP
+    if unknown:
+        raise ValueError(f"unknown top-level fields in page patch: {sorted(unknown)}")
+    pages_patch = patch["pages"]
+    if not isinstance(pages_patch, dict):
+        raise ValueError("`pages` must be an object mapping page number -> list of blocks")
+    digests = patch.get("old_page_digests", {})
+    if not isinstance(digests, dict):
+        raise ValueError("`old_page_digests` must be an object mapping page number -> digest")
+    page_nums = [page.get("page") for page in data.get("pages", [])]
+    dups = sorted({n for n in page_nums if page_nums.count(n) > 1}, key=repr)
+    if dups:
+        raise ValueError(f"aligned file has duplicate page numbers {dups}: refusing page repair")
     by_page = {page["page"]: page for page in data.get("pages", [])}
-    for number, entries in patch.get("pages", {}).items():
-        page = by_page[int(number)]
+    owner: dict[Any, int] = {}
+    for page in data.get("pages", []):
+        for b in page.get("blocks", []):
+            owner.setdefault(b.get("block_id"), page["page"])
+
+    def canon(number: Any) -> int:
+        try:
+            n = int(number)
+        except (TypeError, ValueError):
+            raise ValueError(f"page key {number!r} is not an integer") from None
+        if n not in by_page:
+            raise ValueError(f"page {number} not in the aligned file")
+        return n
+
+    todo: dict[int, list[dict[str, Any]]] = {}
+    for number, entries in pages_patch.items():  # validate everything before mutating
+        n = canon(number)
+        if n in todo:
+            raise ValueError(f"page {n} appears twice in the patch (key {number!r})")
+        if not isinstance(entries, list):
+            raise ValueError(f"page {number}: value must be a list of blocks ([] clears the page)")
+        for e in entries:
+            if not isinstance(e, dict) or not isinstance(e.get("block_id"), str) or not e["block_id"]:
+                raise ValueError(f"page {number}: every entry needs a non-empty string block_id")
+            bad = set(e) - _PAGE_ENTRY_KEYS
+            if bad:
+                raise ValueError(f"page {number} block {e['block_id']}: unsupported fields {sorted(bad)}")
+        todo[n] = entries
+    seen_dig: set[int] = set()
+    for number, dig in digests.items():
+        n = canon(number)
+        if n in seen_dig or n not in todo:
+            raise ValueError(f"old_page_digests key {number!r} duplicates another or has no page in `pages`")
+        seen_dig.add(n)
+        if dig != page_digest(by_page[n]):
+            raise ValueError(f"page {n} changed since the patch was made (old_page_digests mismatch)")
+
+    candidate: dict[int, list[dict[str, Any]]] = {}
+    for n, entries in todo.items():
+        page = by_page[n]
+        ids_here = [b.get("block_id") for b in page["blocks"]]
+        if len(ids_here) != len(set(map(repr, ids_here))):
+            raise ValueError(f"page {n} has duplicate block_ids; fix the aligned file before repair")
         existing = {b.get("block_id"): b for b in page["blocks"]}
         new_blocks = []
         for entry in entries:
+            is_new = entry["block_id"] not in existing
+            if is_new and owner.get(entry["block_id"], n) != n:
+                raise ValueError(f"page {n} block {entry['block_id']}: id belongs to page "
+                                 f"{owner[entry['block_id']]}; moving a block across pages is not supported")
             block = dict(existing.get(entry["block_id"], {}))
             block.setdefault("block_id", entry["block_id"])
-            block.setdefault("source_page", str(number))
+            if is_new:
+                block.setdefault("source_page", n)
             block.setdefault("chapter", page.get("chapter", ""))
             block.setdefault("kind", page.get("kind", ""))
             block.setdefault("level", 1)
-            for field in ("role", "translation", "level"):
+            if not is_new:  # structural fields of an existing block are not editable here: never accept-and-ignore
+                ignored = [f for f in entry if f not in _PAGE_EXISTING_KEYS and f != "block_id"
+                           and entry[f] != existing[entry["block_id"]].get(f)]
+                if ignored:
+                    raise ValueError(f"page {n} block {entry['block_id']}: fields {sorted(ignored)} of an existing "
+                                     "block cannot be changed by repair (use patch-blocks or omit them)")
+            for field in (_PAGE_EXISTING_KEYS if not is_new else tuple(_PAGE_ENTRY_KEYS - {"block_id"})):
                 if field in entry:
                     block[field] = entry[field]
             new_blocks.append(block)
-        page["blocks"] = new_blocks
-        applied.append(int(number))
-    return {"patched_pages": applied}
+        candidate[n] = new_blocks
+    ids: dict[str, int] = {}
+    for p in data.get("pages", []):
+        for b in candidate.get(p["page"], p.get("blocks", [])):
+            bid = b.get("block_id")
+            if isinstance(bid, str) and bid in ids:
+                raise ValueError(f"duplicate block_id {bid!r} on pages {ids[bid]} and {p['page']}")
+            if isinstance(bid, str):
+                ids[bid] = p["page"]
+    errors = validate_aligned({"pages": [{"page": n, "blocks": bl} for n, bl in candidate.items()]})
+    if errors:
+        raise ValueError("candidate pages fail validation: " + "; ".join(errors[:5]))
+    for n, blocks in candidate.items():
+        by_page[n]["blocks"] = blocks
+    return {"patched_pages": list(candidate)}

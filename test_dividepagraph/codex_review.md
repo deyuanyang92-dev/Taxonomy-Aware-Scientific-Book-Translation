@@ -1,0 +1,5 @@
+1. **01 重建页库。** docstore 已支持按物理页 OCR 和跳过已有页。另建 `ocr_pages/` 会产生两份校正记录；前后多取两页也不能确定同页章界。（01_ocr.md:31、112；docstore/textify.py:152、160）
+2. **02 误用清单。** `chapter_split` 已探章，但按整页切；半页起章需在 `chapter_plan` 增加块边界。`chapter_manifest` 只查交付文件，`split_check` 只查图注混入等异常，两者均未验证块覆盖。（02.md:117；chapter_split.py:5；chapter_manifest.py:19；split_check.py:2）
+3. **03 重建内容主库。** 对齐 JSON 已有 `block_id`，`patch-blocks` 改块、`repair` 换页。最大风险是重切后按页内序号生成的 ID 指向另一段，旧补丁静默改错；应先校验原文版本。（03_json_ai.md:35；booklayout/alignmd.py:94；booklayout/cli.py:12）
+4. **04 混用预览与终稿页码。** Typst 0.13.1 已装，百毫秒预览仍未实测。Typst 与 DOCX 可有不同分页；单章增页后，合卷加页码也修不准目录、索引，终稿仍需两遍排版。（04_pdf.md:45、52；docs/booklayout.md:84）
+5. **最小顺序。** 先按页 OCR，再确认章界并校验块无重漏，按所选页或章翻译；复用对齐 JSON 局改、单章 DOCX 预览，终稿才跑 `build→map-pages→build`。最后评测 Typst。（docstore/cli.py:524；chapter_split.py:7；docs/booklayout.md:195）
