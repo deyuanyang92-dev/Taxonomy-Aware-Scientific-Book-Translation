@@ -62,3 +62,11 @@ Accepted output becomes primary without upgrading verification level; rejected o
 Both outcomes prevent repeat processing. `_audit/proofread_KEY.jsonl` records decisions, author, metadata,
 and up to 200 word-diff spans; rejections also go to `_audit/proofread_rejects_KEY.jsonl`.
 Failures remain retryable, and each completed attempt prints a flushed progress line.
+
+## 2026-11-21 PaddleOCR、Tesseract、kraken 与 PaddleOCR-VL 的实测与设计入口
+
+- PaddleOCR 3.7（paddlepaddle-gpu 3.3.1）使用手册：`docs/paddleocr_manual.md`。
+- 多引擎统一适配器设计（兼容 kraken、PaddleOCR、Tesseract 等）及 Tesseract 参数网格记录：`docs/ocr_multi_engine_plan.md`。
+- 评测进度与规则：`test-ocr/PROGRESS.md`；全部数值行：`docs/ocr_eval/LEDGER.tsv`。
+- 日文 Imajima 结果（cer_norm，G0 n=14 / G2 n=12）：PP-OCRv6 medium 0.0482 / 0.0483；v5 server 0.0602 / 0.026；Tesseract 最佳变体 0.1559 / 0.1896；PaddleOCR-VL-1.6 0.1666 / 2.1307（有幻觉页，不用于全书）。
+- kraken（https://github.com/mittagessen/kraken，Apache-2.0，7.2）：已装在 `/root/ocr_eval/venv_kraken`，`kraken list` 含 Fraktur、德文 antiqua/Fraktur、拉丁摇篮本、CATMuS-Print 与日文模型；已测（2026-11-21）：PP-OCRv6 与 CATMuS-Print 模型卡无日文/汉字，G0 单页试点输出无假名汉字；旧英文页 n=4（旧金标仅一致率）与 Tesseract 无可区分差异。德文 Fraktur/拉丁摇篮本模型尚未测，尚无老分类文献金标，需用户提供。
