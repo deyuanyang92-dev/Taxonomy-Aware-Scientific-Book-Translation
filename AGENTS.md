@@ -21,6 +21,8 @@
 - 找原件 PDF 要同时搜 `/mnt/n` 和 `/mnt/p` 两个盘（不少原件在 `/mnt/n/Sandisk/`、OneDrive、微信/QQ 目录）；找到后先比 sha256，再用 `docstore attach <key> <pdf> --check` 绑定到已登记资料（不复制、不移动原件），不要另登记一份。
 - 库根默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可用 `--root` 或 `DOCSTORE_ROOT` 覆盖。
 
+- OCR 引擎或参数评测前，先读 `docs/ocr_tool_survey.md`、`docs/ocr_hard_scans.md`、`docs/ocr_eval/LEDGER.tsv`，已测的不重复；每次新测试必须追加一行到 `LEDGER.tsv`（日期、引擎/参数、测试集、指标、结果、费用、出处）。子代理做 OCR 调研，提示词必须带这三个文件。
+
 ## 技能目录与仓库的关系（以仓库为准）
 
 - `skill/*.md`、`skill/domains/`、`scripts/` 以**本仓库为准**；`~/.claude/skills/yzz-translate/`（Codex 端 `~/.codex/skills/yzz-translate` 指向同一目录）只是副本，不是软链接。

@@ -184,7 +184,9 @@ def _cache_file(pdf_path: str, page_no: int, dpi: int) -> Path:
     unclip = os.environ.get("DOCSTORE_PPOCR_UNCLIP")
     root = Path(os.environ.get("DOCSTORE_PPOCR_CACHE", str(Path.home() / ".cache" / "docstore_ppocr")))
     ver = "_v2" if os.environ.get("DOCSTORE_PPOCR_ADAPTIVE", "1") != "0" else ""  # v2：旋转判断+自适应二值化+纠斜
-    return root / fp / f"{model}_{dpi}{'_u' + unclip if unclip else ''}{ver}" / f"p{page_no:04d}.json"
+    extra = os.environ.get("DOCSTORE_PPOCR_PARAMS")  # 调参扫描：参数不同缓存不同
+    ptag = "_p" + hashlib.sha1(extra.encode()).hexdigest()[:8] if extra else ""
+    return root / fp / f"{model}_{dpi}{'_u' + unclip if unclip else ''}{ptag}{ver}" / f"p{page_no:04d}.json"
 
 
 def ppocr_rows(pdf_path: str, page_no: int, dpi: int) -> tuple[list[Any], float]:

@@ -20,7 +20,7 @@
   --llm-mode edits（旧模式）：deepseek-flash 关思考，一次调用只返回 JSON 改动；改动须 old 在单元译文里恰好出现一次，并通过 polish_guard，否则拒绝并记录；
   --think-escalate：第一轮后仍有一致性警告或保真问题的单元，才开思考重跑一次。
 4 输出：out_dir/zh.md（带页码标记）、report.md（逐单元）、edits.jsonl（采纳与拒绝的改动）。每次 LLM 调用由 llm_engines 追加到 usage.tsv。
-DeepSeek 只在夜间（北京时间 22:00–08:00）调用，除非 LLM_SKIP_OFFPEAK=1（须用户授权）。--dry 只列计划（请求数、缓存命中、估算 token），不联网、不调模型。
+DeepSeek 只在折扣时段（北京时间 18:00–次日 09:00 随时可用；高峰 09–12、14–18 点工作日不发请求）调用，除非 LLM_SKIP_OFFPEAK=1（须用户授权）。--dry 只列计划（请求数、缓存命中、估算 token），不联网、不调模型。
 """
 from __future__ import annotations
 

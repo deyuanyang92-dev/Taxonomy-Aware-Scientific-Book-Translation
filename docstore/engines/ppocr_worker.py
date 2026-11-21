@@ -13,15 +13,20 @@ from ppocr_img import binarize, deskew, rotate90  # 同目录（worker 以脚本
 from paddleocr import PaddleOCR
 
 model = sys.argv[1] if len(sys.argv) > 1 else "PP-OCRv5_server"
-ocr = PaddleOCR(
+_kw = dict(
     text_detection_model_name=model + "_det",
     text_recognition_model_name=model + "_rec",
     use_doc_orientation_classify=False,
     use_doc_unwarping=False,
     use_textline_orientation=False,
-    # 检测框外扩比例（缺省 1.5）；行末单字被截时调大（DOCSTORE_PPOCR_UNCLIP）
-    **({"text_det_unclip_ratio": float(os.environ["DOCSTORE_PPOCR_UNCLIP"])} if os.environ.get("DOCSTORE_PPOCR_UNCLIP") else {}),
 )
+# 检测框外扩比例（缺省 1.5）；行末单字被截时调大（DOCSTORE_PPOCR_UNCLIP）
+if os.environ.get("DOCSTORE_PPOCR_UNCLIP"):
+    _kw["text_det_unclip_ratio"] = float(os.environ["DOCSTORE_PPOCR_UNCLIP"])
+# 调参扫描：DOCSTORE_PPOCR_PARAMS='{"text_det_thresh":0.2,"use_textline_orientation":true}' 覆盖上面任何构造参数
+if os.environ.get("DOCSTORE_PPOCR_PARAMS"):
+    _kw.update(json.loads(os.environ["DOCSTORE_PPOCR_PARAMS"]))
+ocr = PaddleOCR(**_kw)
 
 
 def run(img):

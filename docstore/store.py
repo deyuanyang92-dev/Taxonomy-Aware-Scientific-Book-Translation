@@ -344,6 +344,15 @@ class Store:
             return None
         return json.loads(p.read_text(encoding="utf-8"))
 
+    def set_extra(self, key: str, n: int, field: str, value) -> None:
+        """在页面 JSON 的 extra 下写一个字段（不改正文与版本）。"""
+        with _flock(self.root / "pages" / key / ".lock"):
+            page = self.read_page(key, n)
+            if page is None:
+                raise KeyError(f"{key} p{n}")
+            page.setdefault("extra", {})[field] = value
+            _atomic_write(self.page_path(key, n), json.dumps(page, ensure_ascii=False, indent=1))
+
     def page_numbers(self, key: str) -> list[int]:
         d = self.root / "pages" / key
         if not d.exists():

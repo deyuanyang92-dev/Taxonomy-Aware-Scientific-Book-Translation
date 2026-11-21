@@ -25,7 +25,7 @@
 告警口径：
   - 高峰调用：同样 token 在高峰付两倍，时间戳落在官方高峰即计入「多花」；
   - 折扣窗口外调用：只判定最近 `--since-hours` 小时的 DeepSeek 调用，规则取 `deepseek_offpeak.is_peak()`
-    （现行 00:30–08:30 窗口，`YZZ_DEEPSEEK_NIGHT` 可覆盖），历史旧账不追溯；
+    （现行：官方高峰 09–12、14–18 点工作日之外都放行，即含 18:00–次日 09:00；`YZZ_DEEPSEEK_PEAK`/`YZZ_DEEPSEEK_NIGHT` 可覆盖），历史旧账不追溯；
   - 缓存命中率低：DeepSeek 缓存价约为输入价的 1/50，命中率长期偏低说明 system 前缀在变，钱白花；
   - 坏行：列数不足、时间解析失败的行计入 `坏行`，不参与合计，也不让整份账本失效。
 """
@@ -343,7 +343,7 @@ def alerts(rows: Sequence[Row], bad: int, cny: float, mult: float,
             off = [r for r in recent if policy_peak(r.ts)]
             if off:
                 out.append(f"折扣窗口外 DeepSeek 调用 {len(off)} 次（近 {since_hours:g} 小时；"
-                           f"现行策略 00:30–08:30 才发请求），最近一次 {off[-1].ts.astimezone(BJ):%m-%d %H:%M}")
+                           f"现行策略避开工作日 09–12、14–18 点高峰），最近一次 {off[-1].ts.astimezone(BJ):%m-%d %H:%M}")
     ds = [r for r in rows if r.engine.startswith(DEEPSEEK_PREFIX) and r.trec]
     if ds:
         inp = sum(r.inp for r in ds)

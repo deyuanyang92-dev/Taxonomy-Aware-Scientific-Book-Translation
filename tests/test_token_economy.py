@@ -62,3 +62,13 @@ def test_guard_engine_blocks_expensive_unless_forced():
     with pytest.raises(SystemExit, match="force-engine"):
         te.guard_engine("claude-opus")
     assert te.guard_engine("claude-opus", force=True) == "claude-opus"
+
+def test_set_budget_overrides_env_and_none_clears(monkeypatch):
+    monkeypatch.setenv("YZZ_TOKEN_BUDGET", "5")
+    try:
+        te.set_budget(9)
+        assert te.budget_limit() == 9
+        te.set_budget(None)
+        assert te.budget_limit() == 5
+    finally:
+        te.set_budget(None)

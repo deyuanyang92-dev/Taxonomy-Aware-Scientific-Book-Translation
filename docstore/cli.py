@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix", "namefix"}
 WRITE_CMDS.add("proofread")
 
 
@@ -284,6 +284,27 @@ def cmd_lang(st: Store, a) -> None:
             if d.get("kind") in ("英文原著", "外文原著"):
                 fields["kind"] = "英文原著" if r["lang"] == "en" else "外文原著"
             st.update_doc(key, **fields)
+
+
+def cmd_namefix(st: Store, a) -> None:
+    """学名校正（零模型）：每页抽拉丁名，核本地 WoRMS 缓存，结果每名一行写进页面 JSON extra.names；正文不改。"""
+    from . import namefix
+
+    lo, hi = (int(x) for x in (a.pages.split("-") + [a.pages])[:2]) if a.pages else (0, 10**9)
+    w = namefix.Worms(a.cache) if a.cache else namefix.Worms()
+    stats: dict[str, int] = {}
+    for n in st.page_numbers(a.key):
+        if not lo <= n <= hi:
+            continue
+        pg = st.read_page(a.key, n) or {}
+        rows = namefix.fix_text(pg.get("text") or "", w)
+        for r in rows:
+            stats[r["status"]] = stats.get(r["status"], 0) + 1
+            if a.dry or r["status"] != "exact":
+                print(f"p{n}\t{r['status']}\t{r['ocr']}\t{r['worms'] or '-'}")
+        if rows and not a.dry:
+            st.set_extra(a.key, n, "names", rows)
+    print(f"{a.key}\t{stats}{'（dry）' if a.dry else ''}")
 
 
 def cmd_postfix(st: Store, a) -> None:
@@ -618,6 +639,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--dictionary", help="词典文件（每行一词），只用于标疑进复核队列，绝不用来替换")
     s.add_argument("--review-out", help="复核队列 JSONL（歧义候选、词典标疑），不改正文")
     s.set_defaults(fn=cmd_postfix)
+
+    s = sub.add_parser("namefix", help="学名校正：抽页内拉丁名，核本地 WoRMS 缓存，每名一行写进页面 JSON extra.names（零模型）")
+    s.add_argument("key")
+    s.add_argument("--pages", help="页码范围，如 3-12")
+    s.add_argument("--dry", action="store_true", help="只打印，不写页面")
+    s.add_argument("--cache", help="WoRMS 缓存 sqlite，默认 ~/.specimen_inventory/worms_cache.sqlite")
+    s.set_defaults(fn=cmd_namefix)
 
     s = sub.add_parser("proofread", help="Proofread low-confidence OCR against page images")
     s.add_argument("key")

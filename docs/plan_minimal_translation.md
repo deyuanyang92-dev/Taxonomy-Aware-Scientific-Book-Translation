@@ -27,7 +27,7 @@
 - [ ] Harrison 排版：裁图放回原位、图注在图下、标题/目录中英双语（heading_bilingual、fidelity_check 先对各单元跑 --fix）——上次中途停止，单元稿有 _试译_before_gloss.md 等备份
 
 ## 4. 规则
-- 能脚本做的不用模型；DeepSeek 只在北京时间 22:00–08:00 调用。
+- 能脚本做的不用模型；DeepSeek 只在折扣时段调用（北京时间 18:00–次日 09:00 可用，工作日 09–12、14–18 点高峰不调用）。
 - 新方法先用 1–2 段测试，不整章跑。
 
 ## 5. 低成本流程：gtrans.py（Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考）
@@ -35,4 +35,4 @@
 - 流程：英文 → 分单元（页码标记、标题、图注、正文各自成单元）→ Google 初译（缓存、限速、退避）→ `skill/google_fixes.tsv` 固有错译 → yiku HARD 术语替换 → 一致性警告 → fidelity_check --fix、heading_bilingual、cite_diff → DeepSeek flash 不开思考（每单元 ≤1500 词，JSON 改动，polish_guard 护栏）→ 仅报警单元 `--think-escalate` 开思考重跑。
 - 成本：Google 免费；DeepSeek 一段 225 词约 0.5–0.9k 输入、0.1–0.25k 输出 token（不开思考）；开思考同一段输出约 2.8k token，所以只对真有问题的单元升级。
 - 试验（探索记录/Google+DeepSeek试验/smoke/，S2 第一段）：脚本修正「脑电波→灵感」；不开思考的核对改出 6 处，其中误译 4 处（小猎犬号、增殖、隔离、漏译「生态位」）。遗留：个别翻译腔长句未改；「Patagonia」被拉丁名启发式误报（已改为不触发升级）。
-- 规则：DeepSeek 只在北京时间 22:00–08:00 调用，除非用户授权（`LLM_SKIP_OFFPEAK=1`）；护栏会拒绝改数字、年份、学名的改动，这类问题由脚本或人工处理。
+- 规则：DeepSeek 只在折扣时段调用（北京时间 18:00–次日 09:00 可用，工作日 09–12、14–18 点高峰不调用），除非用户授权（`LLM_SKIP_OFFPEAK=1`）；护栏会拒绝改数字、年份、学名的改动，这类问题由脚本或人工处理。

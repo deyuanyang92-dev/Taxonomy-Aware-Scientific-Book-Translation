@@ -22,7 +22,7 @@ scripts/sync_skill.sh --dry                      # 改完 skill/、scripts/、tr
 
 ## 容易踩的坑
 
-- **本机有两份检出**：本目录（`/mnt/p/翻译-译作/...`）和 `/root/github/Taxonomy-Aware-Scientific-Book-Translation`（两边都有对方没有的未合并改动，勿互相覆盖；DeepSeek 忙时窗口以 `/root/github` 份为准）。2026-11-19 的省 token 改动（`transqa/taxoblocks.risk()` 去误报、`claude -p` 预算上限，见 `docs/superpowers/specs/2026-11-19-token-optimization-design.md`）已提交到 `/root/github`（提交 2c25d44），并以相同代码移植到本目录工作区（未提交，因本目录这些文件还带别的未提交改动）。`pip install -e` 指向 `/root/github` 份，所以 PATH 上的 `docstore`/`booklayout`/`taxadb` 控制台命令，以及在本仓库外 `import docstore`，用的是后者。要运行本目录的代码，在仓库根目录用 `python3 -m booklayout ...`（已验证 `-m` 会优先取当前目录），或用 pytest。 `docstore keys extract|check`（检索表偶句重建，issue #38，提交 6331907）同样两边都有：`/root/github` 已提交，本目录为未提交的相同文件。
+- **本机有两份检出**：本目录（`/mnt/p/翻译-译作/...`）和 `/root/github/Taxonomy-Aware-Scientific-Book-Translation`（两边都有对方没有的未合并改动，勿互相覆盖；DeepSeek 忙时窗口以 `/root/github` 份为准）。2026-11-19 的省 token 改动（`transqa/taxoblocks.risk()` 去误报、`claude -p` 预算上限，见 `docs/superpowers/specs/2026-11-19-token-optimization-design.md`）已提交到 `/root/github`（提交 2c25d44），并以相同代码移植到本目录工作区（未提交，因本目录这些文件还带别的未提交改动）。`pip install -e` 指向 `/root/github` 份，所以 PATH 上的 `docstore`/`booklayout`/`taxadb` 控制台命令，以及在本仓库外 `import docstore`，用的是后者。要运行本目录的代码，在仓库根目录用 `python3 -m booklayout ...`（已验证 `-m` 会优先取当前目录），或用 pytest。 `docstore keys extract|check`（检索表偶句重建，issue #38，提交 6331907）同样两边都有：`/root/github` 已提交，本目录为未提交的相同文件。 全书质检流水线（`scripts/qa_run.py`、`qa_align/estimate/report/sample`、`transqa/{aligner,guardrails,postgate,sampling}.py`，计划 `docs/superpowers/plans/2026-11-19-translation-qa.md`，用法见 `docs/workflow.md` 6b）在分支 `qa-three-review`（worktree `/root/github/tatb-qa-wt`，9 个提交，末尾 23c1210）上提交；合并进 main 前，`/root/github` 主工作区和安装的技能目录都还没有它。本目录已用三方合并并入（未提交，`auto_translate.py`、`token_economy.py` 只合入本计划改动，原件备份在会话临时目录）。**合并后再跑 `scripts/sync_skill.sh`**：现在从该分支同步会把技能目录里较新的 `deepseek_offpeak.py` 等文件回退。
 - `conftest.py` 负责让测试用本仓库的 `yiku/`、`docstore/`，并把 `scripts/`、`scripts/publish/`、`scripts/bench/` 追加到 `sys.path` 末尾，测试里直接 `import apply_issues` 这类顶层模块名。`scripts/` 里需要 `transqa` 的脚本自己把仓库根插进 `sys.path`。
 - 仓库根的 `yiku/` 是项目目录，真正的包在 `yiku/yiku/`。在仓库根 `import yiku` 得到的是空的命名空间包，要靠 pytest（`conftest.py` 调了路径）或进入 `yiku/` 再用。
 - 技能目录里 md 文件在根，仓库里在 `skill/` 下；`run_batches.py` 用 `SKD = SK if (SK / 'RULES.md').exists() else SK / 'skill'` 兼容两种布局，新增脚本读规则文件时照此办理。
@@ -45,7 +45,7 @@ scripts/sync_skill.sh --dry                      # 改完 skill/、scripts/、tr
 
 **质检与出版**
 - `transqa/`：共用 QA 层。`check_all(src_md, tgt_md, sl, tl, domain)` 返回 `Issue(code, severity, …)`，`critical`/`major` 为阻断；通用检查在 `core.py`，领域插件注册在 `transqa/__init__.py` 的 `PLUGINS`（现有 `taxonomy`），语种表在 `languages.py`。调用方是 `scripts/auto_translate.py` 和 `scripts/apply_issues.py`。
-- `booklayout/`：确定性排版 CLI（对齐 JSON → DOCX/PDF）。两遍：`build` 出 PDF → `map-pages` 量页 → `build --map` 重排 → `check`/`qa`/`gate`。细则见 `docs/booklayout.md`。
+- `booklayout/`：确定性排版 CLI（对齐 JSON → DOCX/PDF）。两遍：`build` 出 PDF → `map-pages` 量页 → `build --map` 重排 → `check`/`qa`/`gate`。细则见 `docs/booklayout.md`；格式规则表与交付前三闸见 `docs/booklayout-standard.md`。成品 docx 样式闸：`python3 -m booklayout.stylecheck X.docx`（中文斜体、半角括号接中文、全角空格、空段落、图注样式不一致）。
 - `scripts/publish/`：成品阶段工具（`patch_release.py` 定点替换已出版的 docx/pdf、`word_render.py`、`share_pdf.sh`、索引与图注抽取）。在 Windows 上调用要加 `-X utf8`。
 
 阅读次序：`docs/design.md`（原则与分层）→ `docs/architecture.md`（组件与接口）→ `docs/workflow.md`（每章命令和质量门）→ `skill/SKILL.md`（给模型的流程）。
