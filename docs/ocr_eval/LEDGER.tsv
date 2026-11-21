@@ -174,3 +174,7 @@ date	engine_params	set	metric	result	cost	source
 2026-11-21	kraken 7.2 CPU CATMuS-Print fondue-large	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.766/0.623/0.001/0.0073	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
 2026-11-21	Tesseract 5.3.4 best eng psm3	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.806/0.607/0.000/0.0020	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
 2026-11-21	Tesseract 5.3.4 best lat psm3	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.807/0.604/0.001/0.0010	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
+2026-11-21	PP-OCRv6 medium 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0394/0.0214 (z09 .040 z33 .069 z54 .010) 3.31s/页	free	scripts/bench/zh_run.py; test-ocr/runs/zh_ppv6m
+2026-11-21	PP-OCRv5 server 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0490/0.0252 3.37s/页	free	test-ocr/runs/zh_ppppocrv5server
+2026-11-21	PP-OCRv5 mobile 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0542/0.0292 1.14s/页	free	test-ocr/runs/zh_ppppocrv5mobile
+2026-11-21	Tesseract 5.3.4 chi_sim psm3	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.1318/0.0911 1.86s/页	free	test-ocr/runs/zh_tess_chisim
