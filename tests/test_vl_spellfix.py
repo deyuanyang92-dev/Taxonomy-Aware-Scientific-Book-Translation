@@ -101,3 +101,16 @@ def test_index_blocks_suggest_only_but_key_prose_fixed(tmp_path):
     cli.main([str(p), "--inplace", "--tess-root", str(tess), "--worms", "", "--lang", "", "--extra-words", "", "--out", str(tmp_path / "o")])
     b = json.loads(p.read_text(encoding="utf-8"))["pages"][0]["blocks"]
     assert "farigeo" in b[0]["text"] and "farnigeo" in b[1]["text"] and "farlngeo" not in b[2]["text"]
+
+
+def test_gender_swap_and_known_name_guards():
+    assert sf.gender_swap("pseudoespinigeros", "pseudoespinigeras") and not sf.gender_swap("faringe", "faringeo")
+    lex = sf.Lexicon({}, {}, {"nephtys": {"rathkei"}})
+    assert lex.is_known_name("rathkei") and not lex.is_known_name("ratbkei")
+
+
+def test_two_engines_same_genus_misread_fixed_only_for_letter_substitution():
+    lex = _lex()
+    assert sf.fix_text("Paraeblersia", sf.Lexicon({}, {"paraehlersia": "Paraehlersia"}, {}), {"paraeblersia"})[0] == "Paraehlersia"
+    assert sf.fix_text("Lopadorhynchus", sf.Lexicon({}, {"lopadorrhynchus": "Lopadorrhynchus"}, {}), {"lopadorhynchus"})[0] == "Lopadorhynchus"
+    assert lex

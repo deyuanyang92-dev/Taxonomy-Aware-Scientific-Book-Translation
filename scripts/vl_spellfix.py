@@ -43,6 +43,10 @@ def main(argv=None) -> int:
         for w in xw.read_text(encoding="utf-8").split():
             dicts.setdefault(sf.fold(w), w)
     genera, epith = sf.worms_names(a.worms)
+    gx = Path(__file__).resolve().parents[1] / "docstore" / "data" / "genera_extra.txt"
+    if gx.is_file():  # WoRMS 缓存缺的属名（人工核过的）
+        for w in gx.read_text(encoding="utf-8").split():
+            genera.setdefault(sf.fold(w), w)
     lex = sf.Lexicon(dicts, genera, epith)
     for d in docs:
         for pg in d["pages"]:

@@ -26,10 +26,11 @@ WORD = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)*", re.UNICODE)
 ALPHA = "abcdefghijklmnopqrstuvwxyzñç"
 COMMON = 3
 RATIO = 3.0
+STRONG = 10
 MIN_LEN = 5
 PREV_CAP = re.compile(r"([A-Z][a-z]+)\.?\s+$")
 CTX = 45
-AUTO = ("tess", "worms")
+AUTO = ("tess", "worms", "vol-strong")
 AUTO_LLM = ("tess-disagree", "tess-weak")  # 2026-11-23 实测 Vol.21/25/36/41 抽样：LLM 在这两类 14 对 0 错；dict/vol/worms-weak/ambiguous 类 26 对 23 错，只作待审建议
 
 
@@ -74,6 +75,15 @@ def inflection(a: str, b: str) -> bool:
             break
         n += 1
     return n >= 4 and n >= min(len(a), len(b)) - 2 and abs(len(a) - len(b)) <= 2 and a != b
+
+
+def gender_swap(a: str, b: str) -> bool:
+    """同词干、末尾 o/os 与 a/as 互换（性数变化，两词常都合法）。"""
+    for x, y in (("os", "as"), ("o", "a")):
+        for p, q in ((x, y), (y, x)):
+            if a.endswith(p) and b.endswith(q) and a[:-len(p)] == b[:-len(q)]:
+                return True
+    return False
 
 
 def recase(orig: str, new: str) -> str:
@@ -124,6 +134,13 @@ class Lexicon:
         self.genera = genera or {}
         self.epith = epith or {}
 
+    def is_known_name(self, f: str) -> bool:
+        if f in self.genera:
+            return True
+        if not hasattr(self, "_all_ep"):
+            self._all_ep = set().union(*self.epith.values()) if self.epith else set()
+        return f in self._all_ep
+
     def valid(self, f: str) -> bool:
         return f in self.dicts or self.cnt.get(f, 0) >= 2
 
@@ -154,8 +171,9 @@ def propose(tok: str, lex: Lexicon, tess: set[str] | None, genus_ctx: str | None
     rare_vol_only = f not in lex.dicts and lex.cnt.get(f, 0) <= 3 and not tok[0].isupper() and genus_ctx is None and bool(lex.dicts)
     if lex.valid(f) and not (name_like and f not in lex.dicts and f not in lex.genera) and not rare_vol_only:
         return None
-    if tess is not None and f in tess:
-        return None  # 第二引擎也读成原词
+    tess_same = tess is not None and f in tess
+    if tess_same and not (lex.genera and tok[0].isupper() and tok.isascii() and genus_ctx is None):
+        return None  # 第二引擎也读成原词（大写学名属名例外：两个引擎可能同样把 h 读成 b，交 WoRMS 唯一匹配判）
     own = lex.cnt.get(f, 0)
     is_name = tok[0].isupper() or genus_ctx is not None
     # 1) WoRMS：属名 / 同属种加词
@@ -172,6 +190,8 @@ def propose(tok: str, lex: Lexicon, tess: set[str] | None, genus_ctx: str | None
             hits = [c for c in edits1(f) if c in lex.genera and len(c) >= MIN_LEN]
             surf = lambda c: lex.genera[c].lower()  # noqa: E731
         u = _unique(hits)
+        if tess_same and not (u and len(u) == len(f) and ocr_like(f, fold(u))):  # 两引擎同读：只认同长度的易混字母替换（h/b 等），不动增删字母的异写（Lopadorhynchus）
+            return None
         if u:
             weak = not ocr_like(f, fold(u)) or inflection(f, fold(u))
             return {"after": recase(tok, surf(u)), "why": "worms-weak" if weak else "worms", "cands": [recase(tok, surf(u))]}
@@ -195,6 +215,8 @@ def propose(tok: str, lex: Lexicon, tess: set[str] | None, genus_ctx: str | None
         if len(ties) > 1:
             return {"after": None, "why": "ambiguous", "cands": [recase(tok, lex.best_form(s[3])) for s in ties]}
         why = "tess" if top[0] else ("vol" if top[1] else "dict")
+        if why == "vol" and top[2] >= STRONG * max(own, 1) and top[3] in lex.dicts and f not in lex.dicts and not inflection(f, top[3]):
+            why = "vol-strong"  # 词典不认的低频词，ED-1 词是词典词且全书频次 >=10 倍：自动改（实测见 LEDGER）
         if why == "tess" and inflection(f, top[3]):
             why = "tess-weak"
         return {"after": recase(tok, lex.best_form(top[3])), "why": why, "cands": [recase(tok, lex.best_form(top[3]))]}
@@ -239,7 +261,10 @@ def fix_text(text: str, lex: Lexicon, tess: set[str] | None, decisions: dict[str
         if decisions is not None and key in decisions:
             ch = decisions[key]
             if ch in cands and ch != tok:
-                ok = why in AUTO_LLM
+                n_o, n_c = lex.cnt.get(fold(tok), 0), lex.cnt.get(fold(ch), 0)
+                ok = why in AUTO_LLM and not lex.is_known_name(fold(tok))  # 原词本身是 WoRMS 已知属名/种加词，LLM 也不得改（rathkei→ratbkei）
+                if ok and why == "tess-weak" and gender_swap(fold(tok), fold(ch)):  # o↔a 阴阳性互换两词都合法（pseudoespinígeros→-eras）：新词须 >=5 倍常见
+                    ok = n_c >= 5 * max(n_o, 1)
                 changes.append({"before": tok, "after": ch, "why": "llm(%s)" % why, "applied": ok})
                 return ch if ok else tok
             changes.append({"before": tok, "after": pr["after"] if pr else None, "why": why, "applied": False,
