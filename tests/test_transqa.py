@@ -49,6 +49,11 @@ def test_clean_translation_has_no_blocking_issue():
 
 
 # ---- 五个审查探针 ----
+def test_punct_only_source_segment_not_empty():
+    src = "<!-- PDF p.1 -->\n\nText eins.\n\n,\n\nText zwei."
+    assert "coverage.segment_empty" not in [i.code for i in check_all(src, src, "de", "de")]
+
+
 def test_probe1_malformed_json_is_failure_not_empty():
     assert at.parse_json_array('[1,"unexpected"]') is None
     assert at.parse_json_array('[{"id": 1}, "junk"]') is None

@@ -71,7 +71,8 @@ def coverage(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> lis
             else:
                 out.append(Issue('coverage.segment_missing', 'major', f'p.{p} 段数少于原文（{nt}/{ns}），疑似漏段', p,
                                  evidence={'src': ns, 'tgt': nt, 'tgt_lines': lines}))
-        empty = [s.id for s in tp[p] if not re.search(r'\w', clean(s.text))]
+        src_blank = {s.id for s in sp[p] if not re.search(r'\w', clean(s.text))}   # 原文本身只有标点（OCR 残符「,」「'」）
+        empty = [s.id for s in tp[p] if not re.search(r'\w', clean(s.text)) and s.id not in src_blank]
         if empty:
             out.append(Issue('coverage.segment_empty', 'major', f'p.{p} 空译段 {empty}', p))
     return out

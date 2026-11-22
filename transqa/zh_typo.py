@@ -138,6 +138,22 @@ def _mechanical(text: str, sp: list[tuple[int, int]]) -> list[Finding]:
     return out
 
 
+def _unmatched_ascii(para: str, ch: str) -> int | None:
+    """段内未配对的半角括号位置：ch='(' 找没有 ')' 对应的左括号，ch=')' 找没有 '(' 对应的右括号。"""
+    stack: list[int] = []
+    loose: list[int] = []
+    for k, x in enumerate(para):
+        if x == '(':
+            stack.append(k)
+        elif x == ')':
+            if stack:
+                stack.pop()
+            else:
+                loose.append(k)
+    pool = stack if ch == '(' else loose
+    return pool[0] if len(pool) == 1 else None
+
+
 def _context_checks(text: str, sp: list[tuple[int, int]], terms: set[str], names: set[str]) -> list[Finding]:
     out: list[Finding] = []
     for pat, new, why in _CTX_RULES:
@@ -164,6 +180,13 @@ def _context_checks(text: str, sp: list[tuple[int, int]], terms: set[str], names
             no, nc = para.count(o), para.count(c)
             if o == '‘':  # ’ 也作撇号，只计不夹在 ASCII 字母之间的
                 nc = len(re.findall(r'(?<![A-Za-z])’|’(?![A-Za-z])', para))
+            if no != nc and (o, c) == ('（', '）'):   # 半角括号与全角括号混用（谷歌「(…）」）：补成全角，机械可改
+                a_open = _unmatched_ascii(para, '(' if nc > no else ')')
+                if a_open is not None and abs(nc - no) == 1 and para.count('(') != para.count(')'):
+                    s = i + a_open
+                    out.append(_mk(text, 'zh.paren_mixed', 'auto', s, s + 1, '（' if nc > no else '）',
+                                   '半角括号与全角括号混用，补成全角', 0.9))
+                    continue
             if no != nc:
                 k = para.find(o if no > nc else c)
                 s = i + max(k, 0)

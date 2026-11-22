@@ -21,7 +21,7 @@ ABBR = {
     'bg': {'стр.': 'p.', 'табл.': 'pl.', 'фиг.': 'fig.', 'сем.': 'fam.', 'и др.': 'et al.'},
     'ru': {'стр.': 'p.', 'с.': 'p.', 'табл.': 'pl.', 'рис.': 'fig.', 'сем.': 'fam.', 'и др.': 'et al.'},
     'uk': {'стор.': 'p.', 'с.': 'p.', 'табл.': 'pl.', 'рис.': 'fig.'},
-    'de': {'S.': 'p.', 'Taf.': 'pl.', 'Abb.': 'fig.', 'u.': 'and'},
+    'de': {'Literaturverzeichnis': 'References', 'S.': 'p.', 'Taf.': 'pl.', 'Abb.': 'fig.', 'u.': 'and'},
     'fr': {'pl.': 'pl.', 'fig.': 'fig.'},
     'ja': {'頁': 'p.', '図版': 'pl.', '図': 'fig.'},
 }
@@ -66,6 +66,9 @@ def classify(text: str, sl: str = '') -> str:
     # 年份允许 OCR 把 1 识成 l/I、0 识成 O（190la）、范围（1856—1858）、后缀字母。叙述句里不会在段首出现「年份:」。
     if re.match(rf'^.{{0,70}}?[,.‚„]\s*{_REF_YEAR}\s*:', t, re.S):
         return 'reference'
+    # 页眉「Literaturverzeichnis 269」：确定性换成 References N，不送机翻（谷歌译成「参考文献」且无法保证一致）
+    if re.fullmatch(r'Literaturverzeichnis\s*[\dIVXLC]*', t):
+        return 'index'
     # OCR 杂符（「IE」「'」「HC 2 eG」「» 7」）：短且没有 4 个字母以上的词，不送机翻；孤立的「pls.」同理
     if not t.startswith('<!--') and (re.fullmatch(r'(?:pls?|figs?|pp?)\.?', t) or (
             len(t) <= 12 and not re.search(r'[^\W\d_]{4,}', t) and not re.search(r'\d{3,}|\b(?:pp?|pls?)\.\s*\d', t))):

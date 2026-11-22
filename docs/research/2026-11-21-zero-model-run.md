@@ -120,3 +120,13 @@ d. 检索表按条切段（日文源）。
 - Kiefer、Rüssel 其实有已核名（yiku：jaws→颚、proboscis→吻、mandible→下颚、maxilla→上颚），前几轮漏查。term_de 增 Kiefer、Rüssel、Mandibel、Maxille（共 27 词，yiku 对照测试覆盖）。
 - 真实参考文献页余下的 9 段「free」：OCR 杂符（IE、'、HC 2 eG、» 7）与孤立「pls.」改判 index（原样保留）；页眉「Literaturverzeichnis N」与页标记仍按正文，机翻成「参考文献 N」本就正确。整页 53 段：42 reference + 7 index + 4（2 页标记、2 页眉）。
 - 评分器 num_missing 口径与 transqa 一致：译文用数词（zwei→两/two）写的数字不算缺。v13 de>en、de>zh：缺数字 0、多出 1、学名 3/3、缺年份 0、zh_typo 无告警。
+
+## 第 8 轮（2026-11-22，v14）：命名法术语、页眉、混宽括号
+
+- 谷歌实测（de→zh）：科/属/亚科/Typuslokalität/Holotypus/Typusart 译得对；错的有 Synonymie→同义词、neue Art→新物种、neue Gattung→新流派、Lectotypus/Syntypen→选型/同型。yiku 无这些词的已核条目。
+- 加 6 条命名法术语到 `scripts/term_de.py`（Holotypus 正模标本、Paratypus 副模标本、Typusart 模式种、neue Art 新种、neue Gattung 新属、Synonymie 同物异名），定名依据：动物志09/33 全文检索（正模标本 3 页、副模标本 3 页、模式种 72 页、新种 50 页、同物异名 22 页）。Lectotypus/Syntypen 无依据，不收，仍由 QA 报警。表共 33 条。
+- 页眉「Literaturverzeichnis N」：`blocks.classify` 判 index，确定性换成「References N」（原先被 taxoblocks 判 junk 原样留在译文，已改为受保护块优先于 junk）。页标记 `<!-- PDF p.N -->` 在 auto_translate 里剥离，从不送机翻（结构行）。
+- 真实文献页（Hartmann-Schröder 1962 p.210/212，53 段）：reference 42、index 9、free 2（仅页标记）。
+- `coverage.segment_empty` 误报：原文本身是标点残符（「,」「'」）的段不再算空译。
+- `zh_typo`：谷歌「(…）」半角/全角混用，补成全角（kind=auto）。
+- v14（5 页德文）：de>en、de>zh 均为 binomials 3/3、years_missing 0、num_missing 0、num_extra 1；de>zh 无 minor 以上问题。

@@ -750,7 +750,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
             if kinds:
                 tk = taxoblocks.kind(s.text, a.sl)
                 stats[f'kind_{tk}'] += 1
-                if tk == 'junk':
+                if tk == 'junk' and classify(s.text, a.sl) not in PROTECTED:
                     texts[s.id] = s.text
                     stats['junk_kept'] += 1
                     continue

@@ -36,6 +36,14 @@ TERMS: list[tuple[str, str, str, str, str, str]] = [
     ("Mandibel", "Mandibeln", "下颚", "mandible", "mandibles", "mandible"),
     ("Maxille", "Maxillen", "上颚", "maxilla", "maxillae", "maxilla"),
     ("Rüssel", "Rüssel", "吻", "proboscis", "proboscis", "proboscis"),
+    # 命名法术语：yiku 无条目，定名取自中国动物志（动物志09/动物志33 全文检索：正模标本 3 页、副模标本 3 页、
+    # 模式种 72 页、新种 50 页、同物异名 22 页）；谷歌原译：Holotypus→正模、neue Art→新物种、neue Gattung→新流派
+    ("Holotypus", "Holotypen", "正模标本", "holotype", "holotypes", ""),
+    ("Paratypus", "Paratypen", "副模标本", "paratype", "paratypes", ""),
+    ("Typusart", "Typusarten", "模式种", "type species", "type species", ""),
+    ("neue Art", "neue Arten", "新种", "new species", "new species", ""),
+    ("neue Gattung", "neue Gattungen", "新属", "new genus", "new genera", ""),
+    ("Synonymie", "Synonymien", "同物异名", "synonymy", "synonymies", ""),
     ("Genitalporus", "Genitalporen", "生殖孔", "genital pore", "genital pores", "genital pore"),
 ]
 # Borstensegment 单数形写成 Borstensegment；复数含 e/en；单复数正则合并为一条，复数分支用 Plural 判定

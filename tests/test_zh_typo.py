@@ -154,3 +154,9 @@ def test_queue_old_is_unique_in_file():
     rows = zh_typo.queue_rows(text, file="x.md")
     for r in rows:
         assert text.count(r["old"]) == 1
+
+
+def test_mixed_width_paren_auto_fixed():
+    t = "我们采集了标本 (正模标本 和 2 副模标本）。"
+    out, fs = zh_typo.fix_mechanical(t)
+    assert out == "我们采集了标本 （正模标本 和 2 副模标本）。" and fs

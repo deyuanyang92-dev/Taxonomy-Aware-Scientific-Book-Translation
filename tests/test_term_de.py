@@ -43,6 +43,14 @@ def test_jaw_proboscis_terms():
     assert protect.restore(m, s, "zh-CN") == "颚 und 吻, 下颚, 上颚"
 
 
+def test_nomenclatural_terms():
+    t = "Holotypus und 3 Paratypen; Typusart: X; neue Art, neue Gattung; Synonymie."
+    m, s = protect.mask(t, "de")
+    assert s == ["Holotypus", "Paratypen", "Typusart", "neue Art", "neue Gattung", "Synonymie"]
+    assert protect.restore(m, s, "zh-CN") == "正模标本 und 3 副模标本; 模式种: X; 新种, 新属; 同物异名."
+    assert "3 paratypes" in protect.restore(m, s, "en") and "new genus" in protect.restore(m, s, "en")
+
+
 def test_no_partial_word():
     assert protect.mask("Palpenartig Antennenlos", "de")[1] == []
 
@@ -50,7 +58,7 @@ def test_no_partial_word():
 @pytest.mark.skipif(not os.path.exists(os.path.expanduser("~/.yiku/yiku.db")), reason="no yiku.db")
 def test_zh_matches_yiku_checked_terms():
     c = sqlite3.connect(os.path.expanduser("~/.yiku/yiku.db"))
-    for *_, zh, _en_s, _en_p, key in [(0, *t[2:]) for t in term_de.TERMS]:
+    for *_, zh, _en_s, _en_p, key in [(0, *t[2:]) for t in term_de.TERMS if t[5]]:
         n = c.execute("select count(*) from terms where en_norm like ? and zh=? and status='已核'",
                       ("%" + key + "%", zh)).fetchone()[0]
         assert n, (key, zh)

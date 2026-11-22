@@ -35,6 +35,15 @@ def test_ocr_junk_and_orphan_fragments_protected():
     assert blocks.classify("Die Art ist 2 mm lang.", "de") == "free"
 
 
+def test_running_header_translated_deterministically():
+    assert blocks.deterministic("Literaturverzeichnis 267", "de") == "References 267"
+
+
+def test_running_header_protected():
+    assert blocks.classify("Literaturverzeichnis 267", "de") == "index"
+    assert blocks.classify("Literaturverzeichnis der Polychaeten von Hamburg und Umgebung", "de") == "free"
+
+
 def test_narrative_with_year_not_reference():
     t = "Die Art wurde von FAUVEL 1923 zuerst gefunden und lebt im Sand der Gezeitenzone bei Hamburg."
     assert blocks.classify(t, "de") == "free"
