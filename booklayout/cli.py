@@ -311,8 +311,23 @@ def cmd_build(args: argparse.Namespace) -> int:
     if schema_errors and args.strict_schema:
         print("aligned schema errors: " + "; ".join(schema_errors[:10]), file=sys.stderr)
         return 6
-    data = build(args.out, page_map, paths, meta, key_breaks)
-    report = _report(data, args.figures, meta)
+    from . import buildcache
+
+    use_cache = not getattr(args, "no_cache", False)
+    key = buildcache.input_key(
+        [args.aligned, args.translation, args.metadata, args.map, args.key_breaks, args.profile],
+        [args.figures],
+        {"out": str(args.out), "title": getattr(args, "title", None)},
+    ) if use_cache else ""
+    cached = buildcache.docx_hit(args.out, key) if use_cache else None
+    if cached is not None:
+        report = dict(cached)
+        print(f"docx cache hit, skipped build: {args.out}")
+    else:
+        data = build(args.out, page_map, paths, meta, key_breaks)
+        report = _report(data, args.figures, meta)
+        if use_cache:
+            buildcache.record_docx(args.out, key, report)
     report.update({"profile": profile.name, "profile_sha256": profile.sha256(),
                    "schema_errors": schema_errors})
     report.update({"out_docx": str(args.out), "page_map_entries": len(page_map),
@@ -321,7 +336,14 @@ def cmd_build(args: argparse.Namespace) -> int:
                    "draft_reasons": draft_reasons})
     pdf = None
     if args.pdf:
-        pdf = _convert_pdf(args.out, args.pdf_out)
+        target_pdf = args.pdf_out or args.out.with_suffix(".pdf")
+        if use_cache and buildcache.pdf_hit(args.out, target_pdf):
+            pdf = target_pdf
+            print(f"pdf cache hit, skipped LibreOffice: {pdf}")
+        else:
+            pdf = _convert_pdf(args.out, args.pdf_out)
+            if use_cache:
+                buildcache.record_pdf(args.out, pdf)
         report["out_pdf"] = str(pdf)
     _write_json(args.report, report)
     print(f"docx={args.out} source_pages={report['source_pages']} blocks={report['blocks']} "
@@ -1722,6 +1744,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--pdf", action="store_true", help="convert DOCX to PDF with LibreOffice")
     b.add_argument("--pdf-out", type=Path, help="PDF path when --pdf is used")
     b.add_argument("--report", type=Path, help="write build_report.json")
+    b.add_argument("--no-cache", action="store_true", help="ignore the input-hash cache and rebuild")
     b.add_argument("--title", help="fallback title when --metadata is omitted")
     b.set_defaults(func=cmd_build)
 
