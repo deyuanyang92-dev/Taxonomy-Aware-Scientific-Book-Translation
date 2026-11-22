@@ -454,6 +454,16 @@ def cmd_keys(st: Store, a) -> None:
         pages, missing = keys.read_cache_pages(cache, a.first, last)
         data = keys.extract(pages)
         data["missing_pages"] = missing
+        if a.recover_tail:
+            from . import keytail
+
+            if not a.key or not st.doc(a.key)["path"]:
+                print("--recover-tail 需要已登记的 key（要读原件 PDF 页图）", file=sys.stderr)
+                sys.exit(1)
+            rlog = keytail.recover_tail_jumps(data, keytail.pdf_renderer(st.doc(a.key)["path"], a.dpi),
+                                              keytail.tesseract_digits)
+            data["tail_recovery"] = rlog
+            print(f"行尾跳转号补读：{sum(1 for x in rlog if x['got'])}/{len(rlog)} 条补回", file=sys.stderr)
         if a.fix:
             try:
                 keys.apply_fixes(data, json.loads(Path(a.fix).read_text(encoding="utf-8")))
@@ -701,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
     e.add_argument("--cache", help="行框缓存目录（含 pNNNN.json）；缺省由 key 的 PDF 指纹推出")
     e.add_argument("--dpi", type=int, default=200)
+    e.add_argument("--recover-tail", action="store_true",
+                   help="对无终点的条目，裁行尾右边缘用 tesseract 补读跳转号（只接受本表已有的、向前的号）")
     e.add_argument("--first", type=int, default=1)
     e.add_argument("--last", type=int, default=0, help="末页（默认到资料末页；用 --cache 时必须给）")
     e.add_argument("--out", help="写 keys.json（couplets、keys、events、missing_pages）")
