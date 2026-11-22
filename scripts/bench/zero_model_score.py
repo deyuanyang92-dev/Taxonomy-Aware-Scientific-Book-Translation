@@ -60,6 +60,18 @@ def main():
         ('v4 de>en', 'de_src.md', 'de_en_v4', 'de', 'en'),
         ('v4 de>zh direct', 'de_src.md', 'de_zh_direct_v4', 'de', 'zh-CN'),
         ('v4 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v4', 'ja', 'zh-CN'),
+        ('v5 de>en', 'de_src.md', 'de_en_v5', 'de', 'en'),
+        ('v5 de>zh direct', 'de_src.md', 'de_zh_direct_v5', 'de', 'zh-CN'),
+        ('v5 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v5', 'ja', 'zh-CN'),
+        ('v5 ja>en', 'ja_src.md', 'ja_en_v5', 'ja', 'en'),
+        ('v6 de>en', 'de_src.md', 'de_en_v6', 'de', 'en'),
+        ('v6 de>zh direct', 'de_src.md', 'de_zh_direct_v6', 'de', 'zh-CN'),
+        ('v6 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v6', 'ja', 'zh-CN'),
+        ('v6 ja>en', 'ja_src.md', 'ja_en_v6', 'ja', 'en'),
+        ('v7 de>en', 'de_src.md', 'de_en_v7', 'de', 'en'),
+        ('v7 de>zh direct', 'de_src.md', 'de_zh_direct_v7', 'de', 'zh-CN'),
+        ('v7 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v7', 'ja', 'zh-CN'),
+        ('v7 ja>en', 'ja_src.md', 'ja_en_v7', 'ja', 'en'),
     ]
     out = {}
     for name, sf, wd, sl, tl in paths:

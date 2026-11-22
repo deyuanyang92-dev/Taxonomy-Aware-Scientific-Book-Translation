@@ -8,20 +8,22 @@ from __future__ import annotations
 
 import re
 
-_AUTH = r"(?:\(?[A-Z][\w'’.\-]*(?:[ ,&]+(?:and |et |und )?[A-Z][\w'’.\-]*)*,? ?\d{4}[a-z]?\)?)"
-_TAG = r"(?:n\. ?(?:sp|gen|comb|subsp|var)\.|(?:sp|gen|comb)\. ?n\.|nom\. ?nov\.|comb\. ?nov\.)"
-_BINOM = r"[A-Z][a-z]{2,}(?: \([A-Z][a-z]{2,}\))? [a-z]{3,}(?: (?:var|subsp|f)\. [a-z]{3,})?"
+_AUTH = r"(?:\(?[A-Z][\w'’.\-]*(?:[\s,&]+(?:and |et |und )?[A-Z][\w'’.\-]*)*,?\s?\d{4}(?:\s?[a-z](?![a-z]))?\)?)"
+_TAG = r"(?:n\.\s?(?:sp|gen|comb|subsp|var)\.|(?:sp|gen|comb)\.\s?n\.|nom\.\s?nov\.|comb\.\s?nov\.)"
+_BINOM = r"[A-Z][a-z]{2,}(?:\s\([A-Z][a-z]{2,}\))?\s[a-z]{3,}(?:\s(?:var|subsp|f)\.\s[a-z]{3,})?"
 # 先匹配最长的：学名+命名人年份 / 学名+命名标记；再匹配单独命名标记、日期
 PATTERNS = [
-    re.compile(rf"{_BINOM} {_AUTH}"),
-    re.compile(rf"{_BINOM} {_TAG}"),
+    re.compile(rf"{_BINOM}\s{_AUTH}"),
+    re.compile(rf"{_BINOM}\s{_TAG}"),
     re.compile(rf"(?<![\w]){_TAG}"),
+    # 日文「数字+量词」（15対、2列）：谷歌在长句里会把数字吞掉或并错，数字单独占位
+    re.compile(r"(?<![\d.,])\d{1,3}(?=[対枚個本列節])"),
     # OCR 常把第一个点识成逗号（10, 3. 60），也算日期
-    re.compile(r"(?<!\d)\d{1,2}[.,] ?\d{1,2}\. ?\d{2}(?!\d)"),
+    re.compile(r"(?<!\d)\d{1,2}[.,]\s?\d{1,2}\.\s?\d{2}(?!\d)"),
     # 括号内单独的命名人+年份（异名/分布引证），谷歌会把人名音译
-    re.compile(r"\((?!(?:Abb|Fig|Taf|Tab|Pl|Tafel)\b)[^\W\d_a-z][\w'’.\-]*(?:[ ,&]+(?:and |et |und )?[^\W\d_a-z][\w'’.\-]*)*,? ?\d{4}[a-z]?\)"),
+    re.compile(r"\((?!(?:Abb|Fig|Taf|Tab|Pl|Tafel)\b)[^\W\d_a-z][\w'’.\-]*(?:[\s,&]+(?:and |et |und )?[^\W\d_a-z][\w'’.\-]*)*,?\s?\d{4}(?:\s?[a-z](?![a-z]))?\)"),
     # 德文志书把人名排成大写：「O. HARTMAN (1959)」「AUGENER (1922)」
-    re.compile(r"(?<![\w])(?:[A-Z]\. ?)?[^\W\d_a-z]{3,}(?:-[^\W\d_a-z]{3,})? \(\d{4}[a-z]?\)"),
+    re.compile(r"(?<![\w])(?:[A-Z]\.\s?)?[^\W\d_a-z]{3,}(?:-[^\W\d_a-z]{3,})?\s\(\d{4}(?:\s?[a-z](?![a-z]))?\)"),
 ]
 
 

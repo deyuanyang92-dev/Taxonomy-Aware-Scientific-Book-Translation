@@ -43,3 +43,17 @@ def test_unicode_caps_author_and_caps_name_year():
     assert "SCHRÖDER" not in m and "HARTMAN" not in m and "AUGENER" not in m
     assert protect.restore(m, s) == t
     assert "Die Art" in m
+
+
+def test_ja_number_before_counter_protected():
+    t = "吻の先端に13対の肉質突起と2対の顎がある，背鱗は15対あって"
+    m, s = protect.mask(t)
+    assert s == ["13", "2", "15"] and "15対" not in m
+    assert protect.restore(m, s) == t
+
+
+def test_line_break_inside_citation():
+    t = "Indischer Ozean (FAUVVEL,\n1953), Callao (EHLERS,\n1901 a), Typosyllis anoculata\nn. sp."
+    m, s = protect.mask(t)
+    assert "FAUVVEL" not in m and "EHLERS" not in m and "n. sp" not in m
+    assert protect.restore(m, s) == t

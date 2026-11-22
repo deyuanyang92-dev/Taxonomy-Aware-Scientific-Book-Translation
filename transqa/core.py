@@ -32,6 +32,8 @@ def numbers(t: str) -> collections.Counter[str]:
         dates.append('date:' + '-'.join(sorted(m.groups())))
         return ' '
     t = re.sub(r'(?<![\d.,/])(\d{1,2})[.,/] ?(\d{1,2})[./] ?(\d{2})(?![\d.,/]?\d)', _date, t)
+    # 无空格逗号串（2,4,5,7,9…）是并列编号不是小数：≥3 项时拆开
+    t = re.sub(r'(?<![\d.,])\d{1,2}(?:,\d{1,2}){2,}(?![\d.,]?\d)', lambda m: m.group(0).replace(',', ' '), t)
     return collections.Counter([x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t)] + dates)
 
 
@@ -162,7 +164,9 @@ def number_check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) ->
     strict_t = {p: _strict_numbers(ttext[p]) for p in common}
     for p in common:
         ns, nt = numbers(stext[p]), numbers(ttext[p])
-        miss[p] = ns - nt
+        # 译文用数词写数字（10 Paar→十对）不算缺；只在目标语言有数词表（zh/ja 等）时放行
+        tw = collections.Counter(str(v) for v in L.numeral_values(clean(ttext[p]), cfg.get('tl', '')))
+        miss[p] = (ns - nt) - tw
         allow = collections.Counter(str(v) for v in L.numeral_values(clean(stext[p]), sl))
         extra[p] = (nt - ns) - allow
     shifts: dict[tuple[int, int], list[str]] = {}

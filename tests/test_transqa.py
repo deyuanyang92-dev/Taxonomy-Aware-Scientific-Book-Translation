@@ -392,3 +392,29 @@ def test_numbers_date_order_is_not_a_difference():
 def test_numbers_ocr_comma_date():
     from transqa.core import numbers
     assert numbers('10, 3. 60; (2 Exemplare)') == numbers('10. 3. 60; (2 copies)')
+
+
+def test_number_missing_allows_target_numeral_word():
+    from transqa import check_all
+    src = '<!-- PDF p.1 -->\n\nSie tragen 10 Paar Elytren und Borsten.\n'
+    ok = '<!-- PDF p.1 -->\n\n它们有十对鞘翅和刚毛。\n'
+    bad = '<!-- PDF p.1 -->\n\n它们有鞘翅和刚毛。\n'
+    codes = lambda t: [i.code for i in check_all(src, t, 'de', 'zh', 'taxonomy')]  # noqa: E731
+    assert 'number.missing' not in codes(ok)
+    assert 'number.missing' in codes(bad)
+
+
+def test_numbers_comma_list_is_not_decimal():
+    from transqa.core import numbers
+    assert numbers('第2,4,5,7体節') == numbers('2nd, 4th, 5th, 7th')
+    assert numbers('Salinität 33,6')['33.6'] == 1
+
+
+def test_cjk_numeral_compounds():
+    from transqa.languages import numeral_values
+    assert numeral_values('十五对和二十三节，两个，十', 'zh') == [15, 23, 2, 10]
+
+
+def test_english_ordinal_words_count_as_numerals():
+    from transqa.languages import numeral_values
+    assert numeral_values('the Third scale, fourth segment and 2 setae', 'en') == [3, 4]

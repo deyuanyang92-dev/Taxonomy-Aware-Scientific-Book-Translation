@@ -144,6 +144,7 @@ class Google:
         self._gt = gtrans
         self.g = gtrans.Google(gtrans.Cache(cache), sl=sl, tl=tl, pause=(0.0, 0.0))
         self.failed: list[str] = []
+        self.sl = sl
 
     @property
     def requests(self) -> int:
@@ -162,13 +163,20 @@ class Google:
         if not out.strip():          # 空译文会让 render 少一段、段 ID 错位；退回原文并记失败
             self.failed.append(s[:80])
             return s
-        if protect.lost(out, saved):  # 占位符被吞：改送未保护原文，宁可让后续护栏报警
+        if protect.lost(out, saved):
+            # 占位符被吞：先按句拆开各自保护重译（只让出问题的句子失去保护），单句仍丢才送未保护原文
+            if self.sl == 'ja':   # 日文句号少：退到分句（，、）逐句保护重译
+                clauses = [x for x in re.split(r'(?<=[，、；。])', s) if x]
+                if len(clauses) > 1:
+                    return ''.join(self.one(x) for x in clauses)
+            sents = re.split(r'(?<=[.;!?。；]) +', s)
+            if len(sents) > 1:
+                return ' '.join(self.one(x) for x in sents)
             try:
-                out = str(self.g.translate(s))
+                return str(self.g.translate(s))
             except self._gt.GoogleError:
                 self.failed.append(s[:80])
                 return s
-            return out
         return protect.restore(out, saved)
 
     def body(self, p: str) -> str:
