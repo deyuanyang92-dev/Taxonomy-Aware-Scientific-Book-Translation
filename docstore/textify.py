@@ -107,8 +107,10 @@ def default_ocr_threads(workers: int) -> int:
 
 # 登记语言 → Tesseract 模型。单语种模型优于混合：Hartmann-Schröder 德文 6 页金标准上词袋错误率
 # deu 2.0%、deu+eng 3.5%（变音错 10/229 vs 74/229）、PP-OCRv5 latin 6.2%、PDF 内嵌 ABBYY 层 53%（2026-11-15）。
-TESS_LANG = {"de": "deu", "fr": "fra", "es": "spa", "it": "ita", "pt": "por", "nl": "nld", "la": "lat",
-             "ru": "rus", "en": "eng", "zh": "chi_sim+eng", "ja": "jpn"}
+# 2026-11-22 bench（对 Datalab 参照，n=50/语种，配对 bootstrap）：ru rus→rus+eng CER 0.301→0.131（49/50 页更好）；
+# la lat→lat+eng 0.191→0.178（Δ 0.0131 [0.0107,0.0156]，50/50 页）；fr 加 eng 无差别（Δ 0.0003，CI 跨 0），故不加。
+TESS_LANG = {"de": "deu", "fr": "fra", "es": "spa", "it": "ita", "pt": "por", "nl": "nld", "la": "lat+eng",
+             "ru": "rus+eng", "en": "eng", "zh": "chi_sim+eng", "ja": "jpn"}
 _USER_TESS_LANG = os.environ.get("DOCSTORE_TESS_LANG")  # 用户显式设置时始终以它为准
 
 
