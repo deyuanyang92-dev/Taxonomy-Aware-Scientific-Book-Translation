@@ -308,7 +308,7 @@ def redo_page(
 
     text, conf, disagreements, unresolved = vote(readings)
     fixer = Fixer(Path(__file__).resolve().parent / "rules" / "ocr_fix.toml")
-    fixed, changes = fixer.apply(text)
+    fixed, changes = fixer.apply(text, lang=store.doc(key).get("lang"))
     lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
     store.put_version(
         key,

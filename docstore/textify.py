@@ -261,7 +261,7 @@ def textify(
                 )
         text, conf, disagreements, unresolved = vote(readings)
         single = len({r.source for r in readings}) < 2  # 只有一个引擎读数：无从比对，不算抽检
-        fixed, changes = _FIXER.apply(text) if fix else (text, [])
+        fixed, changes = _FIXER.apply(text, lang=d.get("lang")) if fix else (text, [])
         lv = "ocr_sampled" if unresolved == 0 and not single else "ocr_raw"
         if vlm and unresolved > 0:
             # VLM 接口保留，未能确定时继续保留 [?]
@@ -366,7 +366,7 @@ def consensus(store: Store, key: str, *, pages: list[int] | None = None, by: str
             fixer = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
         else:
             fixer = _FIXER
-        fixed, changes = fixer.apply(txt)
+        fixed, changes = fixer.apply(txt, lang=store.doc(key).get("lang"))
         lv = "ocr_sampled" if unresolved == 0 and not single else "ocr_raw"
         ver = make_version(
             fixed,
