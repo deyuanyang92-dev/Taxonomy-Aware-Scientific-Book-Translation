@@ -84,3 +84,20 @@ def test_cli_inplace_backs_up_and_keeps_text_raw(tmp_path):
     assert b[0]["text"] == "el faringeo largo y el faringeo corto, faringeo, faringeo" and b[0]["text_raw"].startswith("el farigeo")
     assert b[1]["text"] == "Hartmann-Schröder 1996"  # ref 块不动
     assert json.loads((d / "aligned.pre_spellfix.json").read_text(encoding="utf-8")) == al
+
+
+def test_index_blocks_suggest_only_but_key_prose_fixed(tmp_path):
+    d = tmp_path / "book"
+    d.mkdir()
+    p = d / "aligned.json"
+    body = " faringeo, faringeo, faringeo"
+    al = {"pages": [{"page": 1, "blocks": [
+        {"role": "index", "text": "el farigeo" + body}, {"role": "key", "text": "(farnigeo) ....." + body},
+        {"role": "key", "text": "el farlngeo ..... 5" + body}]}]}
+    p.write_text(json.dumps(al), encoding="utf-8")
+    tess = tmp_path / "t"
+    (tess / "book").mkdir(parents=True)
+    (tess / "book" / "t0001_L.txt").write_text("el faringeo\n", encoding="utf-8")
+    cli.main([str(p), "--inplace", "--tess-root", str(tess), "--worms", "", "--lang", "", "--extra-words", "", "--out", str(tmp_path / "o")])
+    b = json.loads(p.read_text(encoding="utf-8"))["pages"][0]["blocks"]
+    assert "farigeo" in b[0]["text"] and "farnigeo" in b[1]["text"] and "farlngeo" not in b[2]["text"]

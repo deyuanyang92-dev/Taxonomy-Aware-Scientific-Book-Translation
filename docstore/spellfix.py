@@ -150,7 +150,9 @@ def propose(tok: str, lex: Lexicon, tess: set[str] | None, genus_ctx: str | None
         return None
     # 本批词频>=2 通常算「有效」，但 VL 会把同一学名连续读错；学名候选（大写/紧跟属名）在 WoRMS 不认且词典不认时仍检查
     name_like = bool(lex.genera) and tok.isascii() and (tok[0].isupper() or genus_ctx is not None)
-    if lex.valid(f) and not (name_like and f not in lex.dicts and f not in lex.genera):
+    # 词典不认、只靠本批词频过关的小写词（出现<=3 次）：仍找候选，但只会是建议（why=vol/dict），不会自动改
+    rare_vol_only = f not in lex.dicts and lex.cnt.get(f, 0) <= 3 and not tok[0].isupper() and genus_ctx is None and bool(lex.dicts)
+    if lex.valid(f) and not (name_like and f not in lex.dicts and f not in lex.genera) and not rare_vol_only:
         return None
     if tess is not None and f in tess:
         return None  # 第二引擎也读成原词
@@ -288,7 +290,7 @@ def load_tess(tess_dir: Path | None, page: int) -> set[str] | None:
 
 def fix_aligned(docs: list[dict[str, Any]], names: list[str], lex: Lexicon, tess_dirs: list[Path | None],
                 skip_roles: set[str], decide: Callable[[list[dict[str, Any]]], dict[str, str]] | None = None,
-                apply: bool = True) -> list[dict[str, Any]]:
+                apply: bool = True, suggest_roles: set[str] | None = None) -> list[dict[str, Any]]:
     """纠 docs（aligned.json 内容）。先只收集疑点（不改文本），交 decide（LLM）裁，再一遍落实。
     apply 时就地改块 text 并留 text_raw。返回 issues。"""
     def run(decisions, pending, write):
@@ -300,8 +302,13 @@ def fix_aligned(docs: list[dict[str, Any]], names: list[str], lex: Lexicon, tess
                     if b.get("role") in skip_roles or not b.get("text"):
                         continue
                     new, ch = fix_text(b["text"], lex, tess, decisions, pending)
+                    sug = b.get("role") in (suggest_roles or ()) and not (b.get("role") == "key" and not b["text"].lstrip().startswith("("))  # 检索表正文条目照常纠；括号异名条目只建议
                     for c in ch:
+                        if sug:  # 索引/检索表条目照印刷原样（含原书自身的异写，如 Glyphobesione、(kosteriensis)）：只建议
+                            c = {**c, "applied": False, "note": "index/key: suggest only"}
                         issues.append({"file": name, "page": pg["page"], "block": bi, **c})
+                    if sug:
+                        continue
                     if write and new != b["text"]:
                         b.setdefault("text_raw", b["text"])
                         b["text"] = new

@@ -23,6 +23,8 @@ def main(argv=None) -> int:
     ap.add_argument("--tess-name", default=None, help="--tess-root 下固定用这个子目录（默认按 aligned 的上级目录名）")
     ap.add_argument("--lang", default="es,en")
     ap.add_argument("--skip-roles", default="ref")
+    ap.add_argument("--suggest-roles", default="index,key", help="这些角色的块只出建议不改（印刷体索引含原书异写）")
+    ap.add_argument("--extra-words", default=str(Path(__file__).resolve().parents[1] / "docstore" / "data" / "zoo_es.txt"))
     ap.add_argument("--llm", action="store_true")
     ap.add_argument("--engine", default="deepseek-flash")
     ap.add_argument("--apply", action="store_true")
@@ -36,6 +38,10 @@ def main(argv=None) -> int:
     dicts: dict[str, str] = {}
     for lg in filter(None, a.lang.split(",")):
         dicts.update(sf.aspell_forms(lg.strip()))
+    xw = Path(a.extra_words)
+    if xw.is_file():  # 分类学西语专业词（aspell es 缺）
+        for w in xw.read_text(encoding="utf-8").split():
+            dicts.setdefault(sf.fold(w), w)
     genera, epith = sf.worms_names(a.worms)
     lex = sf.Lexicon(dicts, genera, epith)
     for d in docs:
@@ -49,7 +55,8 @@ def main(argv=None) -> int:
         decide = lambda pend: sf.llm_decide(pend, lambda *x, **k: llm_engines.call(*x, usage_file=a.out / "usage.jsonl", **k), a.engine, cache=a.out / "llm_cache.json")  # noqa: E731
     tdirs = [(a.tess_root / (a.tess_name or p.parent.name)) if a.tess_root else None for p in a.aligned]
     issues = sf.fix_aligned(docs, [str(p) for p in a.aligned], lex, tdirs, set(filter(None, a.skip_roles.split(","))),
-                            decide, apply=a.apply)
+                            decide, apply=a.apply,
+                            suggest_roles=set(filter(None, a.suggest_roles.split(","))))
     (a.out / "spellfix_issues.jsonl").write_text(
         "\n".join(json.dumps(i, ensure_ascii=False) for i in issues) + ("\n" if issues else ""), encoding="utf-8")
     if a.inplace:
