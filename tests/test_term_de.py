@@ -37,6 +37,12 @@ def test_second_batch_and_longest_first():
     assert protect.restore(m, s, "en").startswith("setae und gills; dorsal cirri, ventral cirrus, genital pores")
 
 
+def test_jaw_proboscis_terms():
+    m, s = protect.mask("Kiefer und Rüssel, Mandibeln, Maxillen", "de")
+    assert s == ["Kiefer", "Rüssel", "Mandibeln", "Maxillen"]
+    assert protect.restore(m, s, "zh-CN") == "颚 und 吻, 下颚, 上颚"
+
+
 def test_no_partial_word():
     assert protect.mask("Palpenartig Antennenlos", "de")[1] == []
 

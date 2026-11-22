@@ -29,6 +29,12 @@ def test_real_page_references_not_sent_to_translator():
     assert [blocks.classify(r, "de") for r in REAL] == ["reference"] * len(REAL)
 
 
+def test_ocr_junk_and_orphan_fragments_protected():
+    for j in ("IE", "'", "HC 2 eG", "» 7", "pls."):
+        assert blocks.classify(j, "de") == "index", j
+    assert blocks.classify("Die Art ist 2 mm lang.", "de") == "free"
+
+
 def test_narrative_with_year_not_reference():
     t = "Die Art wurde von FAUVEL 1923 zuerst gefunden und lebt im Sand der Gezeitenzone bei Hamburg."
     assert blocks.classify(t, "de") == "free"

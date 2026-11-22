@@ -66,6 +66,10 @@ def classify(text: str, sl: str = '') -> str:
     # 年份允许 OCR 把 1 识成 l/I、0 识成 O（190la）、范围（1856—1858）、后缀字母。叙述句里不会在段首出现「年份:」。
     if re.match(rf'^.{{0,70}}?[,.‚„]\s*{_REF_YEAR}\s*:', t, re.S):
         return 'reference'
+    # OCR 杂符（「IE」「'」「HC 2 eG」「» 7」）：短且没有 4 个字母以上的词，不送机翻；孤立的「pls.」同理
+    if not t.startswith('<!--') and (re.fullmatch(r'(?:pls?|figs?|pp?)\.?', t) or (
+            len(t) <= 12 and not re.search(r'[^\W\d_]{4,}', t) and not re.search(r'\d{3,}|\b(?:pp?|pls?)\.\s*\d', t))):
+        return 'index'
     # 文献折行残片：短、含「pp. 1—84」「9 pls.」「vol. 5」类卷页标记、词很少
     if (not t.startswith('<!--') and len(t) < 120 and len(words) <= 14
             and re.search(r'\b(?:pp?|pls?|figs?|vol|no|Bd|Heft|Lief)\.\s*\d|\d\s*(?:pp|pls|figs)\.', t)):

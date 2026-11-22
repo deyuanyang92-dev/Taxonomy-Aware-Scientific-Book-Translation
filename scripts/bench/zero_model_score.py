@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from transqa import check_all  # noqa: E402
+from transqa.languages import numeral_values  # noqa: E402
 
 # 学名 = 双名 + 紧跟 (作者, 年份) 或 n. sp.；纯双词匹配会把德文普通词算进来
 BIN = re.compile(r"(?<![A-Za-z])[A-Z][a-z]{2,} (?:\([A-Z][a-z]+\) )?[a-z]{3,}(?= \(?(?:[A-Z][\w.&' -]{1,40}?,? ?\d{4}|n\. ?sp))")
@@ -32,12 +33,14 @@ def score(src, tgt, sl, tl):
     tb = {m.group(0).lower() for m in BIN.finditer(t)}
     sy, ty = Counter(YEAR.findall(s)), Counter(YEAR.findall(t))
     sn, tn = Counter(NUM.findall(s)), Counter(NUM.findall(t))
+    # 译文把数字写成数词（zwei→两/two）不算缺，与 transqa.core.number_check 口径一致
+    tw = Counter(str(v) for v in numeral_values(clean(t), tl))
     iss = check_all(src, tgt, sl, tl, 'taxonomy')
     codes = Counter(f"{i.severity}:{i.code}" for i in iss)
     return {
         'binomials_src': len(sb), 'binomials_kept': len(sb & tb), 'binomials_lost': sorted(sb - tb)[:8],
         'years_src': sum(sy.values()), 'years_missing': sum((sy - ty).values()),
-        'num_src': sum(sn.values()), 'num_missing': sum((sn - tn).values()), 'num_extra': sum((tn - sn).values()),
+        'num_src': sum(sn.values()), 'num_missing': sum(((sn - tn) - tw).values()), 'num_extra': sum((tn - sn).values()),
         'kana_residue': len(KANA.findall(t)),
         'transqa': dict(codes),
     }
@@ -85,6 +88,8 @@ def main():
         ('v11 de>zh direct', 'de_src.md', 'de_zh_direct_v11', 'de', 'zh-CN'),
         ('v12 de>en', 'de_src.md', 'de_en_v12', 'de', 'en'),
         ('v12 de>zh direct', 'de_src.md', 'de_zh_direct_v12', 'de', 'zh-CN'),
+        ('v13 de>en', 'de_src.md', 'de_en_v13', 'de', 'en'),
+        ('v13 de>zh direct', 'de_src.md', 'de_zh_direct_v13', 'de', 'zh-CN'),
         ('v9 de>en', 'de_src.md', 'de_en_v9', 'de', 'en'),
         ('v9 de>zh direct', 'de_src.md', 'de_zh_direct_v9', 'de', 'zh-CN'),
     ]

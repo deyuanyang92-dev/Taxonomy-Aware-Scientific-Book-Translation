@@ -32,6 +32,10 @@ TERMS: list[tuple[str, str, str, str, str, str]] = [
     ("Kieme", "Kiemen", "鳃", "gill", "gills", "gill"),
     ("Cirrophor", "Cirrophoren", "须基", "cirrophore", "cirrophores", "cirrophore"),
     ("Uncinus", "Uncini", "钩状刚毛", "uncinus", "uncini", "uncinus"),
+    ("Kiefer", "Kiefer", "颚", "jaws", "jaws", "jaws"),   # 单复数同形；英文按多毛类惯用复数
+    ("Mandibel", "Mandibeln", "下颚", "mandible", "mandibles", "mandible"),
+    ("Maxille", "Maxillen", "上颚", "maxilla", "maxillae", "maxilla"),
+    ("Rüssel", "Rüssel", "吻", "proboscis", "proboscis", "proboscis"),
     ("Genitalporus", "Genitalporen", "生殖孔", "genital pore", "genital pores", "genital pore"),
 ]
 # Borstensegment 单数形写成 Borstensegment；复数含 e/en；单复数正则合并为一条，复数分支用 Plural 判定

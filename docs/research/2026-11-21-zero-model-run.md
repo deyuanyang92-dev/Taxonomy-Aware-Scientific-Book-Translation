@@ -115,3 +115,8 @@ d. 检索表按条切段（日文源）。
 | 术语只 14 个 | term_de 增 9 个已核词（Dorsalcirrus、Ventralcirrus、Borste、Notochaeta、Neurochaeta、Kieme、Cirrophor、Uncinus、Genitalporus；yiku 已核对照测试覆盖）。Borste 在样本里原被译成「刷毛/鬃毛」，现为「刚毛」 | test_second_batch_and_longest_first |
 
 复测：v11 de>en、de>zh critical/major/minor 全 0（zh_typo 仅 info）；v12 加术语后 de>en num_missing 0，de>zh 4（缺的是「2」，谷歌把 zwei 写成「两」；评分器只数阿拉伯数字，transqa 的数词放行已覆盖，评分器未同步，属评分口径）。
+
+### 第七轮：补齐钩子余项（v13，无模型）
+- Kiefer、Rüssel 其实有已核名（yiku：jaws→颚、proboscis→吻、mandible→下颚、maxilla→上颚），前几轮漏查。term_de 增 Kiefer、Rüssel、Mandibel、Maxille（共 27 词，yiku 对照测试覆盖）。
+- 真实参考文献页余下的 9 段「free」：OCR 杂符（IE、'、HC 2 eG、» 7）与孤立「pls.」改判 index（原样保留）；页眉「Literaturverzeichnis N」与页标记仍按正文，机翻成「参考文献 N」本就正确。整页 53 段：42 reference + 7 index + 4（2 页标记、2 页眉）。
+- 评分器 num_missing 口径与 transqa 一致：译文用数词（zwei→两/two）写的数字不算缺。v13 de>en、de>zh：缺数字 0、多出 1、学名 3/3、缺年份 0、zh_typo 无告警。
