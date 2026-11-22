@@ -49,6 +49,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：t
 
 from apply_issues import already_applied  # noqa: E402  # 幂等判据与核译闸口共用一份
 import entities  # noqa: E402
+import keysplit
+import protect  # noqa: E402
 import term_presub  # noqa: E402
 import taxoformat  # noqa: E402
 import transqa  # noqa: E402
@@ -147,16 +149,27 @@ class Google:
     def requests(self) -> int:
         return int(self.g.requests)
 
+    def prefetch(self, texts: list[str], workers: int = 8) -> None:
+        self.g.prefetch([protect.mask(t)[0] for t in texts], workers)
+
     def one(self, s: str) -> str:
+        masked, saved = protect.mask(s)   # 学名/n. sp./日期不送机翻，回来原样还原
         try:
-            out = str(self.g.translate(s))
+            out = str(self.g.translate(masked))
         except self._gt.GoogleError:
             self.failed.append(s[:80])
             return s
         if not out.strip():          # 空译文会让 render 少一段、段 ID 错位；退回原文并记失败
             self.failed.append(s[:80])
             return s
-        return out
+        if protect.lost(out, saved):  # 占位符被吞：改送未保护原文，宁可让后续护栏报警
+            try:
+                out = str(self.g.translate(s))
+            except self._gt.GoogleError:
+                self.failed.append(s[:80])
+                return s
+            return out
+        return protect.restore(out, saved)
 
     def body(self, p: str) -> str:
         return '\n'.join(ln for ln in p.split('\n') if not ln.lstrip().startswith('<!--')).strip()
@@ -171,7 +184,7 @@ class Google:
 
     def text(self, t: str, src_re: str, workers: int = 8) -> str:
         paras = [p.strip() for p in t.split('\n\n')]
-        self.g.prefetch([self.body(p) for p in paras if re.search(src_re, self.body(p))], workers)
+        self.prefetch([self.body(p) for p in paras if re.search(src_re, self.body(p))], workers)
         return '\n\n'.join(self.para(p, src_re) for p in paras) + '\n'
 
 
@@ -586,7 +599,7 @@ def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str,
     split = {p: split_template(src_pg[p]) for p in sorted(src_pg)}
     send = [s.text for segs, _ in split.values() for s in segs
             if classify(s.text, sl) not in PROTECTED and re.search(src_re, s.text)]
-    g.g.prefetch([pre(t) for t in send], 8)
+    g.prefetch([pre(t) for t in send], 8)
     out = {}
     for p, (segs, tpl) in split.items():
         texts = {s.id: (g.one(pre(s.text)) if s.text in send else s.text) for s in segs}
@@ -1242,7 +1255,10 @@ def main(argv: list[str] | None = None) -> None:
             work / '_merged_glossary.tsv')
         a.glossary = str(merged)
         print(f'[auto] 跨书 memory 已合并 → {merged}', flush=True)
-    src_pg = pages(Path(a.src).read_text(encoding='utf-8'))
+    src_txt = Path(a.src).read_text(encoding='utf-8')
+    if a.sl == 'ja':
+        src_txt = keysplit.split_keys(src_txt)   # 检索表条目一条一段，免得机翻重排
+    src_pg = pages(src_txt)
     if getattr(a, 'lean', False):
         print(f'[auto] Lean：rewrite_kinds={a.rewrite_kinds!r} risky_only={a.risky_only} '
               f'verify={a.verify_engine!r}', flush=True)

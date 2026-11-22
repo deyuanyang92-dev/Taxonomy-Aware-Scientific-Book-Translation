@@ -32,8 +32,21 @@ def _lang(sl: str) -> dict[str, list[str]]:
     return data.get(sl) or data["en"]
 
 
+_CJK_TEXT = re.compile(r"[぀-ヿ㐀-鿿]")
+_ONE_TAXON = re.compile(r"[A-Z][A-Za-z\-]{3,}")
+
+
 def _junk(t: str) -> bool:
-    """插图区被 OCR 成的乱码行（bt If) 7 bad m CO LIU SA）：短、几乎没有正常词。"""
+    """插图区被 OCR 成的乱码行（bt If) 7 bad m CO LIU SA）：短、几乎没有正常词。
+
+    乱码只出现在拉丁/数字扫描行；含假名或汉字的是正常日文正文，不能按字母比例
+    判垃圾（2026-11-17：日文书被整段判 junk，2001/2009 稿子里留下大段日文）。
+    单个大写学名（Polynoidae）也不是垃圾。
+    """
+    if _CJK_TEXT.search(t):
+        return False
+    if _ONE_TAXON.fullmatch(t.strip()):
+        return False
     words = re.findall(r"[^\W\d_]+", t)
     if not words:
         return not re.search(r"\d{3,}", t)  # 纯标点/零散数字

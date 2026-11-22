@@ -33,3 +33,25 @@ a. 合并 _junk 修复到本目录（含回归测试，已有 test_taxoblocks �
 b. 翻译前占位符保护：学名、n. sp.、两位年份日期、检索表编号。
 c. transqa 数字检查：序数与连字符数词归一。
 d. 检索表按条切段（日文源）。
+
+
+
+## 补记 2026-11-22：四项修复及复测（同样 5+5 页，--engine none，无模型）
+
+| 项 | 改动 | 测试 |
+|---|---|---|
+| a | transqa/taxoblocks.py `_junk`：含假名/汉字或单个首字母大写类群名不判垃圾 | tests/test_taxoblocks.py |
+| b | scripts/protect.py：学名+命名人年份、n. sp. 等、两位年份日期送机翻前换 `[[n]]`，丢占位符则退回不保护重译 | tests/test_protect.py |
+| c | transqa/core.py `numbers()`：日期 `10. 3. 60` 与 `3/10/60` 计同一记号。**原假设「序数词/连字号数词误报」未证实**：2nd、4-part 的数字本就与原文各计一次；真正的误报来自日期被谷歌改写 | tests/test_transqa.py |
+| d | scripts/keysplit.py：日文检索表以「(図N)」收尾后紧跟日文时断段（≥2 处才动），auto_translate 对 ja 自动调用 | tests/test_keysplit.py |
+
+复测（critical 数 / 学名保留 / 缺年份）：
+
+| 路径 | 修前 | 修后 |
+|---|---|---|
+| de>zh 直译 | 4 / 0 of 3 / 4 | 2 / 2 of 3 / 4 |
+| de>en | 3 / 3 / 2 | 1 / 3 / 2 |
+| ja>zh 直译 | 4 / 3 / 0 | 4 / 3 / 0 |
+| ja>en | 4 / 3 / 0 | 4 / 3 / 0 |
+
+结论：德语受益明显；日语的 number.missing 未变，因为是机翻真实丢数字（「第3背鱗」「1列」等被省略或改写），不是误报，不能靠放宽检查消除。d 项在样本 p.137 上未单独量化效果（该页缺条目编号，断段只是减少重排，未证实）。德语仍有 4 个年份缺失、1 个 taxon.authority_changed，待查。pivot 路径未重跑。

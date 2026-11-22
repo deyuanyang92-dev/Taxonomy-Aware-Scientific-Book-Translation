@@ -380,3 +380,10 @@ def test_issue17_no_checks_for_chinese_target():
     s = _pages("x")
     t = _pages("标本保存于UniversityOxford,Rouse。")
     assert not [i for i in check_all(s, t, "es", "zh") if i.code.startswith("text.")]
+
+
+def test_numbers_date_order_is_not_a_difference():
+    from transqa.core import numbers
+    assert numbers('10. 3. 60; (4 Exemplare)') == numbers('3/10/60; (4 copies)')
+    assert numbers('29. 12. 59') != numbers('2059')
+    assert numbers('Salinität 30.9 und 12.5 m')['30.9'] == 1

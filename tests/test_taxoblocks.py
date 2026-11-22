@@ -97,3 +97,16 @@ def test_risk_anatomical_adjective_is_not_a_taxon():
     # 真学名丢失仍须报
     assert "name" in risk("as in Eulalia microphylla", "如同该属", "en", "zh")
     assert "name" in risk("wie bei Eulalia microphylla", "as in E. microphylla")
+
+
+def test_junk_keeps_japanese_text_and_taxon_heading():
+    # 2026-11-17：日文正文按拉丁字母比例判 junk，整段留原文，英/中稿出现日文。
+    from transqa.taxoblocks import kind
+
+    assert kind("形態―前口葉は二葉に分かれ，各葉の先端が明瞭な頭頂になっている", "ja") != "junk"
+    assert kind("ウロコムシ科", "ja") != "junk"
+    assert kind("Polynoidae", "ja") != "junk"
+    assert kind("bt If) 7 bad m CO LIU SA", "ja") == "junk"
+
+
+# ---- risk() 误报修复（2026-11-19）：数字写法、CJK 长度比、解剖词不是学名 ----

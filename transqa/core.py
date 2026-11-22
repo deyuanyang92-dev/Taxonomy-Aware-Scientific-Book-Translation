@@ -26,7 +26,13 @@ def numbers(t: str) -> collections.Counter[str]:
     """数字。千分位（136 000、136,000、136.000、136 000）先并成 136000；小数逗号与小数点视为同一（33,6 = 33.6）。"""
     t = re.sub(r'(?<![\d.,])(\d{1,3})((?:[ \u00a0\u202f,.]\d{3})+)(?![\d.,]\d)',
                lambda m: m.group(1) + re.sub(r'\D', '', m.group(2)), clean(t))
-    return collections.Counter(x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t))
+    dates: list[str] = []
+
+    def _date(m: re.Match[str]) -> str:   # 日.月.年 与 月/日/年 只是写法不同：按排序后的三元组计一个记号
+        dates.append('date:' + '-'.join(sorted(m.groups())))
+        return ' '
+    t = re.sub(r'(?<![\d.,/])(\d{1,2})[./] ?(\d{1,2})[./] ?(\d{2})(?![\d.,/]?\d)', _date, t)
+    return collections.Counter([x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t)] + dates)
 
 
 def _page_text(segs: list[Segment]) -> str:

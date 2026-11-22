@@ -50,6 +50,10 @@ def main():
         ('de>en', 'de_src.md', 'de_en', 'de', 'en'),
         ('de>en>zh pivot', 'de_src.md', 'de_pivot_zh', 'de', 'zh-CN'),
         ('de>zh direct', 'de_src.md', 'de_zh_direct', 'de', 'zh-CN'),
+        ('v2 ja>en', 'ja_src.md', 'ja_en_v2', 'ja', 'en'),
+        ('v2 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v2', 'ja', 'zh-CN'),
+        ('v2 de>en', 'de_src.md', 'de_en_v2', 'de', 'en'),
+        ('v2 de>zh direct', 'de_src.md', 'de_zh_direct_v2', 'de', 'zh-CN'),
     ]
     out = {}
     for name, sf, wd, sl, tl in paths:
