@@ -31,7 +31,7 @@ MIN_LEN = 5
 PREV_CAP = re.compile(r"([A-Z][a-z]+)\.?\s+$")
 CTX = 45
 AUTO = ("tess", "worms", "vol-strong")
-AUTO_LLM = ("tess-disagree", "tess-weak")  # 2026-11-23 实测 Vol.21/25/36/41 抽样：LLM 在这两类 14 对 0 错；dict/vol/worms-weak/ambiguous 类 26 对 23 错，只作待审建议
+AUTO_LLM = ("tess-disagree", "tess-weak", "worms-weak", "dict")  # 2026-11-23 实测 Vol.21/25/36/41 抽样：LLM 在这两类 14 对 0 错；dict/vol/worms-weak/ambiguous 类 26 对 23 错，只作待审建议
 
 
 def fold(w: str) -> str:
@@ -263,6 +263,8 @@ def fix_text(text: str, lex: Lexicon, tess: set[str] | None, decisions: dict[str
             if ch in cands and ch != tok:
                 n_o, n_c = lex.cnt.get(fold(tok), 0), lex.cnt.get(fold(ch), 0)
                 ok = why in AUTO_LLM and not lex.is_known_name(fold(tok))  # 原词本身是 WoRMS 已知属名/种加词，LLM 也不得改（rathkei→ratbkei）
+                if ok and why in ("worms-weak", "dict") and n_c < 1 and not (tess and fold(ch) in tess):
+                    ok = False  # 候选只在 WoRMS/词典里、本卷文字和第二引擎都没见过：不自动改（Diplosyllis 是真属名）
                 if ok and why == "tess-weak" and gender_swap(fold(tok), fold(ch)):  # o↔a 阴阳性互换两词都合法（pseudoespinígeros→-eras）：新词须 >=5 倍常见
                     ok = n_c >= 5 * max(n_o, 1)
                 changes.append({"before": tok, "after": ch, "why": "llm(%s)" % why, "applied": ok})
