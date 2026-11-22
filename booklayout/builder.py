@@ -489,6 +489,14 @@ def _atomic_target(p, start: int) -> None:
             run.text = run.text.replace(" ", " ")
 
 
+MIN_KEY_LEADER_MM_B = 40.0  # keep equal to cli.MIN_KEY_LEADER_MM
+
+
+def wid_of(s: str, size: float) -> float:
+    """Rough set width in mm (CJK = 1 em, Latin = 0.5 em)."""
+    return sum(size if ord(ch) > 255 else size * 0.5 for ch in s) * 25.4 / 72
+
+
 KEY_NAME_COL_MM = 70.0  # left edge of the shared taxon-name column in a key
 _KEY_PAGE_REF = re.compile(r"\s+(\(p\.\s*\d+\))\s*$")
 _KEY_TRAILING_NUMBER = re.compile(r"^(?P<name>.*\S)\s+(?P<target>\d{1,3}[\u2032']?(?:[-\u2013]\d{1,3})?)$")
@@ -536,6 +544,17 @@ def tabbed(doc, left, right, size, left_indent=0.0, genera=None, bold_left=False
     pf.line_spacing = 1.0
     pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
     two_slots = bool(name and target)
+    if not force_break and (name or target):
+        # Estimate where the text's last line ends.  When it runs past the name
+        # column the tab jumps to the right stop, the name lands flush right and
+        # the target wraps (v41 p.6 couplet 1); break first so name and target
+        # take their own slots on a leader-filled line.
+        pt_mm = 25.4 / 72
+        wid = sum(size if ord(ch) > 255 else size * 0.5 for ch in left) * pt_mm
+        last = wid % TEXT_W if wid > TEXT_W else wid
+        need = (name_col_mm if name else TEXT_W - wid_of(target, size) - MIN_KEY_LEADER_MM_B)
+        if last > need - 6 if name else last > need:
+            force_break = True
     if name:
         pf.tab_stops.add_tab_stop(Mm(name_col_mm), WD_TAB_ALIGNMENT.LEFT, WD_TAB_LEADER.DOTS)
     if target:

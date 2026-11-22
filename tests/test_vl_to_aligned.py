@@ -44,3 +44,20 @@ def test_caption_continuation_merged_and_binomial_not_caption():
         {"role": "caption", "label": "figure_title", "text": "Heteromastus filiformis (Claparède, 1864)", "translation": "丝异须虫", "y0": 3}]}]}
     b = V.refine(al)["pages"][0]["blocks"]
     assert len(b) == 2 and b[0]["translation"] == "图3 背面（A），腹面（B）。" and b[1]["role"] == "body"
+
+
+def test_keyline_variants():
+    from vl_to_aligned import KEYLINE
+    assert KEYLINE.match("4. Podios posteriores con el lóbulo superior muy desarrollado..5")
+    assert KEYLINE.match("Podios posteriores con el lóbulo cónico pero sin aspecto foliáceo .....7")
+    assert KEYLINE.match("2. Faringe con paragnatos claros y caedizos Eunereis (p. 321)")
+    assert not KEYLINE.match("Los ejemplares miden 5 mm y fueron hallados en 1990.")
+
+
+def test_fix_arabic_unique_match():
+    from vl_to_aligned import fix_arabic
+    ar = chr(0x627) + chr(0x631)
+    al = {"pages": [{"blocks": [{"text": f"Proto{ar}icia oerstedii"}, {"text": "Protoaricia oerstedi (Claparede)"}, {"text": f"zzz{ar}yy"}]}]}
+    out = fix_arabic(al)
+    assert out["pages"][0]["blocks"][0]["text"] == "Protoaricia oerstedii"
+    assert out["arabic_unresolved"] == [f"zzz{ar}yy"]

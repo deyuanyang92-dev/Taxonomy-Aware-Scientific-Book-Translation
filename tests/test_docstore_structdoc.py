@@ -197,6 +197,18 @@ def test_figure_binds_caption_to_treatment():
     assert fig["data"]["no"] == 2 and fig["data"]["treatment"] == "T-p011_b03" and fig["status"] == "ok"
 
 
+def test_figure_no_order_flags_outlier_with_hint():
+    from docstore import structdoc as S
+    def fig(i, n):
+        return {"id": f"F{n}-{i}", "type": "figure", "page": 1, "text": "", "issues": [], "data": {"no": n}}
+    sd = {"blocks": [fig(0, 12), fig(1, 13), fig(2, 133), fig(3, 14), fig(4, 15)]}
+    probs = S._check_treatments_and_figures(sd)
+    got = [p for p in probs if p["code"] == "figure_no_order"]
+    assert len(got) == 1 and got[0]["detail"] == "13,133,14 hint=13"
+    ok = {"blocks": [fig(0, 1), fig(1, 2), fig(2, 3)]}
+    assert not [p for p in S._check_treatments_and_figures(ok) if p["code"] == "figure_no_order"]
+
+
 def test_unbound_and_gap_and_duplicate_figures():
     a = {"pages": [{"page": 11, "blocks": [
         {"role": "caption", "text": "図1.a", "block_id": "c1"},

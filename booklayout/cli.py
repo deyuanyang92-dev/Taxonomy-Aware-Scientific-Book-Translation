@@ -190,6 +190,7 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         b.get("block_id") or b.get("text", "")[:50]
         for b in body_blocks
         if b.get("role") == "body"
+        and not (b.get("text") or "").lstrip().startswith("*")  # credit footnote: author surnames are caps in the source
         and len(re.findall(r"[A-Za-z]", b.get("translation") or "")) >= 40
         and sum(c.isupper() for c in b.get("translation") or "") / max(
             1, sum(c.isalpha() for c in b.get("translation") or "")) > 0.9
@@ -577,6 +578,8 @@ def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
             problems.append({"reason": "leader without target",
                              "x1": round(line[-1][2], 1), "line": text[:90]})
             continue
+        if following and min(following[0][3], line[0][3]) - max(following[0][1], line[0][1]) > 0.5 * (line[0][3] - line[0][1]):
+            continue  # name column and target column of one visual row (issue #35 layout)
         if following and _TARGET_END.search(text_of(following)) \
                 and not starts_leader(following) \
                 and not _DOT_RUN.search(text_of(following)):

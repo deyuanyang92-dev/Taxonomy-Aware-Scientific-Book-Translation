@@ -18,7 +18,10 @@ MAP = {"text": "body", "abstract": "body", "reference_content": "ref", "content"
        "paragraph_title": "heading", "doc_title": "heading", "figure_title": "caption",
        "vision_footnote": "body", "footnote": "body", "display_formula": "body"}
 SKIP = {"header", "footer", "number", "image", "header_image", "footer_image", "aside_text", "seal"}
-KEYLINE = re.compile(r"^\s*(?:\d+['’]?\.|[•·▪●–—-])\s.*(?:\.{3,}|…|(?:\.\s){3,})")
+KEYLINE = re.compile(
+    r"^\s*(?:\d+['’]?\.|[•·▪●–—-])\s.*(?:\.{3,}|…|(?:\.\s){3,})"  # 标记 + 引导点
+    r"|^.*\S\.{2,}\s*\d{1,3}['’]?\s*$"  # 续行：无标记，引导点 + 页码/条号结尾
+    r"|^\s*(?:\d+['’]?\.|[•·▪●–—-])\s.*\(p\.\s*\d+\)\s*$")  # 无引导点的 (p. N) 目标
 LEADER = re.compile(r"\s*(?:[.…·]\s*){2,}\s*(?=\S+(?:\s\S+){0,6}\s*$)")
 SKIPKEY = {"paragraph_title", "doc_title", "figure_title", "image"}
 
@@ -113,6 +116,41 @@ def refine(aligned: dict) -> dict:
                 if t.strip():
                     nb.append({**b, "role": role, "text": t, "translation": norm_key(t, z) if role == "key" else z, "y0": b["y0"] + i})
         pg["blocks"] = nb
+    return aligned
+
+
+ARABIC = re.compile("[" + chr(0x600) + "-" + chr(0x6FF) + "]+")
+LATIN_TOKEN = re.compile("[A-Za-z" + chr(0xC0) + "-" + chr(0x17F) + chr(0x600) + "-" + chr(0x6FF) + "]{4,}")
+
+
+def fix_arabic(aligned: dict) -> dict:
+    """VL 把拉丁字母误识为阿拉伯字形（Protoارicia → Protoaricia）：用全书其他位置出现的同形词唯一匹配来还原；
+    匹配不唯一就保留并计入 aligned["arabic_unresolved"]，不猜。"""
+    vocab: set[str] = set()
+    for pg in aligned["pages"]:
+        for b in pg["blocks"]:
+            for fld in ("text", "translation"):
+                vocab.update(t for t in LATIN_TOKEN.findall(b.get(fld) or "") if not ARABIC.search(t))
+    unresolved: list[str] = []
+
+    def repl(m: re.Match) -> str:
+        tok = m.group(0)
+        if not ARABIC.search(tok):
+            return tok
+        parts = ARABIC.split(tok)
+        pat = re.compile("^" + ".{1,3}".join(re.escape(x) for x in parts) + "$")
+        hits = {w for w in vocab if pat.match(w)}
+        if len(hits) == 1:
+            return hits.pop()
+        unresolved.append(tok)
+        return tok
+
+    for pg in aligned["pages"]:
+        for b in pg["blocks"]:
+            for fld in ("text", "translation"):
+                if b.get(fld):
+                    b[fld] = LATIN_TOKEN.sub(repl, b[fld])
+    aligned["arabic_unresolved"] = sorted(set(unresolved))
     return aligned
 
 
