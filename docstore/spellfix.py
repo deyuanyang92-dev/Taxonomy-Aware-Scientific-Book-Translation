@@ -67,10 +67,13 @@ def ocr_like(a: str, b: str) -> bool:
 
 
 def inflection(a: str, b: str) -> bool:
-    """同一词干的词形变化（Hesionides/Hesionidos、pseudoespinígera/-as）：不自动改。"""
-    sh, lg = sorted((a, b), key=len)
-    return (lg.startswith(sh[:max(len(sh) - 1, 4)]) and lg[len(sh) - 1:] != sh[len(sh) - 1:]
-            and len(lg) - len(sh) <= 2 and lg[-1] in "saoe")
+    """同一词干、只在末两位不同（falcígeros/-as、Hesionides/-idos、-a/-as）：词形变化，不自动改。"""
+    n = 0
+    for x, y in zip(a, b):
+        if x != y:
+            break
+        n += 1
+    return n >= 4 and n >= min(len(a), len(b)) - 2 and abs(len(a) - len(b)) <= 2 and a != b
 
 
 def recase(orig: str, new: str) -> str:
@@ -201,7 +204,8 @@ def disagree(tok: str, lex: Lexicon, tess: set[str] | None) -> list[str]:
     f = fold(tok)
     if not tess or len(f) < MIN_LEN or f in tess or "-" in tok:
         return []
-    return sorted(recase(tok, lex.best_form(c)) for c in edits1(f) if c in tess and len(c) >= MIN_LEN and lex.cnt.get(c, 0) >= 1)
+    return sorted(recase(tok, lex.best_form(c)) for c in edits1(f)
+                  if c in tess and len(c) >= MIN_LEN and lex.cnt.get(c, 0) >= 1 and not inflection(f, c))
 
 
 def _ctx(text: str, m: re.Match[str]) -> str:
