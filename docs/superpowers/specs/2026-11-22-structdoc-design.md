@@ -57,7 +57,7 @@ aligned.json（角色块，`booklayout/profile.py` 的 ROLES）、页面 JSON �
    CLI：`docstore struct build <doc> --aligned A --treatments T --out S`。
    限制：aligned 没有图像路径，figure 块只绑定「图号 ↔ 图注 ↔ 分类单元」，未绑定图像文件；`tr_numbers` 不查 1-3 的整数（常译成数词），数词译法（第12→twelfth）仍会误报；Vol48 的大量 `tr_numbers` 主要是 aligned 中 text 与 translation 错位（真问题，非误报）。
    三本真实 aligned 上的**标记率**（不是准确率，未对金标）：Imajima2009 译文块 3324 中 tr_numbers 46、tr_latin 35；Imajima2001 3488 中 172、1；Vol48 3814 中 1403。tr_latin 在 2009 抽 3 例人工看原文，前 2 例确为译文丢了学名（Autolytus magnus → 自裂虫属）。
-4. 在 OCR 流水线末端自动生成，并写入 `docs/ocr_eval/LEDGER.tsv` 式的结构准确率账本（检索表偶句查全/查准，对人工金标）。
+4. 【工具已做，金标未建】`docstore struct auto <key>`（行框缓存 → keys → StructDoc，零模型、不 OCR；Imajima2007 p170-230 实测 0.7 秒、193 块、uncertain 3）；`docstore struct score` 对人工金标计分并追加 `docs/ocr_eval/STRUCT_LEDGER.tsv`（格式见 `docs/ocr_eval/struct_gold/README.md`）。账本暂无数据行：金标必须人对照原页图像写，尚未有。原计划：在 OCR 流水线末端自动生成，并写入 `docs/ocr_eval/LEDGER.tsv` 式的结构准确率账本（检索表偶句查全/查准，对人工金标）。
 
 ## 未确证
 

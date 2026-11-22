@@ -405,6 +405,41 @@ def cmd_struct(st: Store, args) -> None:
         sdm.save(sd, Path(args.out))
         print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
         return
+    if args.struct_cmd == "auto":
+        from . import structauto
+
+        if args.cache:
+            cache, pdf = Path(args.cache), args.pdf
+            last = args.last
+        else:
+            from .engines import ppocr
+
+            d = st.doc(args.key)
+            pdf = d["path"]
+            if not pdf or not Path(pdf).exists():
+                print(f"{args.key}：无可用原件 PDF；可用 --cache", file=sys.stderr)
+                sys.exit(1)
+            cache = ppocr._cache_file(pdf, 1, args.dpi).parent
+            last = args.last or int(d["pages"] or 0)
+        try:
+            kd = structauto.keys_from_cache(cache, args.first, last, pdf=pdf, dpi=args.dpi,
+                                            recover_tail=args.recover_tail)
+        except (FileNotFoundError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        sd = structauto.auto(args.key or args.doc or cache.name, kd)
+        sdm.save(sd, Path(args.out))
+        print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
+        return
+    if args.struct_cmd == "score":
+        from . import structauto
+
+        r = structauto.score(sdm.load(Path(args.file)), json.loads(Path(args.gold).read_text(encoding="utf-8")))
+        print(json.dumps(r, ensure_ascii=False))
+        if args.ledger:
+            g = json.loads(Path(args.gold).read_text(encoding="utf-8"))
+            structauto.append_ledger(Path(args.ledger), structauto.ledger_row(g["doc"], g["set"], r, args.note or ""))
+        return
     sd = sdm.validate(sdm.load(Path(args.file)))
     for p in sd["problems"][:50]:
         print(f"{p['scope']}: {p['code']}: {p['detail']}")
@@ -740,6 +775,21 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("--aligned", help="aligned.json")
     sb.add_argument("--treatments", help="treatments.json（booklayout treatments <aligned> --out 产出）")
     sb.add_argument("--out", required=True)
+    sa = ss.add_parser("auto", help="识别缓存 → keys → StructDoc 一步生成（零模型，不 OCR）")
+    sa.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
+    sa.add_argument("--cache")
+    sa.add_argument("--pdf", help="用 --cache 且 --recover-tail 时的原件 PDF")
+    sa.add_argument("--doc", help="用 --cache 时写入 doc 字段")
+    sa.add_argument("--dpi", type=int, default=200)
+    sa.add_argument("--first", type=int, default=1)
+    sa.add_argument("--last", type=int, default=0)
+    sa.add_argument("--recover-tail", action="store_true")
+    sa.add_argument("--out", required=True)
+    ssc = ss.add_parser("score", help="对人工金标计分（偶句查全/查准、终点正确率、错误被标出率）")
+    ssc.add_argument("file", help="structdoc.json")
+    ssc.add_argument("gold", help="人工金标 json")
+    ssc.add_argument("--ledger", help="追加一行到该 tsv（如 docs/ocr_eval/STRUCT_LEDGER.tsv）")
+    ssc.add_argument("--note")
     sc = ss.add_parser("check", help="重做校验，列问题；有 uncertain 块时退出码 1")
     sc.add_argument("file")
     s.set_defaults(fn=cmd_struct)
