@@ -1,4 +1,11 @@
+import json
+import sys
+from pathlib import Path
+
 from docstore import spellfix as sf
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import vl_spellfix as cli  # noqa: E402
 
 
 def _lex():
@@ -59,3 +66,21 @@ def test_epithet_after_genus_checked_against_same_genus_only():
     new, ch = sf.fix_text("Syllis gracilus", lex, None)
     assert new == "Syllis gracilus"  # u/i 不是典型 OCR 混淆：只进待审（交 LLM），不自动改
     assert ch[0]["cands"] == ["gracilis"] and not ch[0]["applied"]
+
+
+def test_cli_inplace_backs_up_and_keeps_text_raw(tmp_path):
+    d = tmp_path / "book"
+    d.mkdir()
+    p = d / "aligned.json"
+    al = {"pages": [{"page": 1, "blocks": [{"role": "body", "text": "el farigeo largo y el faringeo corto, faringeo, faringeo"},
+                                           {"role": "ref", "text": "farigeo"}]}]}
+    p.write_text(json.dumps(al), encoding="utf-8")
+    tess = tmp_path / "t"
+    (tess / "book").mkdir(parents=True)
+    (tess / "book" / "t0001_L.txt").write_text("el faringeo largo\n", encoding="utf-8")
+    assert cli.main([str(p), "--inplace", "--tess-root", str(tess), "--worms", "", "--lang", "", "--out", str(tmp_path / "o")]) == 0
+    out = json.loads(p.read_text(encoding="utf-8"))
+    b = out["pages"][0]["blocks"]
+    assert b[0]["text"] == "el faringeo largo y el faringeo corto, faringeo, faringeo" and b[0]["text_raw"].startswith("el farigeo")
+    assert b[1]["text"] == "farigeo"  # ref 块不动
+    assert json.loads((d / "aligned.pre_spellfix.json").read_text(encoding="utf-8")) == al

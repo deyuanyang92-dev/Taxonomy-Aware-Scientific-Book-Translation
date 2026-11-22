@@ -158,8 +158,20 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("jsonl_dir"), ap.add_argument("png_dir"), ap.add_argument("out")
     ap.add_argument("--chapter", default="Book")
+    ap.add_argument("--no-spellfix", action="store_true", help="跳过 VL 拼写纠错（默认开启，见 scripts/vl_spellfix.py）")
+    ap.add_argument("--tess-dir", default=None, help="Tesseract 第二读数目录（tNNNN_{L,R}.txt）；给了才启用 Tesseract 证据")
+    ap.add_argument("--spellfix-llm", action="store_true", help="疑点交 DeepSeek flash 裁（须折扣时段，走 llm_engines 预算闸）")
     a = ap.parse_args(argv)
     r = convert(Path(a.jsonl_dir), Path(a.png_dir), Path(a.out), a.chapter)
+    if not a.no_spellfix:
+        import vl_spellfix
+        args = [str(Path(a.out) / "aligned.json"), "--inplace", "--out", str(Path(a.out) / "spellfix")]
+        if a.tess_dir:
+            # vl_spellfix 按 <tess-root>/<aligned 上级目录名>/ 找读数；这里直接指定单目录
+            args += ["--tess-root", str(Path(a.tess_dir).parent), "--tess-name", Path(a.tess_dir).name]
+        if a.spellfix_llm:
+            args.append("--llm")
+        vl_spellfix.main(args)
     print(f"pages={len(r['pages'])} blocks={sum(len(p['blocks']) for p in r['pages'])} figures={len(r['figures'])}")
     return 0
 

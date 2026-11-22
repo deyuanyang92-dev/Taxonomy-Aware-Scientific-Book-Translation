@@ -20,13 +20,18 @@ def main(argv=None) -> int:
     ap.add_argument("aligned", nargs="+", type=Path)
     ap.add_argument("--tess-root", type=Path, default=None)
     ap.add_argument("--worms", default=str(Path.home() / ".specimen_inventory" / "worms_cache.sqlite"))
+    ap.add_argument("--tess-name", default=None, help="--tess-root 下固定用这个子目录（默认按 aligned 的上级目录名）")
     ap.add_argument("--lang", default="es,en")
     ap.add_argument("--skip-roles", default="ref")
     ap.add_argument("--llm", action="store_true")
     ap.add_argument("--engine", default="deepseek-flash")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--inplace", action="store_true",
+                    help="直接改写输入的 aligned.json（原件先备份为 aligned.pre_spellfix.json，已有则不覆盖）；隐含 --apply")
     ap.add_argument("--out", type=Path, default=Path("."))
     a = ap.parse_args(argv)
+    if a.inplace:
+        a.apply = True
     docs = [json.loads(p.read_text(encoding="utf-8")) for p in a.aligned]
     dicts: dict[str, str] = {}
     for lg in filter(None, a.lang.split(",")):
@@ -42,12 +47,18 @@ def main(argv=None) -> int:
     if a.llm:
         import llm_engines
         decide = lambda pend: sf.llm_decide(pend, lambda *x, **k: llm_engines.call(*x, usage_file=a.out / "usage.jsonl", **k), a.engine, cache=a.out / "llm_cache.json")  # noqa: E731
-    tdirs = [(a.tess_root / p.parent.name) if a.tess_root else None for p in a.aligned]
+    tdirs = [(a.tess_root / (a.tess_name or p.parent.name)) if a.tess_root else None for p in a.aligned]
     issues = sf.fix_aligned(docs, [str(p) for p in a.aligned], lex, tdirs, set(filter(None, a.skip_roles.split(","))),
                             decide, apply=a.apply)
     (a.out / "spellfix_issues.jsonl").write_text(
         "\n".join(json.dumps(i, ensure_ascii=False) for i in issues) + ("\n" if issues else ""), encoding="utf-8")
-    if a.apply:
+    if a.inplace:
+        for p, d in zip(a.aligned, docs):
+            bak = p.with_name(p.stem + ".pre_spellfix.json")
+            if not bak.exists():
+                bak.write_bytes(p.read_bytes())
+            p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    elif a.apply:
         for p, d in zip(a.aligned, docs):
             (a.out / (p.parent.name + ".aligned.spellfixed.json")).write_text(
                 json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
