@@ -400,7 +400,8 @@ def cmd_struct(st: Store, args) -> None:
         if keys is None and aligned is None:
             print("需要 --keys 或 --aligned", file=sys.stderr)
             raise SystemExit(2)
-        sd = sdm.build(args.doc, keys=keys, aligned=aligned)
+        treat = json.loads(Path(args.treatments).read_text(encoding="utf-8")) if args.treatments else None
+        sd = sdm.build(args.doc, keys=keys, aligned=aligned, treatments=treat)
         sdm.save(sd, Path(args.out))
         print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
         return
@@ -737,6 +738,7 @@ def main(argv: list[str] | None = None) -> int:
     sb.add_argument("doc", help="资料 key（写入 doc 字段）")
     sb.add_argument("--keys", help="keys.json")
     sb.add_argument("--aligned", help="aligned.json")
+    sb.add_argument("--treatments", help="treatments.json（booklayout treatments <aligned> --out 产出）")
     sb.add_argument("--out", required=True)
     sc = ss.add_parser("check", help="重做校验，列问题；有 uncertain 块时退出码 1")
     sc.add_argument("file")

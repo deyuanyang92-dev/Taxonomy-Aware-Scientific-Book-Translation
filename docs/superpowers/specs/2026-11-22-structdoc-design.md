@@ -52,7 +52,11 @@ aligned.json（角色块，`booklayout/profile.py` 的 ROLES）、页面 JSON �
 2. 【已做】`to_aligned` 适配器；旧 `couplet` 块归为 `key_couplet` 进入图检查（按来源分组，keys 与 aligned 的表号互不干扰）。
    往返 `to_aligned(build(a)) == a` 在 Imajima 2009/2001 与 Vol48 真实 aligned 上逐字相等（`tests/test_docstore_structdoc.py`）。
    实测 Imajima 2009/2001/2007 的旧 couplet（555/424/296 块）图检查无问题。
-3. treatments、图/图注绑定并入；译文回收后按块校验。
+3. 【已做】`from_treatments`（读 `booklayout treatments --out` 的记录，structdoc 不 import booklayout）、`from_figures`（带图号的 caption → figure 块，按图号绑定所属 treatment）、译后逐块检查 `translation_issues`（`tr_numbers` / `tr_latin` / `tr_figno`，译文取自 aligned 块的 translation）。
+   treatment 校验码与 `booklayout.treatments.validate` 一致（测试核对）；图号重复/缺号/无归属写入 problems。
+   CLI：`docstore struct build <doc> --aligned A --treatments T --out S`。
+   限制：aligned 没有图像路径，figure 块只绑定「图号 ↔ 图注 ↔ 分类单元」，未绑定图像文件；`tr_numbers` 不查 1-3 的整数（常译成数词），数词译法（第12→twelfth）仍会误报；Vol48 的大量 `tr_numbers` 主要是 aligned 中 text 与 translation 错位（真问题，非误报）。
+   三本真实 aligned 上的**标记率**（不是准确率，未对金标）：Imajima2009 译文块 3324 中 tr_numbers 46、tr_latin 35；Imajima2001 3488 中 172、1；Vol48 3814 中 1403。tr_latin 在 2009 抽 3 例人工看原文，前 2 例确为译文丢了学名（Autolytus magnus → 自裂虫属）。
 4. 在 OCR 流水线末端自动生成，并写入 `docs/ocr_eval/LEDGER.tsv` 式的结构准确率账本（检索表偶句查全/查准，对人工金标）。
 
 ## 未确证

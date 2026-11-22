@@ -20,6 +20,11 @@ ROLE_TYPES = frozenset({
     "table", "list", "quote", "box", "footnote", "figure_group",
 })
 EXTRA_TYPES = frozenset({"key_couplet", "key_heading", "treatment", "figure"})
+TREATMENT_REQUIRED = ("latin", "ja", "ref", "description", "distribution", "caption")
+FIGNO = re.compile(r"^(?:図|Fig\.?|图)\s*(\d+)")
+NUM = re.compile(r"\d+(?:\.\d+)?")
+BINOMIAL = re.compile(r"\b[A-Z][a-z]{2,} (?:\([A-Z][a-z]+\) )?[a-z]{3,}\b")
+CJK = re.compile(r"[ぁ-ヿ一-鿿]")
 TYPES = ROLE_TYPES | EXTRA_TYPES
 STATUSES = frozenset({"ok", "uncertain", "fixed"})
 
@@ -81,6 +86,8 @@ def from_aligned(aligned: Mapping[str, Any]) -> list[dict[str, Any]]:
             bid = b.get("block_id") or f"p{page:04d}_{bi:02d}"
             text = b.get("text") or b.get("source") or ""
             data: dict[str, Any] = {"raw": b}
+            if b.get("translation"):
+                data["translation"] = b["translation"]
             typ = role
             if role == "couplet" and isinstance(b.get("couplet"), dict):
                 c = b["couplet"]
@@ -92,6 +99,46 @@ def from_aligned(aligned: Mapping[str, Any]) -> list[dict[str, Any]]:
             blk["src"].update({"pi": pi, "bi": bi})
             blocks.append(blk)
     return blocks
+
+
+def from_treatments(recs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """booklayout treatments.json（每个分类单元一条）→ treatment 块。
+
+    不 import booklayout：记录由 `booklayout treatments <aligned> --out` 产出，这里只读其字段。
+    """
+    out = []
+    for r in recs:
+        ref = r.get("block_id") or f"p{int(r['page']):04d}"
+        out.append(_block(f"T-{ref}", "treatment", int(r["page"]), r.get("latin", ""), "treatments", ref,
+                          {k: v for k, v in r.items() if k not in ("page", "block_id")}))
+    return out
+
+
+def from_figures(aligned: Mapping[str, Any], treatments: list[Mapping[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """aligned 里带图号的 caption 块 → figure 块；有 treatments 时按图号绑定到所属分类单元。
+
+    aligned 没有图像路径，所以这里只绑定「图号 ↔ 图注块 ↔ 分类单元」，不声称绑定了图像文件。
+    """
+    owner: dict[int, str] = {}
+    for r in treatments or []:
+        for c in r.get("caption", []):
+            if c.get("no") is not None:
+                owner.setdefault(int(c["no"]), f"T-{r.get('block_id') or 'p%04d' % int(r['page'])}")
+    out = []
+    for p in aligned.get("pages", []):
+        page = int(p.get("page", 0))
+        for bi, b in enumerate(p.get("blocks", [])):
+            if b.get("role") != "caption":
+                continue
+            m = FIGNO.match((b.get("text") or b.get("source") or "").strip())
+            if not m:
+                continue
+            bid = b.get("block_id") or f"p{page:04d}_{bi:02d}"
+            no = int(m.group(1))
+            out.append(_block(f"F{no}-{bid}", "figure", page, b.get("text") or "", "figures", bid,
+                              {"no": no, "caption_ref": bid, "treatment": owner.get(no),
+                               "translation": b.get("translation") or None}))
+    return out
 
 
 def to_aligned(sd: Mapping[str, Any]) -> dict[str, Any]:
@@ -110,10 +157,14 @@ def to_aligned(sd: Mapping[str, Any]) -> dict[str, Any]:
     return {**meta["top"], "pages": pages}
 
 
-def build(doc: str, *, keys: Mapping[str, Any] | None = None, aligned: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def build(doc: str, *, keys: Mapping[str, Any] | None = None, aligned: Mapping[str, Any] | None = None,
+          treatments: list[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     blocks: list[dict[str, Any]] = []
     if aligned is not None:
         blocks += from_aligned(aligned)
+        blocks += from_figures(aligned, treatments)
+    if treatments is not None:
+        blocks += from_treatments(treatments)
     if keys is not None:
         blocks += from_keys(keys)
     # 稳定排序：页号，再保持各来源内部顺序（sort 稳定）
@@ -164,6 +215,11 @@ def validate(sd: dict[str, Any], keys: Mapping[str, Any] | None = None) -> dict[
                 b["issues"].append("couplet_missing_key_or_lead")
             if not d.get("terminals"):
                 b["issues"].append("no_terminal")
+    problems += _check_treatments_and_figures(sd)
+    for b in sd.get("blocks", []):
+        for code in translation_issues(b):
+            b["issues"].append(code)
+            problems.append({"scope": f"translation:{b['id']}", "code": code, "detail": b["id"]})
     from .keys import check_couplets
 
     for origin in sorted({b["src"].get("origin") for b in sd.get("blocks", [])}):
@@ -193,6 +249,84 @@ def validate(sd: dict[str, Any], keys: Mapping[str, Any] | None = None) -> dict[
     sd["summary"] = {"blocks": len(sd.get("blocks", [])), "by_type": dict(cnt),
                      "uncertain": sum(1 for b in sd.get("blocks", []) if b.get("status") == "uncertain")}
     return sd
+
+
+def _norm_nums(s: str, decimal_comma: bool = False) -> list[str]:
+    s = s.translate(str.maketrans("０１２３４５６７８９．", "0123456789."))
+    if decimal_comma:  # 西语小数逗号 2,5
+        s = re.sub(r"(?<=\d),(?=\d)", ".", s)
+    # 1-3 的整数常被译成数词（1対→a pair），不参与比对；小数、年份、大数、范围端点照查
+    return sorted(n for n in NUM.findall(s) if not (n.isdigit() and int(n) <= 3))
+
+
+def _nums_equal(src: str, tr: str) -> bool:
+    """逗号既可能是列表分隔也可能是小数点：两种读法任一一致即算一致，宁漏报不误报。"""
+    return any(_norm_nums(src, a) == _norm_nums(tr, b) for a in (False, True) for b in (False, True))
+
+
+def translation_issues(b: Mapping[str, Any]) -> list[str]:
+    """块的译文与原文逐块比对（确定性，零模型）。无译文的块不查。
+
+    - tr_numbers：数字（含小数；不含 1-3 的整数，它们常译成数词）多重集不一致（丢数、多数）。
+    - tr_latin：原文含 CJK 时，原文里的学名二名法必须原样出现在译文里。
+    - tr_figno：图注的图号必须保留。
+    检索表偶句的终点不交模型（只在 data.terminals 里），所以不查终点是否出现在译文。
+    """
+    d = b.get("data", {})
+    tr = d.get("translation")
+    if not tr or not isinstance(tr, str):
+        return []
+    src = b.get("text", "")
+    out = []
+    if not _nums_equal(src, tr):
+        out.append("tr_numbers")
+    if CJK.search(src):
+        flat = re.sub(r"\s+", " ", tr)
+        if any(re.sub(r"\s+", " ", m) not in flat for m in BINOMIAL.findall(src)):
+            out.append("tr_latin")
+    if b.get("type") == "figure":
+        m = FIGNO.match(src.strip())
+        if m and not re.search(rf"(?<!\d){m.group(1)}(?!\d)", tr):
+            out.append("tr_figno")
+    return out
+
+
+def _check_treatments_and_figures(sd: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """treatment 必备字段、图号重复/缺号、图注无归属。与 booklayout.treatments.validate 同码（测试核对）。"""
+    probs: list[dict[str, Any]] = []
+
+    def flag(b: dict[str, Any], scope: str, code: str, detail: str) -> None:
+        b["issues"].append(code)
+        probs.append({"scope": scope, "code": code, "detail": detail})
+
+    for b in sd.get("blocks", []):
+        if b.get("type") != "treatment":
+            continue
+        d = b.get("data", {})
+        if d.get("rank") != "species":
+            continue
+        sc = f"treatment:{b['id']}"
+        for fld in TREATMENT_REQUIRED:
+            if not d.get(fld):
+                flag(b, sc, f"missing_{fld}", d.get("latin", ""))
+        if d.get("legend") and not d.get("caption"):
+            flag(b, sc, "legend_without_caption", d.get("latin", ""))
+        if len(d.get("caption", [])) > 1:
+            flag(b, sc, "multiple_captions", d.get("latin", ""))
+    has_t = any(x.get("type") == "treatment" for x in sd.get("blocks", []))
+    seen: set[int] = set()
+    for b in (x for x in sd.get("blocks", []) if x.get("type") == "figure"):
+        n = b["data"]["no"]
+        if n in seen:
+            flag(b, "figures", "duplicate_figure_no", str(n))
+        seen.add(n)
+        if has_t and not b["data"].get("treatment"):
+            flag(b, "figures", "unbound_caption", str(n))
+    if seen:
+        for n in range(min(seen), max(seen) + 1):
+            if n not in seen:
+                probs.append({"scope": "figures", "code": "figure_no_gap", "detail": str(n)})
+    return probs
 
 
 def to_translation_units(sd: Mapping[str, Any]) -> list[dict[str, Any]]:

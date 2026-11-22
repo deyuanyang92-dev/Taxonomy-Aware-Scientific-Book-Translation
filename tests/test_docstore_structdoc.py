@@ -168,3 +168,90 @@ def test_real_books_roundtrip_if_present():
     for p in found:
         a = json.loads(p.read_text(encoding="utf-8"))
         assert sd.to_aligned(sd.build(p.stem, aligned=a)) == a, p
+
+
+# ---- 切片 3：treatment、图号绑定、译后逐块检查 ----
+
+def _treat(latin="Exogone gemmifera Pagenstecher, 1862", **kw):
+    r = {"page": 11, "block_id": "p011_b03", "latin": latin, "rank": "species", "caption": [{"no": 2, "text": "Fig.2"}],
+         "ja": "コンボウ", "ref": ["r"], "description": ["d"], "distribution": ["x"]}
+    r.update(kw)
+    return r
+
+
+def _cap_aligned(text="図2.体前部", tr="图2 体前部"):
+    return {"pages": [{"page": 11, "blocks": [
+        {"role": "caption", "text": text, "translation": tr, "block_id": "p011_b05"}]}]}
+
+
+def test_treatment_block_and_missing_field():
+    d = sd.build("x", treatments=[_treat(), _treat(latin="Nereis virens Sars, 1835", block_id="p012_b01", description=[])])
+    assert [b["type"] for b in d["blocks"]] == ["treatment", "treatment"]
+    assert [b["status"] for b in d["blocks"]] == ["ok", "uncertain"]
+    assert {"scope": "treatment:T-p012_b01", "code": "missing_description", "detail": "Nereis virens Sars, 1835"} in d["problems"]
+
+
+def test_figure_binds_caption_to_treatment():
+    d = sd.build("x", aligned=_cap_aligned(), treatments=[_treat()])
+    fig = [b for b in d["blocks"] if b["type"] == "figure"][0]
+    assert fig["data"]["no"] == 2 and fig["data"]["treatment"] == "T-p011_b03" and fig["status"] == "ok"
+
+
+def test_unbound_and_gap_and_duplicate_figures():
+    a = {"pages": [{"page": 11, "blocks": [
+        {"role": "caption", "text": "図1.a", "block_id": "c1"},
+        {"role": "caption", "text": "図3.b", "block_id": "c3"},
+        {"role": "caption", "text": "図3.c", "block_id": "c3b"}]}]}
+    d = sd.build("x", aligned=a, treatments=[_treat(caption=[{"no": 1, "text": "図1"}])])
+    codes = {(p["code"], p["detail"]) for p in d["problems"]}
+    assert ("figure_no_gap", "2") in codes and ("duplicate_figure_no", "3") in codes
+    assert ("unbound_caption", "3") in codes and ("unbound_caption", "1") not in codes
+
+
+def test_translation_checks_flag_lost_number_latin_and_figno():
+    a = {"pages": [{"page": 1, "blocks": [
+        {"role": "body", "text": "体長2.8mm，Exogone gemmifera が33節", "translation": "体长2.8mm，Exogone gemmifera 有33节",
+         "block_id": "b1"},
+        {"role": "body", "text": "体長2.8mm，Exogone gemmifera が33節", "translation": "体长28mm，Exogene gemmifera 有33节",
+         "block_id": "b2"},
+        {"role": "caption", "text": "図5.a", "translation": "图6.a", "block_id": "b3"}]}]}
+    d = sd.build("x", aligned=a)
+    st = {b["id"]: b["issues"] for b in d["blocks"]}
+    assert st["b1"] == []
+    assert st["b2"] == ["tr_numbers", "tr_latin"]
+    assert "tr_figno" in st["F5-b3"] and "tr_numbers" in st["F5-b3"]
+
+
+def test_translation_check_survives_revalidate_and_roundtrip():
+    a = _cap_aligned("図2.x", "图3.x")
+    d = sd.validate(json.loads(json.dumps(sd.build("x", aligned=a))))
+    assert any(p["code"] == "tr_figno" for p in d["problems"])
+    assert sd.to_aligned(d) == a
+
+
+def test_treatment_codes_match_booklayout_validate():
+    import pytest
+    from booklayout import treatments as bt
+    recs = [_treat(), _treat(latin="Nereis virens Sars, 1835", block_id="p012_b01", ref=[], caption=[]),
+            _treat(block_id="p013_b01", legend=["a:b"], caption=[])]
+    want = sorted((i["code"], i["latin"]) for i in bt.validate(recs) if "latin" in i)
+    d = sd.build("x", treatments=recs)
+    got = sorted((p["code"], p["detail"]) for p in d["problems"] if p["scope"].startswith("treatment:"))
+    assert got == want
+    _ = pytest
+
+
+def test_real_book_slice3_flags_are_counted_if_present():
+    import pytest
+    p = REAL[0]
+    if not p.is_file():
+        pytest.skip("real aligned.json not available")
+    from booklayout import treatments as bt
+    a = json.loads(p.read_text(encoding="utf-8"))
+    recs = bt.parse(a)
+    d = sd.build("imajima2009", aligned=a, treatments=recs)
+    assert d["summary"]["by_type"]["treatment"] == len(recs)
+    assert sd.to_aligned(d) == a
+    booklayout_codes = sorted(i["code"] for i in bt.validate(recs) if "latin" in i)
+    ours = sorted(pr["code"] for pr in d["problems"] if pr["scope"].startswith("treatment:"))
+    assert ours == booklayout_codes
