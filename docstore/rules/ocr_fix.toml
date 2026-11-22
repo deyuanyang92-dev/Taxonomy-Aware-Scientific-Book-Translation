@@ -20,6 +20,12 @@ name = "digit_range_dash"
 pattern = "(?<=\\d)一(?=\\d)"
 replace = "—"
 
+# 拉丁字母词内或词尾的 @ 是 e 的 OCR 误识（Eurytho@ → Eurythoe；Hartmann-Schröder 1962 p.15）
+[[regex_rules]]
+name = "at_sign_for_e"
+pattern = "(?<=[A-Za-z])@(?=[\\s,.;)]|[a-z]|$)"
+replace = "e"
+
 [[replace_rules]]
 name = "rare_char_27352"
 before = "虫甸"

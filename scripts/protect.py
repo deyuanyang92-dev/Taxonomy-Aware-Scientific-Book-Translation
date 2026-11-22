@@ -9,15 +9,18 @@ from __future__ import annotations
 import re
 
 _AUTH = r"(?:\(?[A-Z][\w'’.\-]*(?:[\s,&]+(?:and |et |und )?[A-Z][\w'’.\-]*)*,?\s?\d{4}(?:\s?[a-z](?![a-z]))?\)?)"
-_TAG = r"(?:n\.\s?(?:sp|gen|comb|subsp|var)\.|(?:sp|gen|comb)\.\s?n\.|nom\.\s?nov\.|comb\.\s?nov\.)"
+_TAG = r"(?:n\.\s?g\.(?:\s?n\.\s?sp\.)?|n\.\s?(?:sp|gen|comb|subsp|var)\.|(?:sp|gen|comb)\.\s?n\.|nom\.\s?nov\.|comb\.\s?nov\.)"
 _BINOM = r"[A-Z][a-z]{2,}(?:\s\([A-Z][a-z]{2,}\))?\s[a-z]{3,}(?:\s(?:var|subsp|f)\.\s[a-z]{3,})?"
 # 先匹配最长的：学名+命名人年份 / 学名+命名标记；再匹配单独命名标记、日期
 PATTERNS = [
     re.compile(rf"{_BINOM}\s{_AUTH}"),
     re.compile(rf"{_BINOM}\s{_TAG}"),
+    re.compile(rf"(?<![\w])[A-Z]\.\s[a-z]{{4,}}\s{_TAG}"),   # 缩写属名：T. anoculata n. sp.
     re.compile(rf"(?<![\w]){_TAG}"),
     # 日文「数字+量词」（15対、2列）：谷歌在长句里会把数字吞掉或并错，数字单独占位
-    re.compile(r"(?<![\d.,])\d{1,3}(?=[対枚個本列節])"),
+    re.compile(r"(?<![\d.,])\d{1,3}(?:対|列|剛毛束)|(?<![\d.,])\d{1,3}(?=[枚個本節])"),
+    # 数字+单位（谷歌会把「ca. 10 mm」写成「100 厘米。10毫米」）：整体占位，还原原样
+    re.compile(r"(?<![\w.,])(?:ca\.\s?)?\d+(?:[.,]\d+)?(?:\s?[-–]\s?\d+(?:[.,]\d+)?)?\s?(?:mm|cm|µm|μm)\b"),
     # OCR 常把第一个点识成逗号（10, 3. 60），也算日期
     re.compile(r"(?<!\d)\d{1,2}[.,]\s?\d{1,2}\.\s?\d{2}(?!\d)"),
     # 括号内单独的命名人+年份（异名/分布引证），谷歌会把人名音译
@@ -25,6 +28,16 @@ PATTERNS = [
     # 德文志书把人名排成大写：「O. HARTMAN (1959)」「AUGENER (1922)」
     re.compile(r"(?<![\w])(?:[A-Z]\.\s?)?[^\W\d_a-z]{3,}(?:-[^\W\d_a-z]{3,})?\s\(\d{4}(?:\s?[a-z](?![a-z]))?\)"),
 ]
+
+
+def clean_ocr(text: str) -> str:
+    """翻译前套用 docstore/rules/ocr_fix.toml 的正则规则（不含编辑距离词表纠错，免得慢和误改）。"""
+    import tomllib
+    from pathlib import Path
+    cfg = tomllib.loads((Path(__file__).resolve().parents[1] / "docstore" / "rules" / "ocr_fix.toml").read_text("utf-8"))
+    for r in cfg.get("regex_rules", []):
+        text = re.sub(r["pattern"], r["replace"], text)
+    return text
 
 
 def mask(text: str) -> tuple[str, list[str]]:
@@ -40,9 +53,26 @@ def mask(text: str) -> tuple[str, list[str]]:
     return text, saved
 
 
-def restore(text: str, saved: list[str]) -> str:
+_COUNTERS = {"対": ("对", "pair"), "列": ("列", "row"), "剛毛束": ("刚毛束", "seta bundle")}
+
+
+def _counter(orig: str, tl: str) -> str:
+    """日文「N対」占位时连量词一起藏起来，按目标语言还原（谷歌会把「2対の眼」译成「2那双眼睛」）。"""
+    for ja, (zh, en) in _COUNTERS.items():
+        if orig.endswith(ja):
+            n = orig[: -len(ja)]
+            lang = tl.split("-")[0].lower()
+            if lang == "zh":
+                return n + zh
+            if lang == "en":
+                return f"{n} {en}" + ("" if n == "1" else "s")
+    return orig
+
+
+def restore(text: str, saved: list[str], tl: str = "") -> str:
     """占位符换回原文。占位符被机翻吞掉时不补（用 lost() 先查）。"""
     for i, orig in enumerate(saved, 1):
+        orig = _counter(orig, tl)
         text = re.sub(rf"\[\[\s*{i}\s*\]\]", orig.replace("\\", "\\\\"), text)
     return text
 

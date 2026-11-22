@@ -145,6 +145,7 @@ class Google:
         self.g = gtrans.Google(gtrans.Cache(cache), sl=sl, tl=tl, pause=(0.0, 0.0))
         self.failed: list[str] = []
         self.sl = sl
+        self.tl = tl
 
     @property
     def requests(self) -> int:
@@ -177,7 +178,7 @@ class Google:
             except self._gt.GoogleError:
                 self.failed.append(s[:80])
                 return s
-        return protect.restore(out, saved)
+        return protect.restore(out, saved, self.tl)
 
     def body(self, p: str) -> str:
         return '\n'.join(ln for ln in p.split('\n') if not ln.lstrip().startswith('<!--')).strip()
@@ -1263,7 +1264,7 @@ def main(argv: list[str] | None = None) -> None:
             work / '_merged_glossary.tsv')
         a.glossary = str(merged)
         print(f'[auto] 跨书 memory 已合并 → {merged}', flush=True)
-    src_txt = Path(a.src).read_text(encoding='utf-8')
+    src_txt = protect.clean_ocr(Path(a.src).read_text(encoding='utf-8'))   # 已知 OCR 误识（词内 @→e）
     if a.sl == 'ja':
         src_txt = keysplit.split_keys(src_txt)   # 检索表条目一条一段，免得机翻重排
     src_pg = pages(src_txt)

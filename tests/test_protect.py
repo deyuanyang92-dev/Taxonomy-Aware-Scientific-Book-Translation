@@ -48,8 +48,30 @@ def test_unicode_caps_author_and_caps_name_year():
 def test_ja_number_before_counter_protected():
     t = "吻の先端に13対の肉質突起と2対の顎がある，背鱗は15対あって"
     m, s = protect.mask(t)
-    assert s == ["13", "2", "15"] and "15対" not in m
+    assert s == ["13対", "2対", "15対"] and "15対" not in m
     assert protect.restore(m, s) == t
+    assert protect.restore("[[2]] 颚", s, "zh-CN") == "2对 颚"
+    assert protect.restore("[[2]] jaws", s, "en") == "2 pairs jaws"
+    m, s = protect.mask("いぼが1列に並ぶ，背剛毛は1剛毛束に1～3本あり，5列に並び")
+    assert s == ["1列", "1剛毛束", "3", "5列"]
+    assert protect.restore(m, s, "en") == "いぼが1 rowに並ぶ，背剛毛は1 seta bundleに1～3本あり，5 rowsに並び"
+
+
+def test_abbrev_binomial_and_ng_tag():
+    t = "wie T. anoculata n. sp. und Paratyposyllis paurocirrata n.g. n. sp. zeigen"
+    m, s = protect.mask(t)
+    assert sorted(s) == ["Paratyposyllis paurocirrata n.g. n. sp.", "T. anoculata n. sp."]
+    assert protect.restore(m, s) == t
+
+
+def test_clean_ocr_at_sign():
+    assert protect.clean_ocr("Gattung: Eurytho@ KINBERG 1857") == "Gattung: Eurythoe KINBERG 1857"
+
+
+def test_measure_protected():
+    t = "Das einzige Exemplar ist ca. 10 mm lang, 0,5-1 mm breit und 2 cm dick."
+    m, s = protect.mask(t)
+    assert s == ["ca. 10 mm", "0,5-1 mm", "2 cm"] and protect.restore(m, s) == t
 
 
 def test_line_break_inside_citation():

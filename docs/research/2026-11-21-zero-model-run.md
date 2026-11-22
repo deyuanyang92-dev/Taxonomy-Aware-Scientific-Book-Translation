@@ -77,3 +77,17 @@ d. 检索表按条切段（日文源）。
 
 复测（v7）：德→英、德→中、日→中 critical = 0（修前 3、4、4）；日→英 critical 2 页（p.61 的「1列」、p.66 的「1剛毛束」被译成「per bundle」省略数字，属谷歌改写，保留报警）。
 仍保留的非前处理问题：德→中 number.added「100 厘米」(p.26 谷歌凭空加)、OCR 错字（Eurytho@ KinsErc）须回 OCR/校对层；这些由 QA 报警拦截，不静默放过。
+
+### 第四轮：全部残留清零（v8/v9，无模型，同样 5+5 页）
+
+先纠正：第三轮报告里的「de years_missing=2」和「de>zh 学名丢 1」是**评分器 bug**，不是译文问题——`zero_model_score.py` 用 \b 匹配，中文「1922年」「如Typosyllis…」里数字/字母与汉字同属 \w，\b 不成立，把保留下来的年份和学名误判丢失。已改为 `(?<!\d)…(?!\d)` / `(?<![A-Za-z])`，回归测试 tests/test_zero_model_score.py。
+
+| 残留 | 根因（证据） | 确定性措施 | 测试 |
+|---|---|---|---|
+| de>zh「100 厘米」(p.26) | 源「ca. 10 mm lang」，谷歌无中生有「约为 100 厘米。10毫米」 | protect：数字+mm/cm/µm（含 ca. 与范围）整体占位 | test_measure_protected |
+| ja>en p.61「1列」、p.66「1剛毛束」critical | 谷歌把「1列」写成 a row、「1剛毛束」写成 per bundle，数字被省 | protect：N列/N剛毛束 连量词占位，按目标语言还原（en「1 row」「5 rows」「1 seta bundle」，zh「1列」「1刚毛束」） | test_ja_number_before_counter_protected |
+| 「2対の眼」→「2那双眼睛」 | 量词 対 在占位符外 | N対 整体占位，还原 zh「2对」、en「2 pairs」 | 同上 |
+| OCR「Eurytho@ KinsErc」 | OCR 把词尾 e 识成 @ | docstore/rules/ocr_fix.toml 新增 at_sign_for_e；auto_translate 翻译前 protect.clean_ocr 套用正则规则 | test_fixer_at_sign_is_e、test_clean_ocr_at_sign |
+| 缩写属名「T. anoculata n. sp.」、「n.g.」 | 谷歌改写缩写属名后的标记 | protect 增 缩写属名+标记、n.g.（源里「n.g.n.sSp.」「anocuülata」是 OCR 原错，译前不改） | test_abbrev_binomial_and_ng_tag |
+
+复测（critical / major 数）：ja>en 2/1→0/1（major 仅 text.word_join），ja>zh 0/0，de>en 0/1，de>zh 0/0；学名保留 3/3（四路径）；缺年份 0；usage.tsv 不存在（零模型）。num_missing 仍 8~9（ja）、2~5（de），为谷歌改写数字的真实残留，由 QA 在 minor 以下计数。

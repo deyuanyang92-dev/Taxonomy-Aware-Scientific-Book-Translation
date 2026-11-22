@@ -4,7 +4,9 @@
 指标（全文，n=页数）：学名保留（源中拉丁双名在译文出现）、年份缺失、数字缺失/多出（多重集）、
 残留假名、transqa.check_all 按 严重度:code 计数。
 """
-import json, re, sys
+import json
+import re
+import sys
 from collections import Counter
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,8 +14,9 @@ sys.path.insert(0, str(ROOT))
 from transqa import check_all  # noqa: E402
 
 # 学名 = 双名 + 紧跟 (作者, 年份) 或 n. sp.；纯双词匹配会把德文普通词算进来
-BIN = re.compile(r"\b[A-Z][a-z]{2,} (?:\([A-Z][a-z]+\) )?[a-z]{3,}(?= \(?(?:[A-Z][\w.&' -]{1,40}?,? ?\d{4}|n\. ?sp))")
-YEAR = re.compile(r"\b1[5-9]\d\d[a-z]?\b|\b20[0-2]\d\b")
+BIN = re.compile(r"(?<![A-Za-z])[A-Z][a-z]{2,} (?:\([A-Z][a-z]+\) )?[a-z]{3,}(?= \(?(?:[A-Z][\w.&' -]{1,40}?,? ?\d{4}|n\. ?sp))")
+# 不用 \b：中文「1922年」里数字与「年」同属 \w，\b 不成立，会把保留的年份误报缺失
+YEAR = re.compile(r"(?<!\d)(?:1[5-9]\d\d|20[0-2]\d)(?:[a-z](?![a-z]))?(?!\d)")
 NUM = re.compile(r"\d+")
 KANA = re.compile(r"[ぁ-ヿ]")
 
@@ -72,6 +75,12 @@ def main():
         ('v7 de>zh direct', 'de_src.md', 'de_zh_direct_v7', 'de', 'zh-CN'),
         ('v7 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v7', 'ja', 'zh-CN'),
         ('v7 ja>en', 'ja_src.md', 'ja_en_v7', 'ja', 'en'),
+        ('v8 de>en', 'de_src.md', 'de_en_v8', 'de', 'en'),
+        ('v8 de>zh direct', 'de_src.md', 'de_zh_direct_v8', 'de', 'zh-CN'),
+        ('v8 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v8', 'ja', 'zh-CN'),
+        ('v8 ja>en', 'ja_src.md', 'ja_en_v8', 'ja', 'en'),
+        ('v9 de>en', 'de_src.md', 'de_en_v9', 'de', 'en'),
+        ('v9 de>zh direct', 'de_src.md', 'de_zh_direct_v9', 'de', 'zh-CN'),
     ]
     out = {}
     for name, sf, wd, sl, tl in paths:
