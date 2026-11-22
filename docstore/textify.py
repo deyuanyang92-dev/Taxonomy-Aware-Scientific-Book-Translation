@@ -10,6 +10,7 @@ from typing import Callable, Iterator
 
 from .consensus import Reading, vote
 from .engines import ENGINE_MAP
+from .ocr_routes import route_for
 from .engines.rapidocr import rapidocr_run
 from .lexicon import Fixer
 from .store import Store, agent, make_version
@@ -41,6 +42,23 @@ def _run_engine(name: str, pdf_path: str, n: int, dpi: int) -> tuple[str, float 
         raise ValueError(f"未知 OCR 引擎: {name}")
     return fn(pdf_path, n, dpi)
 
+def _run_with_fallback(
+    name: str, fallbacks: tuple[str, ...], pdf_path: str, n: int, dpi: int
+) -> tuple[str, str, float | None]:
+    """主引擎失败（无网络/无密钥/限流等）时依次试 fallback；返回 (实际引擎, 文本, 置信度)。全部失败则抛最后一个异常。"""
+    last: Exception | None = None
+    for eng in (name, *fallbacks):
+        try:
+            txt, conf = _run_engine(eng, pdf_path, n, dpi)
+            return eng, txt, conf
+        except ValueError:
+            raise  # 未知引擎名是配置错误，不降级
+        except Exception as e:
+            last = e
+    assert last is not None
+    raise last
+
+
 def _is_real_ocr(v: dict) -> bool:
     """版本是否真由 OCR 引擎识出（latinfix 等后处理版继承底本 method/engine，文本层底本不算）。"""
     eng = str(v.get("engine") or "")
@@ -70,12 +88,14 @@ def layer_is_ocr(meta: dict, pdf=None) -> bool:
     return False
 
 
-def _iter_engines(path: str, n: int, dpi: int, engines: list[str]) -> Iterator[tuple[str, str, float | None, float]]:
-    """逐引擎识别一页，惰性产出 (引擎, 文本, 置信度, 本页已用秒数)。"""
+def _iter_engines(
+    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = ()
+) -> Iterator[tuple[str, str, float | None, float]]:
+    """逐引擎识别一页，惰性产出 (实际引擎, 文本, 置信度, 本页已用秒数)；fallbacks 仅在引擎抛错时使用。"""
     t_page = time.perf_counter()  # 单调时钟：WSL 下 time.time() 会跳变
     for eng in engines:
-        txt, conf = _run_engine(eng, path, n, dpi)
-        yield eng, txt, conf, round(time.perf_counter() - t_page, 2)
+        used, txt, conf = _run_with_fallback(eng, fallbacks, path, n, dpi)
+        yield used, txt, conf, round(time.perf_counter() - t_page, 2)
 
 
 def _pool_init(threads: int) -> None:
@@ -93,8 +113,10 @@ def _pool_init(threads: int) -> None:
         pass
 
 
-def _pool_task(path: str, n: int, dpi: int, engines: list[str]) -> list[tuple[str, str, float | None, float]]:
-    return list(_iter_engines(path, n, dpi, engines))
+def _pool_task(
+    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = ()
+) -> list[tuple[str, str, float | None, float]]:
+    return list(_iter_engines(path, n, dpi, engines, fallbacks))
 
 
 def default_ocr_threads(workers: int) -> int:
@@ -195,7 +217,15 @@ def textify(
         log(f"[{key}] 文本层 {n_text} 页")
     t0 = time.perf_counter()
     done = 0
-    engines = engines or ["rapidocr", "tesseract"]
+    fallbacks: tuple[str, ...] = ()
+    if not engines:
+        route = route_for(d.get("lang"))  # 按语种路由（rules/ocr_routes.toml）；表外语种沿用旧默认
+        if route:
+            engines, fallbacks = [route.primary], route.fallback
+            os.environ.update(route.env)  # 子进程池继承（如 DOCSTORE_PPOCR_MODEL）
+            log(f"[{key}] 路由 {d.get('lang')}: {route.primary} 降级 {','.join(fallbacks) or '无'}（{route.evidence}）")
+        else:
+            engines = ["rapidocr", "tesseract"]
     global _FIXER
     if _FIXER is None:
         _FIXER = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
@@ -265,13 +295,13 @@ def textify(
             log(f"[{key}] OCR {done}/{len(need_ocr)}  {rate:.1f}s/页(墙钟)  预计剩余 {rate * (len(need_ocr) - done) / 60:.1f} 分钟")
 
     if need_ocr:
-        bad = [e for e in engines if e != "rapidocr" and e not in ENGINE_MAP]
+        bad = [e for e in (*engines, *fallbacks) if e != "rapidocr" and e not in ENGINE_MAP]
         if bad:
             raise ValueError(f"未知 OCR 引擎: {','.join(bad)}")
         log(f"[{key}] 需 OCR {len(need_ocr)} 页，engines={','.join(engines)}")
         if workers <= 1 or len(need_ocr) == 1:
             for n in need_ocr:
-                save(n, _iter_engines(path, n, dpi, engines))  # 惰性：每个引擎一出结果就写盘
+                save(n, _iter_engines(path, n, dpi, engines, fallbacks))  # 惰性：每个引擎一出结果就写盘
         else:
             threads = ocr_threads or default_ocr_threads(workers)
             pool = ProcessPoolExecutor(
@@ -281,7 +311,7 @@ def textify(
                 initargs=(threads,),
             )
             try:
-                futs = {pool.submit(_pool_task, path, n, dpi, engines): n for n in need_ocr}
+                futs = {pool.submit(_pool_task, path, n, dpi, engines, fallbacks): n for n in need_ocr}
                 for fut in as_completed(futs):
                     save(futs[fut], fut.result())
             except BaseException:

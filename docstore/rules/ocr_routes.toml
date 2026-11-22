@@ -1,0 +1,32 @@
+# 语种 -> OCR 引擎路由。依据：bench/summary_150.md（每语种 n=50，CER 对 Datalab 金标；金标不是人工真值）与 docs/ocr_eval/LEDGER.tsv。
+# primary 失败（无网络/无密钥/限流）时依次试 fallback。env 在 textify 启动子进程前写入环境（如 PP-OCRv6 模型名）。
+# 不在表内的语种（de、en 等）沿用旧默认 ["rapidocr", "tesseract"]。
+
+[ru]
+primary = "tesseract"            # Tesseract rus+eng（语言包见 textify.TESS_LANG）
+fallback = ["ppocr"]
+evidence = "summary_150 ru: T16_best+eng 0.130 vs P11 0.143 (n=50)"
+
+[fr]
+primary = "ppocr"
+fallback = ["tesseract"]
+env = { DOCSTORE_PPOCR_MODEL = "PP-OCRv6_medium" }
+evidence = "summary_150 fr: P0_v6m 0.1065 vs T16 0.115 (n=50)"
+
+[la]
+primary = "paddle_vl"            # 云端 PaddleOCR-VL-1.6，免费额度（用户 2026-11-22 定默认云端）
+fallback = ["ppocr", "tesseract"]
+env = { DOCSTORE_PPOCR_MODEL = "PP-OCRv6_medium" }
+evidence = "summary_150 la: VL-1.6 0.118 vs local P0_v6m 0.139 (n=50)"
+
+[zh]
+primary = "ppocr"
+fallback = ["tesseract"]
+env = { DOCSTORE_PPOCR_MODEL = "PP-OCRv6_medium" }
+evidence = "LEDGER zh: PP-OCRv6 medium 0.039 (n=27)"
+
+[ja]
+primary = "ppocr"
+fallback = ["tesseract"]
+env = { DOCSTORE_PPOCR_MODEL = "PP-OCRv6_medium" }
+evidence = "LEDGER ja: PP-OCRv6 medium 0.048 (n=14)"
