@@ -65,7 +65,7 @@ def test_abbrev_binomial_and_ng_tag():
 
 
 def test_clean_ocr_at_sign():
-    assert protect.clean_ocr("Gattung: Eurytho@ KINBERG 1857") == "Gattung: Eurythoe KINBERG 1857"
+    assert protect.clean_ocr("Gattung: Eurytho@ KinsErc 1857") == "Gattung: Eurythoe KINBERG 1857"
 
 
 def test_measure_protected():

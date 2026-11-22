@@ -152,10 +152,10 @@ class Google:
         return int(self.g.requests)
 
     def prefetch(self, texts: list[str], workers: int = 8) -> None:
-        self.g.prefetch([protect.mask(t)[0] for t in texts], workers)
+        self.g.prefetch([protect.mask(t, self.sl)[0] for t in texts], workers)
 
     def one(self, s: str) -> str:
-        masked, saved = protect.mask(s)   # 学名/n. sp./日期不送机翻，回来原样还原
+        masked, saved = protect.mask(s, self.sl)   # 学名/n. sp./日期不送机翻，回来原样还原
         try:
             out = str(self.g.translate(masked))
         except self._gt.GoogleError:

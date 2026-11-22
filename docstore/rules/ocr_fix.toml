@@ -26,6 +26,12 @@ name = "at_sign_for_e"
 pattern = "(?<=[A-Za-z])@(?=[\\s,.;)]|[a-z]|$)"
 replace = "e"
 
+# 已知作者名 OCR 误识（Eurythoe KINBERG 1857）
+[[regex_rules]]
+name = "author_kinberg"
+pattern = "\\bKinsErc\\b"
+replace = "KINBERG"
+
 [[replace_rules]]
 name = "rare_char_27352"
 before = "虫甸"

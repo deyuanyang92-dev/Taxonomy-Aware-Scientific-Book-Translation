@@ -91,3 +91,15 @@ d. 检索表按条切段（日文源）。
 | 缩写属名「T. anoculata n. sp.」、「n.g.」 | 谷歌改写缩写属名后的标记 | protect 增 缩写属名+标记、n.g.（源里「n.g.n.sSp.」「anocuülata」是 OCR 原错，译前不改） | test_abbrev_binomial_and_ng_tag |
 
 复测（critical / major 数）：ja>en 2/1→0/1（major 仅 text.word_join），ja>zh 0/0，de>en 0/1，de>zh 0/0；学名保留 3/3（四路径）；缺年份 0；usage.tsv 不存在（零模型）。num_missing 仍 8~9（ja）、2~5（de），为谷歌改写数字的真实残留，由 QA 在 minor 以下计数。
+
+### 第五轮：德文基础术语、数量词、参考文献（v10，无模型）
+
+| 项 | 措施 | 测试 |
+|---|---|---|
+| 德文基础形态术语（谷歌把 Borstensegmente 译成「刷毛段」） | scripts/term_de.py：14 个德文词（Borstensegment、Parapodium、Prostomium、Peristomium、Elytre、Analcirrus、Tentakelcirrus、Rückencirrus、Aciculum、Pygidium、Nuchalorgan、Pharynx、Antenne、Palpe）送机翻前占位，回来写 yiku 已核定名（刚节、疣足、口前叶…；en 目标写英文单复数）。只收已核词，Kiefer/Rüssel 等无已核定名的不收 | tests/test_term_de.py（含与 ~/.yiku/yiku.db 已核条目对照，库里改名则报错） |
+| 「2 bis 2½」「10 Paar」「1,5 bis 3 mm」丢数字 | protect 占位，还原为「2–2½」「10对/10 pairs」「1,5–3 mm」 | 同上 |
+| OCR「KinsErc」 | ocr_fix.toml 作者名规则 → KINBERG | test_clean_ocr_at_sign |
+| 参考文献 | 已有机制：transqa.blocks 判 reference 不送谷歌，只换缩写；补回归 | tests/test_de_references.py |
+
+复测（德，5 页）：de>en num_missing 2→1，de>zh 5→3；critical 0；学名 3/3；缺年份 0。
+残留：谷歌括号不成对（zh_typo review，需人工）、OCR 把 anoculata 识成 anocuülata（原文错，不改）。

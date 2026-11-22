@@ -79,6 +79,8 @@ def main():
         ('v8 de>zh direct', 'de_src.md', 'de_zh_direct_v8', 'de', 'zh-CN'),
         ('v8 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v8', 'ja', 'zh-CN'),
         ('v8 ja>en', 'ja_src.md', 'ja_en_v8', 'ja', 'en'),
+        ('v10 de>en', 'de_src.md', 'de_en_v10', 'de', 'en'),
+        ('v10 de>zh direct', 'de_src.md', 'de_zh_direct_v10', 'de', 'zh-CN'),
         ('v9 de>en', 'de_src.md', 'de_en_v9', 'de', 'en'),
         ('v9 de>zh direct', 'de_src.md', 'de_zh_direct_v9', 'de', 'zh-CN'),
     ]

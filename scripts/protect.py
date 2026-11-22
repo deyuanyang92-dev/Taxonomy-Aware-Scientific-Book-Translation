@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+import term_de
+
 _AUTH = r"(?:\(?[A-Z][\w'’.\-]*(?:[\s,&]+(?:and |et |und )?[A-Z][\w'’.\-]*)*,?\s?\d{4}(?:\s?[a-z](?![a-z]))?\)?)"
 _TAG = r"(?:n\.\s?g\.(?:\s?n\.\s?sp\.)?|n\.\s?(?:sp|gen|comb|subsp|var)\.|(?:sp|gen|comb)\.\s?n\.|nom\.\s?nov\.|comb\.\s?nov\.)"
 _BINOM = r"[A-Z][a-z]{2,}(?:\s\([A-Z][a-z]{2,}\))?\s[a-z]{3,}(?:\s(?:var|subsp|f)\.\s[a-z]{3,})?"
@@ -20,7 +22,9 @@ PATTERNS = [
     # 日文「数字+量词」（15対、2列）：谷歌在长句里会把数字吞掉或并错，数字单独占位
     re.compile(r"(?<![\d.,])\d{1,3}(?:対|列|剛毛束)|(?<![\d.,])\d{1,3}(?=[枚個本節])"),
     # 数字+单位（谷歌会把「ca. 10 mm」写成「100 厘米。10毫米」）：整体占位，还原原样
-    re.compile(r"(?<![\w.,])(?:ca\.\s?)?\d+(?:[.,]\d+)?(?:\s?[-–]\s?\d+(?:[.,]\d+)?)?\s?(?:mm|cm|µm|μm)\b"),
+    re.compile(r"(?<![\w.,])(?:ca\.\s?)?\d+(?:[.,]\d+)?(?:\s?(?:[-–]|bis)\s?\d+(?:[.,]\d+)?)?\s?(?:mm|cm|µm|μm)\b"),
+    # 德文「N bis M」「N Paar」：谷歌会丢数字（「2 bis 2½」「10 Paar」实测）
+    re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)? bis \d+(?:[.,]\d+)?[%½]?(?![\d.,])|(?<![\d.,])\d+ Paar\b"),
     # OCR 常把第一个点识成逗号（10, 3. 60），也算日期
     re.compile(r"(?<!\d)\d{1,2}[.,]\s?\d{1,2}\.\s?\d{2}(?!\d)"),
     # 括号内单独的命名人+年份（异名/分布引证），谷歌会把人名音译
@@ -40,8 +44,8 @@ def clean_ocr(text: str) -> str:
     return text
 
 
-def mask(text: str) -> tuple[str, list[str]]:
-    """返回 (带占位符的文本, 原片段表)；同一输入输出确定，可作缓存键。"""
+def mask(text: str, sl: str = "") -> tuple[str, list[str]]:
+    """返回 (带占位符的文本, 原片段表)；同一输入输出确定，可作缓存键。sl=de 时德文基础形态术语也占位。"""
     saved: list[str] = []
 
     def sub(m: re.Match[str]) -> str:
@@ -50,6 +54,8 @@ def mask(text: str) -> tuple[str, list[str]]:
 
     for pat in PATTERNS:
         text = pat.sub(sub, text)
+    if sl.split("-")[0].lower() == "de":
+        text = term_de.PATTERN.sub(sub, text)
     return text, saved
 
 
@@ -58,6 +64,15 @@ _COUNTERS = {"対": ("对", "pair"), "列": ("列", "row"), "剛毛束": ("刚�
 
 def _counter(orig: str, tl: str) -> str:
     """日文「N対」占位时连量词一起藏起来，按目标语言还原（谷歌会把「2対の眼」译成「2那双眼睛」）。"""
+    if tl and (t := term_de.render(orig, tl)):
+        return t
+    lang0 = tl.split("-")[0].lower()
+    if lang0 in ("zh", "en"):
+        if " bis " in orig:   # 2 bis 2% → 2–2½（OCR 把 ½ 识成 %）；1,5 bis 3 mm → 1,5–3 mm
+            return re.sub(r"%$", "½", orig).replace(" bis ", "–")
+        if orig.endswith(" Paar"):
+            n = orig[:-5]
+            return f"{n}对" if lang0 == "zh" else f"{n} pair" + ("" if n == "1" else "s")
     for ja, (zh, en) in _COUNTERS.items():
         if orig.endswith(ja):
             n = orig[: -len(ja)]
