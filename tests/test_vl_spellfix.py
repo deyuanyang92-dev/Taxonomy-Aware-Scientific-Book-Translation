@@ -73,7 +73,7 @@ def test_cli_inplace_backs_up_and_keeps_text_raw(tmp_path):
     d.mkdir()
     p = d / "aligned.json"
     al = {"pages": [{"page": 1, "blocks": [{"role": "body", "text": "el farigeo largo y el faringeo corto, faringeo, faringeo"},
-                                           {"role": "ref", "text": "farigeo"}]}]}
+                                           {"role": "ref", "text": "Hartmann-Schröder 1996"}]}]}
     p.write_text(json.dumps(al), encoding="utf-8")
     tess = tmp_path / "t"
     (tess / "book").mkdir(parents=True)
@@ -82,5 +82,5 @@ def test_cli_inplace_backs_up_and_keeps_text_raw(tmp_path):
     out = json.loads(p.read_text(encoding="utf-8"))
     b = out["pages"][0]["blocks"]
     assert b[0]["text"] == "el faringeo largo y el faringeo corto, faringeo, faringeo" and b[0]["text_raw"].startswith("el farigeo")
-    assert b[1]["text"] == "farigeo"  # ref 块不动
+    assert b[1]["text"] == "Hartmann-Schröder 1996"  # ref 块不动
     assert json.loads((d / "aligned.pre_spellfix.json").read_text(encoding="utf-8")) == al
