@@ -119,3 +119,14 @@ def test_cli_qc_calibrate_flag(tmp_path, monkeypatch):
     out = qc.calibrate(st, cfg=qc.load_config())
     assert out["scored_pages"] == 0
     assert "dpi_ge_prefer" in out and "recall" in out["dpi_ge_prefer"]
+
+
+def test_text_layer_page_is_not_skipped(tmp_path):
+    """text_layer 页有乱码时必须进人工队列，不得 skip（计划 Task 3a）。"""
+    cfg = {"thresholds": {"pass_max": 2.0, "human_min": 5.0, "max_garble": 0, "min_chars": 30,
+                          "max_unknown_latin": 99, "max_unknown_zh_taxon": 99},
+           "weights": {"garble": 3.0}, "yiku": {"db": str(tmp_path / "missing.db")}}
+    yiku = qc.YikuIndex(tmp_path / "missing.db")
+    page = {"key": "k", "page": 1, "verify_level": "text_layer", "text": "Nereis " + "�" * 3 + " virens " * 8}
+    r = qc.score_page(page, cfg=cfg, yiku=yiku, has_multi_ocr=False)
+    assert r.action == "human"
