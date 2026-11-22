@@ -27,3 +27,19 @@ def test_plain_text_untouched():
 def test_bare_year_date_not_confused_with_numbers():
     t = "Salinität 30.9 und Tiefe 12.5 m"
     assert protect.mask(t)[1] == []
+
+
+def test_ocr_comma_date_and_bare_authority_year():
+    t = "10, 3. 60; Indischer Ozean (FAUVEL, 1953), W-Amerika (O. HARTMAN, 1940); (Abb. 27, 1957)"
+    m, s = protect.mask(t)
+    assert "10, 3. 60" not in m and "FAUVEL" not in m and "HARTMAN" not in m
+    assert "(Abb. 27, 1957)" in m
+    assert protect.restore(m, s) == t
+
+
+def test_unicode_caps_author_and_caps_name_year():
+    t = "Peru (HARTMANN-SCHRÖDER, 1962); O. HARTMAN (1959) und AUGENER (1922) sind bekannt; Die Art (1959 Stück) bleibt"
+    m, s = protect.mask(t)
+    assert "SCHRÖDER" not in m and "HARTMAN" not in m and "AUGENER" not in m
+    assert protect.restore(m, s) == t
+    assert "Die Art" in m

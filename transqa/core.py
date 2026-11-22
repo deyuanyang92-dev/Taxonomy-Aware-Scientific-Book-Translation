@@ -31,7 +31,7 @@ def numbers(t: str) -> collections.Counter[str]:
     def _date(m: re.Match[str]) -> str:   # 日.月.年 与 月/日/年 只是写法不同：按排序后的三元组计一个记号
         dates.append('date:' + '-'.join(sorted(m.groups())))
         return ' '
-    t = re.sub(r'(?<![\d.,/])(\d{1,2})[./] ?(\d{1,2})[./] ?(\d{2})(?![\d.,/]?\d)', _date, t)
+    t = re.sub(r'(?<![\d.,/])(\d{1,2})[.,/] ?(\d{1,2})[./] ?(\d{2})(?![\d.,/]?\d)', _date, t)
     return collections.Counter([x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t)] + dates)
 
 

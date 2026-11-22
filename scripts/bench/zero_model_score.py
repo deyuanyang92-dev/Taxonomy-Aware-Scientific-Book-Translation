@@ -54,6 +54,12 @@ def main():
         ('v2 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v2', 'ja', 'zh-CN'),
         ('v2 de>en', 'de_src.md', 'de_en_v2', 'de', 'en'),
         ('v2 de>zh direct', 'de_src.md', 'de_zh_direct_v2', 'de', 'zh-CN'),
+        ('v3 de>en', 'de_src.md', 'de_en_v3', 'de', 'en'),
+        ('v3 de>zh direct', 'de_src.md', 'de_zh_direct_v3', 'de', 'zh-CN'),
+        ('v3 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v3', 'ja', 'zh-CN'),
+        ('v4 de>en', 'de_src.md', 'de_en_v4', 'de', 'en'),
+        ('v4 de>zh direct', 'de_src.md', 'de_zh_direct_v4', 'de', 'zh-CN'),
+        ('v4 ja>zh direct', 'ja_src.md', 'ja_zh_direct_v4', 'ja', 'zh-CN'),
     ]
     out = {}
     for name, sf, wd, sl, tl in paths:

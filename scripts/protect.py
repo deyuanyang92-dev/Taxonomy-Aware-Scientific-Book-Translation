@@ -16,7 +16,12 @@ PATTERNS = [
     re.compile(rf"{_BINOM} {_AUTH}"),
     re.compile(rf"{_BINOM} {_TAG}"),
     re.compile(rf"(?<![\w]){_TAG}"),
-    re.compile(r"(?<!\d)\d{1,2}\. ?\d{1,2}\. ?\d{2}(?!\d)"),
+    # OCR 常把第一个点识成逗号（10, 3. 60），也算日期
+    re.compile(r"(?<!\d)\d{1,2}[.,] ?\d{1,2}\. ?\d{2}(?!\d)"),
+    # 括号内单独的命名人+年份（异名/分布引证），谷歌会把人名音译
+    re.compile(r"\((?!(?:Abb|Fig|Taf|Tab|Pl|Tafel)\b)[^\W\d_a-z][\w'’.\-]*(?:[ ,&]+(?:and |et |und )?[^\W\d_a-z][\w'’.\-]*)*,? ?\d{4}[a-z]?\)"),
+    # 德文志书把人名排成大写：「O. HARTMAN (1959)」「AUGENER (1922)」
+    re.compile(r"(?<![\w])(?:[A-Z]\. ?)?[^\W\d_a-z]{3,}(?:-[^\W\d_a-z]{3,})? \(\d{4}[a-z]?\)"),
 ]
 
 

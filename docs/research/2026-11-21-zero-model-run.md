@@ -55,3 +55,12 @@ d. 检索表按条切段（日文源）。
 | ja>en | 4 / 3 / 0 | 4 / 3 / 0 |
 
 结论：德语受益明显；日语的 number.missing 未变，因为是机翻真实丢数字（「第3背鱗」「1列」等被省略或改写），不是误报，不能靠放宽检查消除。d 项在样本 p.137 上未单独量化效果（该页缺条目编号，断段只是减少重排，未证实）。德语仍有 4 个年份缺失、1 个 taxon.authority_changed，待查。pivot 路径未重跑。
+
+### 再补（第二轮前处理）
+
+德语残留逐项查明后再加两条前处理（tests/test_protect.py、tests/test_transqa.py 已加用例）：
+- OCR 把日期首个点识成逗号（`10, 3. 60`）：protect 与 transqa.numbers 都按日期处理。
+- 括号内单独的「命名人, 年份」及大写人名「O. HARTMAN (1959)」（含 Ö 等非 ASCII 字母）：送机翻前占位，防谷歌音译（哈特曼-施罗德）；「(Abb. 27, 1957)」不动。
+
+复测（v4，无模型）：德→英 critical 3→1，authority_changed 清零；德→中 critical 4→2，authority_changed 2→1；日→中 authority_changed 清零。
+剩余均为非前处理可解的真问题：谷歌丢「10 Paar」「2 bis 2½」等数字；OCR 把 Eurytho@ KinsErc 等原文识错（需回 OCR/校对层）；p.26 谷歌凭空写「100 厘米」。这些正是 QA 该拦的，保留报警。

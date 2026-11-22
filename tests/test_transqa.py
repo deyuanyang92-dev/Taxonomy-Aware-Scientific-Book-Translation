@@ -387,3 +387,8 @@ def test_numbers_date_order_is_not_a_difference():
     assert numbers('10. 3. 60; (4 Exemplare)') == numbers('3/10/60; (4 copies)')
     assert numbers('29. 12. 59') != numbers('2059')
     assert numbers('Salinität 30.9 und 12.5 m')['30.9'] == 1
+
+
+def test_numbers_ocr_comma_date():
+    from transqa.core import numbers
+    assert numbers('10, 3. 60; (2 Exemplare)') == numbers('10. 3. 60; (2 copies)')
