@@ -68,18 +68,46 @@ def _couplet_block(c: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def from_aligned(aligned: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """aligned.json → 块；role 原样作 type，原文取 text、无则取 source。"""
+    """aligned.json → 块。
+
+    role 原样作 type（旧 `couplet` 归为 `key_couplet`）；原文取 text、无则取 source。
+    整个原块存在 data.raw，位置存在 src.pi/src.bi，`to_aligned` 据此无损还原。
+    """
     blocks: list[dict[str, Any]] = []
-    for p in aligned.get("pages", []):
+    for pi, p in enumerate(aligned.get("pages", [])):
         page = int(p.get("page", 0))
-        for i, b in enumerate(p.get("blocks", [])):
+        for bi, b in enumerate(p.get("blocks", [])):
             role = b.get("role", "body")
-            bid = b.get("block_id") or f"p{page:04d}_{i:02d}"
+            bid = b.get("block_id") or f"p{page:04d}_{bi:02d}"
             text = b.get("text") or b.get("source") or ""
-            extra = {k: v for k, v in b.items()
-                     if k in ("rows", "items", "figures", "col_widths_mm", "translation", "source_page")}
-            blocks.append(_block(bid, role, page, text, "aligned", bid, extra))
+            data: dict[str, Any] = {"raw": b}
+            typ = role
+            if role == "couplet" and isinstance(b.get("couplet"), dict):
+                c = b["couplet"]
+                typ = "key_couplet"
+                tgt = c.get("target")
+                data.update({"key": c.get("key"), "lead": c.get("lead"), "kind": None,
+                             "terminals": [tgt] if tgt else []})
+            blk = _block(bid, typ, page, text, "aligned", bid, data)
+            blk["src"].update({"pi": pi, "bi": bi})
+            blocks.append(blk)
     return blocks
+
+
+def to_aligned(sd: Mapping[str, Any]) -> dict[str, Any]:
+    """StructDoc → aligned.json。只还原 origin=aligned 的块；keys 来源块不进 aligned。
+
+    往返等价：`to_aligned(build(doc, aligned=a)) == a`（块内容、页内顺序、页与顶层元数据）。
+    """
+    meta = sd.get("aligned_meta")
+    if meta is None:
+        raise ValueError("StructDoc has no aligned_meta: it was not built from an aligned.json")
+    pages = [{**pm, "blocks": []} for pm in meta["pages"]]
+    placed = sorted((b for b in sd.get("blocks", []) if b.get("src", {}).get("origin") == "aligned"),
+                    key=lambda b: (b["src"]["pi"], b["src"]["bi"]))
+    for b in placed:
+        pages[b["src"]["pi"]]["blocks"].append(b["data"]["raw"])
+    return {**meta["top"], "pages": pages}
 
 
 def build(doc: str, *, keys: Mapping[str, Any] | None = None, aligned: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -93,6 +121,11 @@ def build(doc: str, *, keys: Mapping[str, Any] | None = None, aligned: Mapping[s
     for n, b in enumerate(blocks):
         b["order"] = n
     sd: dict[str, Any] = {"schema": SCHEMA, "doc": doc, "blocks": blocks, "problems": [], "summary": {}}
+    if aligned is not None:
+        sd["aligned_meta"] = {
+            "top": {k: v for k, v in aligned.items() if k != "pages"},
+            "pages": [{k: v for k, v in p.items() if k != "blocks"} for p in aligned.get("pages", [])],
+        }
     return validate(sd, keys=keys)
 
 
@@ -131,22 +164,24 @@ def validate(sd: dict[str, Any], keys: Mapping[str, Any] | None = None) -> dict[
                 b["issues"].append("couplet_missing_key_or_lead")
             if not d.get("terminals"):
                 b["issues"].append("no_terminal")
-    couplets = [{"key": b["data"]["key"], "lead": b["data"]["lead"], "kind": b["data"].get("kind"),
-                 "page": b["page"], "text": b["text"], "terminals": b["data"].get("terminals", [])}
-                for b in sd.get("blocks", []) if b.get("type") == "key_couplet"
-                and b.get("data", {}).get("key") is not None and b["data"].get("lead")]
-    if couplets:
-        from .keys import check_couplets
+    from .keys import check_couplets
 
+    for origin in sorted({b["src"].get("origin") for b in sd.get("blocks", [])}):
+        group = [b for b in sd.get("blocks", []) if b.get("type") == "key_couplet"
+                 and b.get("src", {}).get("origin") == origin
+                 and b.get("data", {}).get("key") is not None and b["data"].get("lead")]
+        couplets = [{"key": b["data"]["key"], "lead": b["data"]["lead"], "kind": b["data"].get("kind"),
+                     "page": b["page"], "text": b["text"], "terminals": b["data"].get("terminals", [])}
+                    for b in group]
+        if not couplets:
+            continue
         for kid, info in check_couplets(couplets).items():
             for prob in info["problems"]:
                 code = prob.split(":")[0].split(" from ")[0]
-                problems.append({"scope": f"key:{kid}", "code": code, "detail": prob})
+                problems.append({"scope": f"{origin}:key:{kid}", "code": code, "detail": prob})
                 lead = _problem_lead(prob)
-                for b in sd["blocks"]:
-                    d = b.get("data", {})
-                    if b.get("type") == "key_couplet" and d.get("key") == kid and lead is not None \
-                            and d.get("lead") == lead:
+                for b in group:
+                    if b["data"]["key"] == kid and lead is not None and b["data"]["lead"] == lead:
                         b["issues"].append("key_graph")
     for b in sd.get("blocks", []):
         if b["issues"]:

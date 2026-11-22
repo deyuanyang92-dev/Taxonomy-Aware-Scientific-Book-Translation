@@ -49,11 +49,14 @@ aligned.json（角色块，`booklayout/profile.py` 的 ROLES）、页面 JSON �
 ## 切片
 
 1. 【已做】schema + from_keys + from_aligned + validate + `docstore struct build|check` + 测试。
-2. structdoc → aligned 适配器；用 Imajima/Vol48 现成数据做往返等价测试（块数、文本、角色不变）。
+2. 【已做】`to_aligned` 适配器；旧 `couplet` 块归为 `key_couplet` 进入图检查（按来源分组，keys 与 aligned 的表号互不干扰）。
+   往返 `to_aligned(build(a)) == a` 在 Imajima 2009/2001 与 Vol48 真实 aligned 上逐字相等（`tests/test_docstore_structdoc.py`）。
+   实测 Imajima 2009/2001/2007 的旧 couplet（555/424/296 块）图检查无问题。
 3. treatments、图/图注绑定并入；译文回收后按块校验。
 4. 在 OCR 流水线末端自动生成，并写入 `docs/ocr_eval/LEDGER.tsv` 式的结构准确率账本（检索表偶句查全/查准，对人工金标）。
 
 ## 未确证
 
 - 真实书上 keys.json 抽取的偶句准确率：仓库内没有可复现的金标集，切片 4 之前不对外宣称。
-- aligned 的 `couplet`/`key` 旧块与 keys.json 偶句如何一一对应，需切片 2 用真实数据核。
+- aligned 的 `couplet` 旧块与 keys.json 偶句如何一一对应：未核（两者 id 规则不同，目前各自按来源校验）。
+- 图检查零问题只说明编号图自洽，不代表偶句文字与原页一致。
