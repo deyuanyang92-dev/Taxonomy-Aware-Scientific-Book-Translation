@@ -1,0 +1,299 @@
+{
+ "doc": "Imajima2007",
+ "set": "p5-6-ja",
+ "pages": [
+  5,
+  6
+ ],
+ "couplets": [
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "1",
+   "terminals": [
+    "2"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "1'",
+   "terminals": [
+    "12"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "2",
+   "terminals": [
+    "Aphrodita -> 3"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "2'",
+   "terminals": [
+    "Heteraphrodita intermedia （McIntosh)(図13)"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "3",
+   "terminals": [
+    "4"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "3'",
+   "terminals": [
+    "8"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "4",
+   "terminals": [
+    "5"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "4'",
+   "terminals": [
+    "7"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "5",
+   "terminals": [
+    "Aphrodita aculeata Linnaeus (図1)"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "5'",
+   "terminals": [
+    "6"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "6",
+   "terminals": [
+    "Aphrodita talpa Quatrefages (図9)"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "6'",
+   "terminals": [
+    "Aphrodita sibogae (Horst)(図8)"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "7",
+   "terminals": [
+    "Aphrodita tosaensis Imajima（図10)"
+   ]
+  },
+  {
+   "page": 5,
+   "key": 1,
+   "lead": "7'",
+   "terminals": [
+    "Aphrodita japonica Marenzeller (図4)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "8",
+   "terminals": [
+    "9"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "8'",
+   "terminals": [
+    "10"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "9",
+   "terminals": [
+    "Aphrodita negligens Moore(図6)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "9'",
+   "terminals": [
+    "Aphrodita daiyumaruae Imajima (図2)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "10",
+   "terminals": [
+    "Aphrodita macroculata Imajima (図5)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "10'",
+   "terminals": [
+    "11"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "11",
+   "terminals": [
+    "Aphrodita nipponensis Imajima (図7)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "11'",
+   "terminals": [
+    "Aphrodita goolmarris Hutchings & McRae (図3)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "12",
+   "terminals": [
+    "Laetmonice -> 13"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "12'",
+   "terminals": [
+    "15"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "13",
+   "terminals": [
+    "14"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "13'",
+   "terminals": [
+    "Laetmonice producta Grube (図16)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "14",
+   "terminals": [
+    "Laetmonice japonica McIntosh (図15)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "14'",
+   "terminals": [
+    "Laetmonice dolichoceras (Haswell)（図14)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "15",
+   "terminals": [
+    "Aphrogenia nigropunctata Horst (図11)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "15'",
+   "terminals": [
+    "16"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "16",
+   "terminals": [
+    "Hermionopsis sp.(図12)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "16'",
+   "terminals": [
+    "Pontogenia -> 17"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "17",
+   "terminals": [
+    "Pontogenia macleari(Haswell)(図18)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "17'",
+   "terminals": [
+    "18"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "18",
+   "terminals": [
+    "Pontogenia dentata Imajima (図17)"
+   ]
+  },
+  {
+   "page": 6,
+   "key": 1,
+   "lead": "18'",
+   "terminals": [
+    "Pontogenia sagamiana Imajima (図19)"
+   ]
+  }
+ ],
+ "note": "human-read by Claude Sonnet 5.5 vision from source PDF pp5-6 at 70dpi (user-authorised 2026-11-22); not from pipeline"
+}

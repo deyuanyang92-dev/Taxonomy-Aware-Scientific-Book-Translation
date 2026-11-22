@@ -1,0 +1,3 @@
+date	doc	gold_set	n_gold	n_pred	recall	precision	terminal_acc	wrong_flagged	note
+2026-11-22	Imajima2007	p5-6-ja	36	36	1.000	1.000	0.972	0/1	ja key p5-6; zero-model auto vs Sonnet-vision gold (n=2 pages)
+2026-11-22	Imajima2007	p5-6-ja	36	36	1.000	1.000	1.000	0/0	ja key p5-6; after fix_term applied to stored terminals (区5->図5)

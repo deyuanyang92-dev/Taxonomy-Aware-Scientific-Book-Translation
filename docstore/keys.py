@@ -559,6 +559,9 @@ def recover_tail_target(gr: Grammar, c: dict[str, Any]) -> str | None:
         head = m.group(1).rstrip(" …‥⋯.．·*")
         term = f"{m.group(2)} -> {m.group(3)}" if name == "tail_name_jump" else m.group(2)
         c["text"] = head
+        term = gr.fix_term(term)
+        if not term:
+            return None
         c["terminals"].append(term)
         c["slots"].append(term_struct(gr, term))
         return name
@@ -574,6 +577,8 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
         kp.feed_page(width, rows, pg)
     leads = kp.finish()
     gr = kp.gr
+    for ld in leads:  # 固定错字写进终点文本本身（共享同一列表，补读终点仍能被图检查看到）
+        ld["term"][:] = [t for t in (gr.fix_term(v) for v in ld["term"]) if t]
     index = {id(ld): i for i, ld in enumerate(leads)}
     couplets = [{"key": ld["key"], "lead": ld["lead"], "kind": ld["kind"], "page": ld["page"],
                  "text": ld["text"], "terminals": ld["term"],
