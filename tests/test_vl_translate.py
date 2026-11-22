@@ -14,3 +14,8 @@ def test_parse_reply_rejects_bad():
     assert T.parse_reply('["甲"]', 2) is None
     assert T.parse_reply("not json", 1) is None
     assert T.parse_reply('[{"x":1}]', 1) is None
+
+
+def test_invented_names():
+    assert T.invented_names("Fig. 17. Región anterior", "图17。Chloeia candida 前部") == ["Chloeia candida"]
+    assert T.invented_names("Spinter oniscoides Johnston", "Spinther oniscoides Johnston") == []

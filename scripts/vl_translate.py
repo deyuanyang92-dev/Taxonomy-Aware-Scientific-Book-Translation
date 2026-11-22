@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
 import sys
@@ -17,6 +18,37 @@ import llm_engines as E  # noqa: E402
 SYS = ("你是分类学专业译者。把{lang}（多毛类专著 Fauna Ibérica）逐块译成中文。学名、作者名、年份原样保留；"
        "术语不确定处保留原文并括号标“暂定”。只输出JSON数组，元素是与输入同序的中文译文字符串，数量必须一致。")
 SYS1 = "把{lang}译成中文，学名原样保留。只输出译文纯文本，不要JSON，不要原文。"
+
+
+BINOM = re.compile(r"\b[A-Z][a-z]{3,}\s+[a-z]{4,}\b")
+ARABIC = re.compile("[" + chr(0x600) + "-" + chr(0x6FF) + "]")
+
+
+def invented_names(src: str, zh: str) -> list[str]:
+    """译文里出现、原文没有的拉丁双名（页级翻译易把相邻学名行串进图注）。"""
+    words = set(re.findall(r"[A-Za-z]+", src))
+    out = []
+    for m in BINOM.findall(zh):
+        if m in src or m.split()[0] in src:
+            continue
+        if difflib.get_close_matches(m.split()[0], words, n=1, cutoff=0.8):  # OCR 笔误被译者改正，不算串入
+            continue
+        out.append(m)
+    return out
+
+
+def audit(d: dict, usage: str, tag: str, lang: str, gloss: str) -> tuple[int, int]:
+    """对串入学名的块逐块重译；返回 (发现数, 仍未清除数)。"""
+    found = left = 0
+    for pg in d["pages"]:
+        for b in pg["blocks"]:
+            if not invented_names(b["text"], b.get("translation") or ""):
+                continue
+            found += 1
+            raw, _u = E.call("deepseek-flash", SYS1.format(lang=lang) + gloss + "\n只译给出的文字，不得添加原文没有的任何词。", b["text"], max_tokens=3000, tag=tag, usage_file=usage)
+            b["translation"] = raw.strip()
+            left += bool(invented_names(b["text"], b["translation"]))
+    return found, left
 
 
 def as_text(x: object) -> str | None:
@@ -80,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lang", default="西班牙语")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--glossary", help="es_glossary.py 生成的 tsv")
+    ap.add_argument("--audit", action="store_true", help="只做串入学名审计与逐块重译")
     ap.add_argument("--retranslate", action="store_true", help="清空已有译文重译")
     a = ap.parse_args(argv)
     p = Path(a.aligned)
@@ -89,6 +122,12 @@ def main(argv: list[str] | None = None) -> int:
             for b in pg["blocks"]:
                 b.pop("translation", None)
     gloss = load_glossary(a.glossary)
+    if a.audit:
+        f, n = audit(d, a.usage_file, a.tag, a.lang, gloss)
+        p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+        ar = sum(bool(ARABIC.search(b["text"])) for pg in d["pages"] for b in pg["blocks"])
+        print(f"invented={f} still={n} arabic_ocr_blocks={ar}")
+        return 0 if n == 0 else 1
     with ThreadPoolExecutor(a.threads) as ex:
         left = sum(ex.map(lambda pg: translate_page(pg, a.lang, a.usage_file, a.tag, gloss), d["pages"]))
     p.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
