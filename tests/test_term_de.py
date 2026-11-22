@@ -29,6 +29,14 @@ def test_other_source_language_untouched():
     assert protect.mask("Prostomium")[1] == []
 
 
+def test_second_batch_and_longest_first():
+    t = "Borsten und Kiemen; Dorsalcirren, Ventralcirrus, Genitalporen; 12 Borstensegmente; Borstenwurm"
+    m, s = protect.mask(t, "de")
+    assert s == ["Borsten", "Kiemen", "Dorsalcirren", "Ventralcirrus", "Genitalporen", "Borstensegmente"]
+    assert protect.restore(m, s, "zh-CN") == "刚毛 und 鳃; 背须, 腹须, 生殖孔; 12 刚节; Borstenwurm"
+    assert protect.restore(m, s, "en").startswith("setae und gills; dorsal cirri, ventral cirrus, genital pores")
+
+
 def test_no_partial_word():
     assert protect.mask("Palpenartig Antennenlos", "de")[1] == []
 

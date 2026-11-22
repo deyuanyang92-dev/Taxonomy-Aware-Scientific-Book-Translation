@@ -287,6 +287,11 @@ def summarize(fs: list[Finding]) -> dict[str, int]:
     return dict(collections.Counter(f.rule for f in fs))
 
 
+def _src_unbalanced(text: str) -> bool:
+    """原文段括号/引号是否本身不成对（OCR 把脚注号「¹)」识成「‘)」、断页只剩「21)」等）。"""
+    return any(text.count(o) != text.count(c) for o, c in (('(', ')'), ('[', ']'), ('（', '）')))
+
+
 def check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> list[Issue]:
     """transqa 接口：目标语言为 zh* 时运行。cfg 可选 zh_terms / zh_names（集合）。"""
     if not str(cfg.get('tl', '')).lower().startswith('zh'):
@@ -295,11 +300,14 @@ def check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> list[I
     out: list[Issue] = []
     n_checked = 0
     counts: collections.Counter[str] = collections.Counter()
+    src_by_id = {x.id: x.text for x in src}
     for s in tgt:
         if not _HAN_RE.search(s.text):
             continue
         n_checked += 1
         for f in scan(s.text, terms=terms, protected_names=names):
+            if f.rule == 'zh.unpaired' and _src_unbalanced(src_by_id.get(s.id, '')):
+                continue   # 原文（OCR 脚注号、断页残片）本身括号不成对，不是译文引入的
             counts[f.rule] += 1
             out.append(Issue(f'zh_typo.{f.rule}', 'minor', f'{f.reason}：{f.context}', page=s.page, segment=s.id,
                              evidence={'kind': f.kind, 'old': f.old, 'new': f.new, 'confidence': f.confidence}))

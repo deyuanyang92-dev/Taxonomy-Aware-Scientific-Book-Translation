@@ -103,3 +103,15 @@ d. 检索表按条切段（日文源）。
 
 复测（德，5 页）：de>en num_missing 2→1，de>zh 5→3；critical 0；学名 3/3；缺年份 0。
 残留：谷歌括号不成对（zh_typo review，需人工）、OCR 把 anoculata 识成 anocuülata（原文错，不改）。
+
+### 第六轮：回应 Stop 钩子四条反对（v11/v12，无模型）
+
+| 反对 | 措施 | 测试 |
+|---|---|---|
+| 括号不成对留给人工 | 根因：zh.unpaired 只数译文，不看原文；原文 p.1「neu beschrieben‘)」（OCR 脚注号）、p.13 残片「21)」本身不成对。transqa/zh_typo.py 原文括号不平衡的段不报 | test_unpaired_suppressed_when_source_unbalanced |
+| 半角括号「(2对 触须)」 | auto_translate 对 zh 目标定稿前套用 zh_typo.fix_mechanical（只做 kind=auto，学名/命名人括号在受保护区间外不动），数量写 zh_typo_fixed.txt | test_halfwidth_parens_fixed_but_latin_kept |
+| KinsErc→KINBERG 未复跑 | v11 重跑：text.word_join 消失 | （ocr_fix 规则已有测试） |
+| 参考文献未用真实页测 | 取 Hartmann-Schröder 1962 p.210/212 真实 OCR（53 段）：修前 classify 全判 free（会送谷歌，因折行、「— ‚, 年份」、OCR 杂符、「D.. 1852:」）。blocks.classify 新增：段首 70 字内「, 年份:」（含 190la、1856—1858）与「pp. 1—84」类折行残片判 reference；修后 44 段 reference，其余 9 段为页眉/杂符（IE、'、HC 2 eG）。整页过流水线：46/53 段与原文逐字相同，其余只换缩写（u.→and、S.→p.）；不送谷歌 | tests/test_de_references.py（真实片段 8 条、叙述句反例、页标记反例） |
+| 术语只 14 个 | term_de 增 9 个已核词（Dorsalcirrus、Ventralcirrus、Borste、Notochaeta、Neurochaeta、Kieme、Cirrophor、Uncinus、Genitalporus；yiku 已核对照测试覆盖）。Borste 在样本里原被译成「刷毛/鬃毛」，现为「刚毛」 | test_second_batch_and_longest_first |
+
+复测：v11 de>en、de>zh critical/major/minor 全 0（zh_typo 仅 info）；v12 加术语后 de>en num_missing 0，de>zh 4（缺的是「2」，谷歌把 zwei 写成「两」；评分器只数阿拉伯数字，transqa 的数词放行已覆盖，评分器未同步，属评分口径）。

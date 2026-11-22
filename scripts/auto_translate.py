@@ -54,7 +54,7 @@ import protect  # noqa: E402
 import term_presub  # noqa: E402
 import taxoformat  # noqa: E402
 import transqa  # noqa: E402
-from transqa import taxoblocks  # noqa: E402
+from transqa import taxoblocks, zh_typo  # noqa: E402
 from transqa import terms as transqa_terms  # noqa: E402
 from transqa.languages import wants_chinese_names  # noqa: E402
 from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
@@ -1095,6 +1095,15 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
         final, n_taxo = taxoformat.format_text(final, lex)
         _write(work / 'taxoformat.tsv',
                f'changes\tgenera\tbinomials\n{n_taxo}\t{len(lex.genera)}\t{len(lex.binomials)}\n')
+    if a.tl.lower().startswith('zh'):
+        # 只应用 zh_typo 的机械层（全角括号等）；review/decision 不动，学名与术语在受保护区间外才改。
+        final_pg = pages(final)
+        n_fix = 0
+        for pg_no, txt in list(final_pg.items()):
+            final_pg[pg_no], applied = zh_typo.fix_mechanical(txt)
+            n_fix += len(applied)
+        final = whole(final_pg)
+        _write(work / 'zh_typo_fixed.txt', f'{n_fix}\n')
     _write(work / 'checked.md', final)
     issues = transqa.check_all(whole(full_src), final, a.sl, a.tl)
     _write(work / 'qa_issues.json', json.dumps([vars(x) for x in issues], ensure_ascii=False, indent=1))

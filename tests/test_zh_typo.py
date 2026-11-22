@@ -43,6 +43,19 @@ def test_stray_space_before_punct():
     assert zh_typo.fix_mechanical("刚毛 ，疣足")[0] == "刚毛，疣足"
 
 
+def test_unpaired_suppressed_when_source_unbalanced():
+    from transqa.segments import Segment
+    src = [Segment("s1", 1, "neu beschrieben‘)"), Segment("s2", 1, "ok (a)")]
+    tgt = [Segment("s1", 1, "再次描述物种）。"), Segment("s2", 1, "好（甲。")]
+    rules = [i.code for i in zh_typo.check(src, tgt, {"tl": "zh"})]
+    assert rules.count("zh_typo.zh.unpaired") == 1   # 只剩 s2：原文平衡而译文不成对
+
+
+def test_halfwidth_parens_fixed_but_latin_kept():
+    out, ap = zh_typo.fix_mechanical("疣足(2对 触须)，Typosyllis anoculata (Hartmann, 1962)。")
+    assert out.startswith("疣足（2对 触须）") and "(Hartmann, 1962)" in out and len(ap) == 1
+
+
 def test_unpaired_quotes_review_only():
     fs = zh_typo.scan("他说“样本很好。")
     assert [f.rule for f in fs] == ["zh.unpaired"] and fs[0].kind == "review"

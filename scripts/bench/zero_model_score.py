@@ -81,6 +81,10 @@ def main():
         ('v8 ja>en', 'ja_src.md', 'ja_en_v8', 'ja', 'en'),
         ('v10 de>en', 'de_src.md', 'de_en_v10', 'de', 'en'),
         ('v10 de>zh direct', 'de_src.md', 'de_zh_direct_v10', 'de', 'zh-CN'),
+        ('v11 de>en', 'de_src.md', 'de_en_v11', 'de', 'en'),
+        ('v11 de>zh direct', 'de_src.md', 'de_zh_direct_v11', 'de', 'zh-CN'),
+        ('v12 de>en', 'de_src.md', 'de_en_v12', 'de', 'en'),
+        ('v12 de>zh direct', 'de_src.md', 'de_zh_direct_v12', 'de', 'zh-CN'),
         ('v9 de>en', 'de_src.md', 'de_en_v9', 'de', 'en'),
         ('v9 de>zh direct', 'de_src.md', 'de_zh_direct_v9', 'de', 'zh-CN'),
     ]

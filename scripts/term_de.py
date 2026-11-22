@@ -24,6 +24,15 @@ TERMS: list[tuple[str, str, str, str, str, str]] = [
     ("Pharynx", "Pharynx", "咽", "pharynx", "pharynges", "pharynx"),
     ("Antenne", "Antennen", "触手", "antenna", "antennae", "antenna"),
     ("Palpe", "Palpen", "触角", "palp", "palps", "palp"),
+    ("Dorsalcirrus", "Dorsalcirren", "背须", "dorsal cirrus", "dorsal cirri", "dorsal cirrus"),
+    ("Ventralcirrus", "Ventralcirren", "腹须", "ventral cirrus", "ventral cirri", "ventral cirrus"),
+    ("Borste", "Borsten", "刚毛", "seta", "setae", "seta"),
+    ("Notochaeta", "Notochaeten", "背刚毛", "notochaeta", "notochaetae", "notochaeta"),
+    ("Neurochaeta", "Neurochaeten", "腹刚毛", "neurochaeta", "neurochaetae", "neurochaeta"),
+    ("Kieme", "Kiemen", "鳃", "gill", "gills", "gill"),
+    ("Cirrophor", "Cirrophoren", "须基", "cirrophore", "cirrophores", "cirrophore"),
+    ("Uncinus", "Uncini", "钩状刚毛", "uncinus", "uncini", "uncinus"),
+    ("Genitalporus", "Genitalporen", "生殖孔", "genital pore", "genital pores", "genital pore"),
 ]
 # Borstensegment 单数形写成 Borstensegment；复数含 e/en；单复数正则合并为一条，复数分支用 Plural 判定
 _PLUR_ENDINGS = ("n", "e", "en")
