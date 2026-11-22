@@ -34,7 +34,7 @@ from typing import Any
 
 PAGE_RE = re.compile(r"^\s*<!--\s*PDF p\.(\d+)\b")
 HEADING_RE = re.compile(
-    r"^\s*(?:#+\s*)?(?:CHAPTER|Chapter|KAPITEL|Kapitel|CAPÍTULO|Capítulo|CAPITULO|Chapitre|CHAPITRE|Глава|ГЛАВА"
+    r"^\s*(?:#+\s*)?(?:CHAPTER|Chapter|KAPITEL|Kapitel|CAPÍTULO|Capítulo|CAPITULO|Chapitre|CHAPITRE|Caput|CAPUT|Глава|ГЛАВА"
     r"|第\s*[0-9一二三四五六七八九十百]+\s*章)\s*[0-9IVXLC一二三四五六七八九十百]*[.:：\s]?.*$")
 # 目录行：标题 + 点线/空白 + 页码
 TOC_LINE_RE = re.compile(r"^\s*(?P<title>[^\d\s][^\n]*?[A-Za-z一-鿿][^\n]*?)\s*(?:\.{2,}|·{2,}|\s{2,}|\s)\s*(?P<page>\d{1,4})\s*$")

@@ -1196,6 +1196,53 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
     return text
 
 
+def needs_pivot(sl: str, tl: str, direct: bool = False) -> bool:
+    """非英文、非中文源 → 中文，且未要求 --direct：走 源→en→zh 两跳。"""
+    s, t = sl.lower(), tl.lower()
+    return not direct and t.startswith('zh') and not s.startswith(('en', 'zh'))
+
+
+_PIVOT_DROP = {'-o': 1, '--work': 1, '--sl': 1, '--tl': 1, '--presub': 1, '--glossary': 1}
+
+
+def _strip_opts(argv: list[str], drop: dict[str, int]) -> list[str]:
+    """去掉 argv 里的指定选项（含 --opt=value 形式与其值）。"""
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        key = tok.split('=', 1)[0]
+        if key in drop:
+            i += 1 if '=' in tok else 1 + drop[key]
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
+def run_pivot(a: argparse.Namespace, argv: list[str]) -> None:
+    """两跳：hop1 源→en（落盘 work/hop1_{sl}-en），hop2 en→中（work/hop2_en-zh）。
+    术语表/presub 只给 hop1（它们是源语言→英文的映射）；两跳都过完整护栏（学名、数字、检索表）。"""
+    work = Path(a.work or 'auto_work')
+    h1, h2 = work / f'hop1_{a.sl}-en', work / 'hop2_en-zh'
+    rest = _strip_opts(argv, {**_PIVOT_DROP, '--direct': 0})
+    rest = [t for t in rest if t != 'run']           # 子命令与源文件位置固定，下面重建
+    src_arg = a.src
+    rest = [t for t in rest if t != src_arg]
+    pass_h1 = ['--presub', a.presub] if getattr(a, 'presub', None) else []
+    pass_h1 += ['--glossary', a.glossary] if a.glossary else []
+    print(f'[pivot] hop1 {a.sl}→en → {h1}', flush=True)
+    main(['run', src_arg, '-o', str(h1), '--sl', a.sl, '--tl', 'en', *pass_h1, *rest])
+    if a.stop_after:
+        print('[pivot] --stop-after 已生效，不进入 hop2', flush=True)
+        return
+    mid = h1 / 'checked.md' if (h1 / 'checked.md').exists() else h1 / 'final.md'
+    if not mid.exists():
+        raise SystemExit(f'[pivot] hop1 无最终稿（{mid}），不进入 hop2')
+    print(f'[pivot] hop2 en→zh，输入 {mid} → {h2}', flush=True)
+    main(['run', str(mid), '-o', str(h2), '--sl', 'en', '--tl', a.tl, *rest])
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cmd', choices=['run', 'check', 'report'])
@@ -1246,9 +1293,14 @@ def main(argv: list[str] | None = None) -> None:
                     help='draft=试译省 token；release=交付（须异模型 --verify-engine + --chaptered）')
     ap.add_argument('--chaptered', action='store_true',
                     help='声明本 run 属于分章流水线（release 档必需；translate_corpus --chapters 自动加）')
+    ap.add_argument('--direct', action='store_true',
+                    help='源语言→中文直译，不经英文枢纽（默认：非英文源译中文时 源→en→zh，中间英文稿落盘 hop1_*/）')
     ap.add_argument('--stop-after', choices=['draft', 'revise'], default=None,
                     help='只做到这一步（例：白天用 Codex 改写，夜间再 check 让 DeepSeek 找错、Codex 复核）')
     a = ap.parse_args(argv)
+    if a.cmd == 'run' and needs_pivot(a.sl, a.tl, a.direct):
+        run_pivot(a, list(sys.argv[1:] if argv is None else argv))
+        return
     from token_economy import apply_lean, guard_engine, guard_tier
     apply_lean(a)
     guard_engine(a.engine, force=a.force_engine)
