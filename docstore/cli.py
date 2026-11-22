@@ -390,6 +390,28 @@ def cmd_attest(st: Store, a) -> None:
         print(f"{r['docs']}\t{r['pages']}{cap}\t{r['phrase']}\t{','.join(r['sample_keys'])}")
 
 
+
+def cmd_struct(st: Store, args) -> None:
+    from . import structdoc as sdm
+
+    if args.struct_cmd == "build":
+        keys = json.loads(Path(args.keys).read_text(encoding="utf-8")) if args.keys else None
+        aligned = json.loads(Path(args.aligned).read_text(encoding="utf-8")) if args.aligned else None
+        if keys is None and aligned is None:
+            print("需要 --keys 或 --aligned", file=sys.stderr)
+            raise SystemExit(2)
+        sd = sdm.build(args.doc, keys=keys, aligned=aligned)
+        sdm.save(sd, Path(args.out))
+        print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
+        return
+    sd = sdm.validate(sdm.load(Path(args.file)))
+    for p in sd["problems"][:50]:
+        print(f"{p['scope']}: {p['code']}: {p['detail']}")
+    print(json.dumps(sd["summary"], ensure_ascii=False))
+    if sd["summary"]["uncertain"]:
+        raise SystemExit(1)
+
+
 def cmd_keys(st: Store, a) -> None:
     """检索表偶句重建：读 PP-OCR 行框缓存，零 token，不触发 OCR（issue #38）。"""
     from . import keyblocks, keys
@@ -696,6 +718,17 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--pdf", help="原件 PDF；给了就把待核页渲成 PNG")
     pl.add_argument("--render-dir", default="keys_pages")
     s.set_defaults(fn=cmd_keys)
+
+    s = sub.add_parser("struct", help="StructDoc：keys.json / aligned.json → 统一结构化 JSON（零模型）")
+    ss = s.add_subparsers(dest="struct_cmd", required=True)
+    sb = ss.add_parser("build", help="构建并校验，写 structdoc.json")
+    sb.add_argument("doc", help="资料 key（写入 doc 字段）")
+    sb.add_argument("--keys", help="keys.json")
+    sb.add_argument("--aligned", help="aligned.json")
+    sb.add_argument("--out", required=True)
+    sc = ss.add_parser("check", help="重做校验，列问题；有 uncertain 块时退出码 1")
+    sc.add_argument("file")
+    s.set_defaults(fn=cmd_struct)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")
