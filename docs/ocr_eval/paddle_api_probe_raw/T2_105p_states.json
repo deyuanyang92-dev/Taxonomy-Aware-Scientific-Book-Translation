@@ -1,0 +1,27 @@
+[
+ {
+  "t": 49,
+  "full": {
+   "traceId": "be0a0750-9b44-4c17-8405-c42d004b64a5",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118354224941334528",
+    "state": "pending"
+   }
+  }
+ },
+ {
+  "t": 53,
+  "full": {
+   "traceId": "476c506c-c6a6-44f5-98b9-f0001c5bcac8",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118354224941334528",
+    "state": "failed",
+    "errorMsg": "OCR服务请求失败，状态码 500"
+   }
+  }
+ }
+]

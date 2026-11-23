@@ -1,0 +1,52 @@
+{
+ "n_lines": 1,
+ "line_keys": [
+  "errorCode",
+  "errorMsg",
+  "logId",
+  "result"
+ ],
+ "result_keys": [
+  "dataInfo",
+  "layoutParsingResults",
+  "preprocessedImages"
+ ],
+ "per_line": [
+  {
+   "lpr": 3,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    618,
+    1837,
+    1379
+   ],
+   "dataInfo": {
+    "numPages": 3,
+    "pages": [
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 4016,
+      "height": 6136
+     }
+    ],
+    "type": "pdf"
+   }
+  }
+ ],
+ "resultUrl_keys": [
+  "jsonUrl"
+ ],
+ "secs": 131
+}

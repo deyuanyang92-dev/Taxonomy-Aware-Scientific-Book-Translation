@@ -1,0 +1,40 @@
+[
+ {
+  "t": 5,
+  "full": {
+   "traceId": "74c56e5f-5562-4da9-a75d-b51b041d9905",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118354016245264384",
+    "state": "running",
+    "extractProgress": {
+     "startTime": "2026-11-23 22:16:38",
+     "totalPages": 3,
+     "extractedPages": 0
+    }
+   }
+  }
+ },
+ {
+  "t": 130,
+  "full": {
+   "traceId": "b7655b90-79cc-4e53-8beb-8c408e768fba",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118354016245264384",
+    "state": "done",
+    "resultUrl": {
+     "jsonUrl": "https://paddleocr-store-8.bj.bcebos.com/v1/job/94a8fc4b247a45195a12ab080dbf2c4c8d69b207bcb82104ac30af0527cec1d5/json/3b3dba4bb6edc59290b92b77d4e2f56a.json?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-11-23T14%3A18%3A45Z%2F604800%2F%2Fe5542d8a703a28352009b7ec3777dbe64524a1873b535fa068683fd6e5c0753a"
+    },
+    "extractProgress": {
+     "startTime": "2026-11-23 22:16:38",
+     "endTime": "2026-11-23 22:18:45",
+     "totalPages": 3,
+     "extractedPages": 3
+    }
+   }
+  }
+ }
+]

@@ -1,0 +1,23 @@
+[
+ {
+  "t": 11,
+  "full": {
+   "traceId": "7248b49b-ddd0-4d5d-92f4-b040e387c142",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118352616160665600",
+    "state": "done",
+    "resultUrl": {
+     "jsonUrl": "https://paddleocr-store-3.bj.bcebos.com/v1/job/8e5a674188e3d4b631b8fe883d8db97fcf0a55cce7ef357024604d9b5caa443c/json/bd2890c12a330535cc2fc117c7817845.json?authorization=bce-auth-v1%2FALTAKDN8mY5KlNI7zaRpLmOqrw%2F2026-11-23T14%3A11%3A08Z%2F604800%2F%2F480b0c03253d1fa0b396d49279f2262030ea38f7f77b28912ab1bfc266292f85"
+    },
+    "extractProgress": {
+     "startTime": "2026-11-23 22:11:06",
+     "endTime": "2026-11-23 22:11:07",
+     "totalPages": 1,
+     "extractedPages": 1
+    }
+   }
+  }
+ }
+]

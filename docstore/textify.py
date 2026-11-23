@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Callable, Iterator
 
 from .consensus import Reading, vote
-from .engines import ENGINE_MAP
+from .engines import ENGINE_MAP, paddle_vl
 from .ocr_routes import route_for
 from .engines.rapidocr import rapidocr_run
 from .lexicon import Fixer
@@ -42,14 +42,20 @@ def _run_engine(name: str, pdf_path: str, n: int, dpi: int) -> tuple[str, float 
         raise ValueError(f"未知 OCR 引擎: {name}")
     return fn(pdf_path, n, dpi)
 
+class _EmptyReading(RuntimeError):
+    """降级引擎读数为空，而该页并非空白：视为该引擎失败。"""
+
+
 def _run_with_fallback(
-    name: str, fallbacks: tuple[str, ...], pdf_path: str, n: int, dpi: int
+    name: str, fallbacks: tuple[str, ...], pdf_path: str, n: int, dpi: int, strict: bool = False
 ) -> tuple[str, str, float | None]:
     """主引擎失败（无网络/无密钥/限流等）时依次试 fallback；返回 (实际引擎, 文本, 置信度)。全部失败则抛最后一个异常。"""
     last: Exception | None = None
     for eng in (name, *fallbacks):
         try:
             txt, conf = _run_engine(eng, pdf_path, n, dpi)
+            if strict and not txt.strip() and not paddle_vl._is_blank(pdf_path, n):
+                raise _EmptyReading(f"{eng} 读数为空但页面非空白")
             return eng, txt, conf
         except ValueError:
             raise  # 未知引擎名是配置错误，不降级
@@ -89,13 +95,18 @@ def layer_is_ocr(meta: dict, pdf=None) -> bool:
 
 
 def _iter_engines(
-    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = ()
+    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = (), strict: bool = False
 ) -> Iterator[tuple[str, str, float | None, float]]:
     """逐引擎识别一页，惰性产出 (实际引擎, 文本, 置信度, 本页已用秒数)；fallbacks 仅在引擎抛错时使用。"""
     t_page = time.perf_counter()  # 单调时钟：WSL 下 time.time() 会跳变
     for eng in engines:
-        used, txt, conf = _run_with_fallback(eng, fallbacks, path, n, dpi)
+        used, txt, conf = _run_with_fallback(eng, fallbacks, path, n, dpi, strict)
         yield used, txt, conf, round(time.perf_counter() - t_page, 2)
+
+
+def _fail_extra(reasons: dict[int, str], n: int) -> dict | None:
+    """降级页的版本 extra：写入云失败原因（设计 3.0）。"""
+    return {"cloud_failed_reason": reasons[n]} if n in reasons else None
 
 
 def _pool_init(threads: int) -> None:
@@ -114,9 +125,9 @@ def _pool_init(threads: int) -> None:
 
 
 def _pool_task(
-    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = ()
+    path: str, n: int, dpi: int, engines: list[str], fallbacks: tuple[str, ...] = (), strict: bool = False
 ) -> list[tuple[str, str, float | None, float]]:
-    return list(_iter_engines(path, n, dpi, engines, fallbacks))
+    return list(_iter_engines(path, n, dpi, engines, fallbacks, strict))
 
 
 def default_ocr_threads(workers: int) -> int:
@@ -217,6 +228,8 @@ def textify(
         log(f"[{key}] 文本层 {n_text} 页")
     t0 = time.perf_counter()
     done = 0
+    cloud_ok = 0
+    cloud_failed_reasons: dict[int, str] = {}
     fallbacks: tuple[str, ...] = ()
     if not engines:
         route = route_for(d.get("lang"))  # 按语种路由（rules/ocr_routes.toml）；表外语种沿用旧默认
@@ -230,10 +243,13 @@ def textify(
     if _FIXER is None:
         _FIXER = Fixer(os.path.join(os.path.dirname(__file__), "rules", "ocr_fix.toml"))
 
-    def save(n: int, results):
+    def save(n: int, results, extra: dict | None = None, tag_engines: list[str] | None = None,
+             actual_tag: bool = False):
         nonlocal done
         readings: list[Reading] = []
+        used_engs: list[str] = []
         for eng, txt, conf, secs in results:
+            used_engs.append(eng)
             c = float(conf) if conf is not None else 0.5
             readings.append(Reading(source=eng, text=txt, conf=c))
             ev = make_version(
@@ -244,7 +260,7 @@ def textify(
                 dpi=dpi,
                 conf=conf,
                 source=path,
-                extra={"run_by": by, "seconds": secs},
+                extra={"run_by": by, "seconds": secs, **(extra or {})},
             )
             store.put_version(key, n, ev, index=False)
         pg = store.read_page(key, n) or {}
@@ -266,7 +282,7 @@ def textify(
         if vlm and unresolved > 0:
             # VLM 接口保留，未能确定时继续保留 [?]
             lv = "ocr_raw"
-        tag = "+".join(engines) + ("+vlm" if vlm else "")
+        tag = "+".join(dict.fromkeys(used_engs) if actual_tag else (tag_engines or engines)) + ("+vlm" if vlm else "")
         v = make_version(
             fixed,
             "ocr",
@@ -281,6 +297,7 @@ def textify(
                 "disagreements": disagreements,
                 "unresolved_chars": unresolved,
                 "lexicon_changes": changes,
+                **(extra or {}),
             },
         )
         pg = store.read_page(key, n) or {}
@@ -294,32 +311,78 @@ def textify(
             rate = el / done
             log(f"[{key}] OCR {done}/{len(need_ocr)}  {rate:.1f}s/页(墙钟)  预计剩余 {rate * (len(need_ocr) - done) / 60:.1f} 分钟")
 
+    page_errs: dict[int, str] = {}
     if need_ocr:
         bad = [e for e in (*engines, *fallbacks) if e != "rapidocr" and e not in ENGINE_MAP]
         if bad:
             raise ValueError(f"未知 OCR 引擎: {','.join(bad)}")
         log(f"[{key}] 需 OCR {len(need_ocr)} 页，engines={','.join(engines)}")
-        if workers <= 1 or len(need_ocr) == 1:
-            for n in need_ocr:
-                save(n, _iter_engines(path, n, dpi, engines, fallbacks))  # 惰性：每个引擎一出结果就写盘
+        ocr_pages = list(need_ocr)
+        page_engines, page_fallbacks = engines, fallbacks
+        if engines == ["paddle_vl"]:  # 云端批量（父进程，分块并发）；仅单引擎路由用。显式多引擎走下面的逐页路径
+            res = paddle_vl.run_pages(path, need_ocr, log=log)
+            cloud_failed_reasons = dict(res["failed"])
+            for n in sorted(res["ok"]):
+                txt, meta = res["ok"][n]
+                save(n, [("paddle_vl", txt, None, meta.get("seconds", 0.0))],
+                     extra={k: meta.get(k) for k in ("job_id", "trace_id", "chunk", "empty_reason")})
+            cloud_ok = len(res["ok"])
+            ocr_pages = [n for n in need_ocr if n not in res["ok"]]
+            if ocr_pages:  # run_pages 已含重试与拆块：失败页不再逐页调云，只用本地 fallback
+                if not fallbacks:
+                    msg = f"云 OCR 失败 {len(ocr_pages)} 页且无 fallback 引擎: " + "; ".join(
+                        f"第{n}页 {cloud_failed_reasons.get(n, '未知')}" for n in ocr_pages)
+                    raise (paddle_vl.PaddleQuotaError(msg) if res["quota_hit"] else RuntimeError(msg))
+                # 依序尝试 fallbacks：第一个作主引擎，其余作它的 fallback（_run_with_fallback 语义）
+                page_engines, page_fallbacks = [fallbacks[0]], tuple(fallbacks[1:])
+            log(f"[{key}] 云 OCR 通过 {cloud_ok} 页，失败 {len(ocr_pages)} 页"
+                f"{'（改用 ' + ','.join(page_engines) + '）' if page_engines is not engines else ''}")
+        degraded = page_engines is not engines  # 云失败页的本地降级：空读数且非空白页算该引擎失败
+        if not ocr_pages:
+            pass
+        elif workers <= 1 or len(ocr_pages) == 1:
+            for n in ocr_pages:
+                try:
+                    save(n, _iter_engines(path, n, dpi, page_engines, page_fallbacks, degraded),
+                         tag_engines=page_engines, actual_tag=degraded,
+                         extra=_fail_extra(cloud_failed_reasons, n))  # 惰性：每个引擎一出结果就写盘
+                except ValueError:
+                    raise
+                except Exception as e:
+                    if not degraded:
+                        raise
+                    page_errs[n] = str(e)
         else:
             threads = ocr_threads or default_ocr_threads(workers)
             pool = ProcessPoolExecutor(
-                max_workers=min(workers, len(need_ocr)),
+                max_workers=min(workers, len(ocr_pages)),
                 mp_context=multiprocessing.get_context(MP_START),
                 initializer=_pool_init,
                 initargs=(threads,),
             )
             try:
-                futs = {pool.submit(_pool_task, path, n, dpi, engines, fallbacks): n for n in need_ocr}
+                futs = {pool.submit(_pool_task, path, n, dpi, page_engines, page_fallbacks, degraded): n for n in ocr_pages}
                 for fut in as_completed(futs):
-                    save(futs[fut], fut.result())
+                    try:
+                        res_n = fut.result()
+                    except ValueError:
+                        raise
+                    except Exception as e:
+                        if not degraded:
+                            raise
+                        page_errs[futs[fut]] = str(e)
+                        continue
+                    save(futs[fut], res_n, tag_engines=page_engines, actual_tag=degraded,
+                         extra=_fail_extra(cloud_failed_reasons, futs[fut]))
             except BaseException:
                 pool.shutdown(wait=False, cancel_futures=True)
                 raise
             pool.shutdown()
     total = len(store.page_numbers(key))
     store.update_doc(key, status="text_done" if total >= npages else f"text_partial {total}/{npages}")
+    if page_errs:
+        raise RuntimeError(f"本地降级失败 {len(page_errs)} 页（未入库，其他页已保留）: " + "; ".join(
+            f"第{n}页 {m}（云: {cloud_failed_reasons.get(n, '未知')}）" for n, m in sorted(page_errs.items())))
     return {
         "key": key,
         "text_layer": n_text,
@@ -330,6 +393,9 @@ def textify(
         "engines": engines,
         "vlm": vlm or "",
         "workers": workers,
+        "cloud_ok": cloud_ok,
+        "cloud_failed": len(cloud_failed_reasons),
+        "cloud_failed_reasons": cloud_failed_reasons,
     }
 
 
