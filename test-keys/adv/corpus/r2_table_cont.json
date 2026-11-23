@@ -1,0 +1,23 @@
+{
+  "id": "r2_table_cont",
+  "format": "table",
+  "lang": "en",
+  "source": "| 1a | Branchiae simple | |\n| | throughout | Glycera (p. 23) |\n| 1b | Branchiae branched | Nephtys |",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Glycera"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:481–483 续行解析后仍把原始单元格写回 target，页码重复留在学名内。"
+}

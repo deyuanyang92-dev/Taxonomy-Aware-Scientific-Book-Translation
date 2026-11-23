@@ -149,9 +149,16 @@ def extract_figures(pdf: Path, out_dir: Path, pages: Sequence[int] | None = None
         problems += audit_placement(objs, um, {"width": rect.width, "height": rect.height})
         for i, (pl, o) in enumerate(zip(places, objs)):
             clip = fitz.Rect(*pl["bbox"]) & rect
-            pix = page.get_pixmap(clip=clip, dpi=dpi)
             fname = f"fig_source_p{pno:03d}_{i + 1:02d}.png"
-            data = pix.tobytes("png")
+            try:
+                if clip.is_empty or clip.width < 1 or clip.height < 1:
+                    raise ValueError(f"empty clip {tuple(clip)}")
+                pix = page.get_pixmap(clip=clip, dpi=dpi, alpha=False)
+                data = pix.tobytes("png")
+            except Exception as exc:  # one bad placement must not abort the whole book
+                problems.append({"page": pno, "kind": "crop_failed", "bbox_pt": list(pl["bbox"]),
+                                 "error": str(exc)[:160]})
+                continue
             (crops / fname).write_bytes(data)
             cap_label = next((c["label"] for c in caps if f"p{pno:04d}_{c['id']}" == o.caption_id), None)
             figures.append({
@@ -284,10 +291,17 @@ def add_parser(sub: Any) -> None:
     e.add_argument("--out", type=Path, required=True)
     e.add_argument("--first", type=int, default=1)
     e.add_argument("--last", type=int, default=0, help="last page (default: all)")
+    e.add_argument("--aligned", type=Path, help="only crop the source pages present in this aligned JSON (sample builds)")
     e.add_argument("--dpi", type=int, default=300)
     e.add_argument("--vector", action="store_true", help="also crop vector-only figures")
     e.add_argument("--expected-labels", help="comma list; missing/unexpected labels are reported")
     e.set_defaults(func=cmd_extract)
+    s = fs.add_parser("scan", help="crop figures from an image-only (scanned) PDF by connected components")
+    s.add_argument("--pdf", type=Path, required=True)
+    s.add_argument("--aligned", type=Path, required=True)
+    s.add_argument("--out", type=Path, required=True)
+    s.add_argument("--dpi", type=int, default=200)
+    s.set_defaults(func=cmd_scan)
     m = fs.add_parser("map", help="pair figures with translated caption blocks of an aligned JSON")
     m.add_argument("--manifest", type=Path, required=True)
     m.add_argument("--aligned", type=Path, required=True)
@@ -300,12 +314,28 @@ def cmd_extract(args: Any) -> int:
     n = fitz.open(str(args.pdf)).page_count
     last = args.last or n
     args.out.mkdir(parents=True, exist_ok=True)
-    mf = extract_figures(args.pdf, args.out, range(args.first, last + 1), args.dpi, args.vector)
+    pages: Sequence[int] = range(args.first, last + 1)
+    if args.aligned:
+        al = json.loads(args.aligned.read_text(encoding="utf-8"))
+        pages = sorted({int(p["page"]) for p in al["pages"] if args.first <= int(p["page"]) <= last})
+    mf = extract_figures(args.pdf, args.out, pages, args.dpi, args.vector)
     if args.expected_labels:
         mf["audit"] = audit_manifest(mf, expected_labels=[s for s in args.expected_labels.split(",") if s])
     write_outputs(mf, args.out, " ".join(["python3", "-m", "booklayout", *sys.argv[1:]]))
     a = mf["audit"]
     print(f"figures={a['figures']} scientific={a['scientific_figures']} furniture={a['furniture_figures']} ok={a['ok']}")
+    return 0 if a["ok"] else 1
+
+
+def cmd_scan(args: Any) -> int:
+    from .scanfigures import scan_pdf
+    from .headings import promote_captions
+    al = json.loads(args.aligned.read_text(encoding="utf-8"))
+    promote_captions(al)
+    a = scan_pdf(args.pdf, al, args.out, args.dpi)
+    p = a["problems"]
+    print(f"figures={a['figures']} figure_without_caption={len(p['figure_without_caption'])} "
+          f"caption_without_figure={len(p['caption_without_figure'])} ok={a['ok']}")
     return 0 if a["ok"] else 1
 
 

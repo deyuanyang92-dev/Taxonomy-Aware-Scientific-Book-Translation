@@ -1,0 +1,31 @@
+{
+  "id": "zh_single_dash",
+  "format": "dash",
+  "lang": "zh",
+  "source": "检索表\n1. 叶对生…………2\n— 叶互生…………第 8 页\n2b. 叶片全缘…………第 9 页",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "8"
+      ],
+      [
+        "2b",
+        "page",
+        "9"
+      ]
+    ],
+    "findings": [
+      "single_branch",
+      "lone_alternate"
+    ]
+  },
+  "why": "第二偶句被明确跳入，只余标号 2b 的一支；同时报单支和孤立备择。"
+}

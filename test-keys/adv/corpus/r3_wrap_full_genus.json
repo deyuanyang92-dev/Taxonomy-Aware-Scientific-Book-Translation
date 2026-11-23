@@ -1,0 +1,23 @@
+{
+  "id": "r3_wrap_full_genus",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to genera\n1a. Elytra spotted ...... Nereis\npelagica\n1b. Elytra smooth ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis pelagica"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:689。完整属名后单独一行种加词；同 r2_wrapped_genus 的折行，属名写全。"
+}

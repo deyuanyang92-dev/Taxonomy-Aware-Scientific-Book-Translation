@@ -1,0 +1,33 @@
+{
+  "id": "en_letters",
+  "format": "indented",
+  "lang": "en",
+  "source": "Key to conifers\nA. Needles in sheathed bundles ........ Pinus\nAA. Needles solitary\n    B. Needles on woody pegs ........ Picea\n    BB. Needles leaving circular scars ........ Abies",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Picea"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Abies"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "A/AA 与 B/BB 各成一对，子层为隐式跳转。字母惯例据 Rogers《Trees Every Child Should Know》附录 A Key to Needle-leaved Evergreens，https://www.gutenberg.org/files/44186/44186-h/44186-h.htm 。"
+}

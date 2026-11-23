@@ -1,0 +1,23 @@
+{
+  "id": "r3_rank_ru",
+  "format": "ab",
+  "lang": "ru",
+  "source": "1а. Глаза есть ...... 1. Род Harmothoe Kinberg\n1б. Глаз нет ...... 2. Род Antinoe Kinberg",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:194。SPEC 明列 Род，西里尔分支字母按已有 r2_ru_cyrillic。"
+}

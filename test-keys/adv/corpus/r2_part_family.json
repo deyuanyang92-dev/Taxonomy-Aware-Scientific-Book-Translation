@@ -1,0 +1,23 @@
+{
+  "id": "r2_part_family",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Pharynx armed ...... Nereididae (part)\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereididae"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:166–177 不区分科名和括号中的部分收录注；按 SPEC，taxon 只列学名。"
+}

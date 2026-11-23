@@ -1,0 +1,33 @@
+{
+  "id": "r3_partial_nested",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n4(1) Elytra absent ...... Nereis",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "none",
+        ""
+      ],
+      [
+        "2a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "4a",
+        "taxon",
+        "Nereis"
+      ]
+    ],
+    "findings": [
+      "single_branch",
+      "no_target",
+      "unreachable",
+      "backref_mismatch"
+    ]
+  },
+  "why": "booklayout/keygraph.py:359。沿用 r3_implicit_next，模拟内层 3(2) 整行缺失。按 SPEC 的全表回退规则，外层 1(4)/4(1) 也按回指式解释，无隐式跳转。此期望核验诊断，不能用作自动恢复原书的依据。"
+}

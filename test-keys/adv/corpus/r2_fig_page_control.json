@@ -1,0 +1,26 @@
+{
+  "id": "r2_fig_page_control",
+  "format": "ab",
+  "lang": "ru",
+  "source": "1a. Усики длинные ...... Carabus (стр. 27) (рис. 8)\n1b. Усики короткие ...... Nebria",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:42、68、158–169 检验简单俄文页码与图号并存；对照仅改页码。",
+  "translation": "1a. Усики длинные ...... Carabus (стр. 28) (рис. 8)\n1b. Усики короткие ...... Nebria"
+}

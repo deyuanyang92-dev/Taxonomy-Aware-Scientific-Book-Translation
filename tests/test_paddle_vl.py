@@ -961,3 +961,29 @@ def test_submit_data_not_dict_raises_job_error_from_attempt(tmp_path):
     blob = paddle_vl._build_pdf(pdf, [1])
     with pytest.raises(PaddleJobError, match="data 不是对象"):
         paddle_vl._attempt(fs, blob, pdf, [1], paddle_vl._page_sizes(pdf, [1]), lambda s: None)
+
+
+def test_textify_redo_adds_alternate_with_model_and_keeps_primary(monkeypatch, lib):
+    st, key, _ = lib
+    for n in (1, 2, 3):
+        st.put_version(key, n, {"text": f"人工校正第{n}页", "method": "verified", "producer": "claude-opus",
+                                "engine": "人工", "verify_level": "ocr_verified", "dpi": 300})
+    fs = use(monkeypatch, FakeSession(overrides={2: ""}))
+    monkeypatch.setenv("DOCSTORE_PADDLE_VL_MODEL", "PaddleOCR-VL-1.6")
+    r = textify.textify(st, key, workers=1, engines=["paddle_vl"], redo=True, log=lambda m: None)
+    assert fs.post_pages == [[1, 2, 3]]
+    assert r["cloud_ok"] == 2 and list(r["cloud_failed_reasons"]) == [2]
+    for n in (1, 3):
+        pg = st.page(key, n)
+        assert pg["text"] == f"人工校正第{n}页"  # 主版本不变
+        alt = [v for v in pg["alternates"] if v.get("producer") == "paddle_vl"]
+        assert len(alt) == 1 and f"cloud page {n}" in alt[0]["text"]
+        assert alt[0]["verify_level"] == "ocr_raw" and "PaddleOCR-VL-1.6" in alt[0]["engine"]
+        assert alt[0]["model"] == "PaddleOCR-VL-1.6" and alt[0]["redo"] is True and alt[0]["job_id"]
+    assert not [v for v in st.page(key, 2)["alternates"] if v.get("producer") == "paddle_vl"]
+
+
+def test_textify_redo_requires_paddle_only(lib):
+    st, key, _ = lib
+    with pytest.raises(ValueError, match="redo-ocr"):
+        textify.textify(st, key, workers=1, engines=["ppocr"], redo=True, log=lambda m: None)

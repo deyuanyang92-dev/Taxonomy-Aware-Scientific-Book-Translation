@@ -55,6 +55,12 @@ def check_lost_markers(pages: Mapping[Any, Iterable[str]]) -> list[dict[str, Any
     return findings
 
 
+def _is_index_page(page: Mapping[str, Any]) -> bool:
+    """Alphabetical index page: ``name ..... 191, 537`` lines have leaders but no couplet markers."""
+    blocks = page.get("blocks") or []
+    return bool(blocks) and sum(b.get("role") == "index" for b in blocks) * 4 >= len(blocks)
+
+
 def lost_marker_pages(data: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Run the check over an aligned JSON, on the source and on the translation."""
     findings: list[dict[str, Any]] = []
@@ -62,6 +68,7 @@ def lost_marker_pages(data: Mapping[str, Any]) -> list[dict[str, Any]]:
         pages = {
             p["page"]: [b.get(side) or "" for b in p.get("blocks", [])]
             for p in data.get("pages", [])
+            if not _is_index_page(p)
         }
         for f in check_lost_markers(pages):
             f["side"] = side

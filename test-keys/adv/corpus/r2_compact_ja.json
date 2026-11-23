@@ -1,0 +1,23 @@
+{
+  "id": "r2_compact_ja",
+  "format": "dash",
+  "lang": "ja",
+  "source": "１）鰓糸は単純……Glycera\n— 鰓糸は分枝……Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Glycera"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:60–61 日文编号右括号后直接排正文，主支漏识后备择横线也失去归属。"
+}

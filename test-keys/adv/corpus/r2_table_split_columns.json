@@ -1,0 +1,23 @@
+{
+  "id": "r2_table_split_columns",
+  "format": "table",
+  "lang": "zh",
+  "source": "| 偶句 | 性状 | 类群 | 页码 |\n| 1a | 触角长 | Carabidae | 第 12 页 |\n| 1b | 触角短 | Formicidae | 第 18 页 |",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabidae"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Formicidae"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:487–488 固定取末列为去向，将有明确列名的科名拼入性状。"
+}

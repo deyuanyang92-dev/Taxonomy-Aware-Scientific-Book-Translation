@@ -1,0 +1,23 @@
+{
+  "id": "r3_serial_author",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to genera\n1a. Elytra spotted ...... 1. Genus Harmothoe Kinberg, 1855\n1b. Elytra smooth ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:226。点线、属序号、作者及年份齐全。依据 SPEC 及 real_marinov_thesis。"
+}

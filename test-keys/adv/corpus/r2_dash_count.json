@@ -1,0 +1,23 @@
+{
+  "id": "r2_dash_count",
+  "format": "dash",
+  "lang": "en",
+  "source": "1. Antenna with four articles ...... Carabus\n— 3 articles visible ...... Nebria",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:237–244 在横线后递归识别数字，将备择支性状的 3 误读为偶句号。"
+}

@@ -167,6 +167,7 @@ def textify(
     fix: bool = True,
     ocr_threads: int | None = None,
     layer_only: bool = False,
+    redo: bool = False,
     log: Callable[[str], None] = print,
 ) -> dict:
     """文本化。workers>1 时 OCR（渲染+引擎）在进程池里并行，所有写库仍在本进程；每页即时落盘并提交，可续跑。
@@ -199,6 +200,8 @@ def textify(
         if limit is not None:  # 两类页合计不超过 limit
             todo = todo[:limit]
             need_ocr = need_ocr[:max(0, limit - len(todo))]
+        if redo:
+            return _redo_paddle(store, key, path, sorted(have), pages, limit, engines, by, log)
         n_text = 0
         for n in todo:
             txt = pdf[n - 1].get_text()
@@ -454,3 +457,36 @@ def _reindex(store: Store, key: str) -> None:
     for p in store.pages(key):
         store._index_page(p)
     store.con.commit()
+
+
+def _redo_paddle(store: Store, key: str, path: str, have: list[int], pages: list[int] | None,
+                 limit: int | None, engines: list[str] | None, by: str, log: Callable[[str], None]) -> dict:
+    """对已入库页重跑 PaddleOCR 云 API（--redo-ocr）。结果只作 alternates 版本（promote=False），
+    不改主版本、不跑共识；版本记模型名、job_id、trace_id，供与已校主版本对比质量。失败页不降级，列入返回值。"""
+    if engines != ["paddle_vl"]:
+        raise ValueError("--redo-ocr 只支持 --engines paddle_vl")
+    want = have if pages is None else [n for n in have if n in set(pages)]
+    if limit is not None:
+        want = want[:limit]
+    if not want:
+        log(f"[{key}] 重跑 OCR：无已入库页可重跑")
+        return {"key": key, "redo": 0, "cloud_ok": 0, "cloud_failed": 0, "cloud_failed_reasons": {}}
+    by = agent(by)
+    log(f"[{key}] 重跑 PaddleOCR {len(want)} 页（只加 alternates，不改主版本）")
+    res = paddle_vl.run_pages(path, want, log=log)
+    for n in sorted(res["ok"]):
+        txt, meta = res["ok"][n]
+        model = meta.get("model") or "?"
+        v = make_version(
+            txt, "ocr", producer="paddle_vl", engine=f"PaddleOCR cloud {model}", conf=None, source=path,
+            level="blank" if meta.get("empty_reason") == "blank" else "ocr_raw",
+            extra={"run_by": by, "redo": True,
+                   **{k: meta.get(k) for k in ("model", "job_id", "trace_id", "chunk", "empty_reason", "seconds")}},
+        )
+        store.put_version(key, n, v, index=False, promote=False)
+    store.con.commit()
+    failed = {n: res["failed"][n] for n in sorted(res["failed"])}
+    log(f"[{key}] 重跑完成：通过 {len(res['ok'])} 页，失败 {len(failed)} 页"
+        + (f"（{','.join(map(str, failed))}）" if failed else ""))
+    return {"key": key, "redo": len(want), "cloud_ok": len(res["ok"]), "cloud_failed": len(failed),
+            "cloud_failed_reasons": failed, "quota_hit": res["quota_hit"]}

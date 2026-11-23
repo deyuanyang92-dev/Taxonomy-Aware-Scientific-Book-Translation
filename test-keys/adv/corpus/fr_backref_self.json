@@ -1,0 +1,35 @@
+{
+  "id": "fr_backref_self",
+  "format": "backref",
+  "lang": "fr",
+  "source": "Clé des feuilles\n1. Feuilles simples ........ 2\n— Feuilles composées ........ p. 9\n2(2). Limbe lobé ........ p. 10\n— Limbe entier ........ p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "9"
+      ],
+      [
+        "2a",
+        "page",
+        "10"
+      ],
+      [
+        "2b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "backref_mismatch"
+    ]
+  },
+  "why": "第二偶句把来路误记为自身，实际来路为 1；只有去向边才能构成环。"
+}

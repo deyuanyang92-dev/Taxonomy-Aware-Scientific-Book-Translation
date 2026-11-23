@@ -190,6 +190,32 @@ booklayout qa \
 
 章标题默认另起一页（`heading_in_flow: false`）。元数据里把 `heading_in_flow` 设为 `true` 会让章标题接在目录或上一章末尾，只适用于内部校样，不用于出版稿。源书章节交界页常先有上一章的尾段，再出现新章标题；构建器把新章标题插在该页源标题的位置，尾段仍归上一章，不把尾段排到新章标题之下。卷首页目录由 `map-pages` 的结果自动生成，源书前置页里的目录页（`body_start_page` 之前）不重复排版。
 
+## 三审三校新增硬规则（2026-11-23，Fauna Ibérica 第21卷交付事故后）
+
+事故：检索表条目整对丢失、目标被拆成独立行、说明图注带手工换行被两端对齐拉出巨大词距、亚科/属名列表被制表符打散；三审全部报 ok，缺陷仍交付。根因：①`index` 角色块在章内页被构建器静默丢弃，qa 只查「已印内容的排版」，不查「应印而未印」；②文字审只抽 body 约 25% 的块；③`key_layout` 只查右缘对齐，不查整行结构；④关口只在最后跑一次，没有任何东西阻止写入成品夹；⑤交付前没有逐页对原书/样章并排看。
+
+以下规则由 `booklayout qa` 强制（失败即 `ok:false`，不得交付）：
+
+| 规则 | 检查 | 字段 |
+|---|---|---|
+| 检索表页不得含构建器无法印出的块 | 检索表页的 `index` 块经 `keyfix.repair_key_page` 改回 `key`；仍有孤立目标（只有「种名（第N页）」的块）判失败 | `key_repaired_pages`（记录）、`key_orphan_targets`（失败） |
+| 应印必印 | 每个会印出的 body/caption/heading/key 块，译文前 14 个字母/汉字/数字必须出现在 PDF 文本中（忽略标点和空白） | `blocks_missing_in_pdf` |
+| 正文/图注/注释不得含手工换行 | 译文含 `\n` 时，两端对齐会拉出巨大词距；profile `unwrap_lines: true` 由构建器合并，qa 带 `--profile` 时放行，否则失败 | `manual_line_breaks` |
+| 检索表用表格 | profile `key_style: "table"`：序号｜鉴别特征｜目标（右对齐），一对条目一行，不拆行，行间细线，表头 `key_headers` | 版式 |
+
+| 不得印出字面标记 | PDF 文本含 `<sup>`/`<sub>`/`<i>` 标签原样判失败；构建器把 `<sup>/<sub>` 转成真正的上/下标 run | `literal_markup_in_pdf` |
+| 检索表标题下的短块 | 无 `1.`/`1'.` 标记但紧随检索表标题的短 body 块，按 `keyfix` 预处理转为 key；无标记续行并入上一条；条目末尾点线在引导线前去除 | `key_repaired_pages.body_to_key / continuations_merged` |
+| 窄条图版 | 扫描页只有细长插图时，`scanfigures.find_figures(lenient=True)` 兜底，裁框取全文宽，避免公式/标签被截 | 图审计 `source_figure_audit.json` |
+| Word 渲染 lint | `yzz.py ms check` 必须 `LINT: OK`（英文串不得带 eastAsia 提示，否则 Word 标点变全角）；LibreOffice 正常不代表 Word 正常 | `run_gates.py` |
+| 图版字母残留 | body 块只有单个字母（"D"、"(E)"）是图版标注的 OCR 残留；`promote_captions` 下构建器丢弃，并把被它们隔开的图注尾（小写开头）并回图注；其他情况 qa 判失败（不碰无字母隔断的小写块，v36 p54 "der, 1977)" 回归） | `stray_label_blocks`；测试 `test_stray_panel_labels_flagged_and_dropped` |
+| check/gate 误报边界 | 样本页码不连续（页差>1）不算「边界不确定」；索引页（index 块≥25%）带点线无编号不算丢失检索表标记；单块页若为原书确系连续一段，在块上写 `boundary_reviewed`+`boundary_note` | `booklayout check`；测试 `test_check_ignores_page_gaps_and_index_pages` |
+| 门禁全链 | `booklayout check` + `key-report --pdf` + `gate --qa --check --key-report` 必须过，`acceptance` 的 structure 阶段 pass；translation_review/technical/pilot/visual/quality 无记录就如实写 missing，不得宣称验收完成 | `run_gates.py`、`acceptance` |
+| 回归 | 默认 profile 下 Imajima v8 p1-12 与改动前逐页像素一致（12/12） | 手工比对，改 builder 后必跑 |
+
+检索表是底线：整本检索表必须逐页与原书页并排看过（缩略图→放大局部），每对条目的序号、特征、目标三者同行，没有孤立点线、孤立圆点或孤立页码。
+
+人工并排核对（脚本做不到的部分，必须做并留痕）：①每卷至少抽 5 页含检索表/图注/列表的页，对原书页图；②对照 Google 样章同页的密度与段落；③所有 `qa` 数字写入交付说明；④任何新缺陷类型先写回归测试（`tests/test_booklayout_delivery_guards.py`）再修。交付脚本须先跑全部关口，失败不得写入 `排版成品/`：参考实现 `排版成品/run_gates.py <21|21en|25|36|41>`（构建两遍→qa→图审计→zh check→stylecheck→ms check，全过才复制 DOCX/PDF 并生成 HTML）。
+
 ## 速度
 
 一次成书只需三遍命令：`build`（第一遍）→ `map-pages` → `build`（第二遍）。三本 450–640 源页的书，第一遍约 60–110 秒，第二遍相近；不要每改一行就重排全书。先用 `normalize`/`repair` 改对齐 JSON，再重排；版式问题用 `qa` 定位到具体页，不要逐页翻 PDF。
@@ -265,3 +291,39 @@ booklayout audit <aligned.json> [--pdf out.pdf] [--json] [--source-lang ja|es] [
 覆盖率（有原文的块中已有译文的比例）。加 `--pdf` 另报 PDF 检索表版面、图注与图间距、
 图注断词（复用 `qa` 的版面检查）。`--json` 给出每项前 5 个示例；`--strict` 有缺陷时退出码 1。
 逻辑在 `booklayout/audit.py`，测试 `tests/test_booklayout_audit.py`。
+
+### 排版任务的范围边界
+排版交付只由 booklayout 脚本和确定性闸口完成。acceptance 的 translation_review / visual / quality 阶段需译文核译或具名人工，排版任务不得用大模型代填，未做须如实标注。
+
+
+## 检索表渲染检查（keyrender，2026-11-23）
+
+检索表交付前，必须在 PDF 上量坐标，7 条规则全部通过：
+
+```bash
+python3 -m booklayout.keyrender book.pdf [--pages 3-6] [--report kr.json]   # 有 FAIL 退出码 1
+```
+
+| 代码 | 规则 |
+|---|---|
+| KR1 | 三栏：编号｜正文｜去向；不管编号是「1.」「10.」还是「—」，正文起点都在同一条竖线上 |
+| KR2 | 折行与首行正文左端对齐，不对齐编号 |
+| KR3 | 点线紧接正文；放不下去向时，本行用点线排满，不留空白 |
+| KR4 | 去向靠右边界，不拆行；词不粘连（Aphrodita3）；括号配对 |
+| KR5 | 每条都有点线和去向 |
+| KR6 | 去向学名斜体（命名人、科/亚科名正体）；数字不与量词分行 |
+| KR7 | 同组两条（n. 与 —）不跨页 |
+
+实现在 `booklayout/keyrender.py`（测试 `tests/test_keyrender.py`），排版在 `builder.couplet_para`。注意：`add_runs` 会经过 `clean_text`，后者把制表符压成空格，所以编号、制表符要各自单独成 run。
+
+## 检索表图层（keygraph，2026-11-23）
+
+`booklayout/keygraph.py` 把检索表解析成偶句图，不依赖具体书的格式。三轮对抗审核中，Codex 写攻击样例，Claude 实现并裁定。样例共 122 例，在 `test-keys/adv/corpus/`，规范见 `test-keys/adv/SPEC.md`；运行 `python3 test-keys/adv/run_corpus.py` 回归。
+
+- 编号格式：1/1′、1a/1b、1/—、•、括号回指 4(1)、俄/苏定检表正反条成对编号 1(8)…8(1)（无去向的条隐式跳到下一号）、多歧、字母层级、缩进式、表格式；OCR 撇号误读（1l、11）只在紧邻同号时还原。
+- 去向：jump / page / taxon / none。taxon 只记学名，剥离序号、阶元词（Genus/Род/属）、命名人、年份；页码另记 page。
+- 图检查（error）：no_keys、empty_key、single_branch、lone_alternate、duplicate_lead、no_target、dangling_jump、unreachable、cycle、backref_mismatch；multi_parent 只报 warn。
+- 原译对照：key_count、missing_branch、extra_branch、target_changed（跳转号、页码、学名任一不同）、order_changed；译文本身也跑图检查。
+- 接入：`key-model` 输出 `report["graph"]`。`--expect-keys` 或 `--entries` 声明有表时，识别出 0 张表就报 no_keys，退出码为 1；声明的入口不存在时报 dangling_jump。`gate --key-model … --keyrender …` 遇到以下任一情况判不通过：报告缺失或字段不全、ok 与 errors 矛盾、有任何 finding、PDF 中识别到的分支数少于 key-model 的一半。旧调用不传这两份报告，仍返回 0，并在 `coverage`/`unchecked` 字段标明未检查。`publish_book.py` 运行前删除本轮要写的旧报告；任一必需检查失败，就不可发布。
+- 已知限制见 `keygraph.LIMITS`。主要有：无标题的纯缩进表无法和普通列表区分，只能靠调用方声明有表来阻断；非相邻的 OCR「11」不自动改号，改为报错阻断；需要原书表清单才能发现局部整表丢失。
+- 真实书回归：Marinov 1977 `b07.md` 识别 4 张表，只剩 1 条 error：3(4) 原文缺去向。

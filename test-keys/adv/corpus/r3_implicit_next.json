@@ -1,0 +1,33 @@
+{
+  "id": "r3_implicit_next",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Antinoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nereis"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:367。按 SPEC 正反条及 real_marinov_thesis 的结构缩写；第 1 条无终点，接第 2 条。"
+}

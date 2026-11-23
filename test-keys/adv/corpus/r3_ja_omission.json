@@ -1,0 +1,27 @@
+{
+ "id": "r3_ja_omission",
+ "format": "ab",
+ "lang": "en",
+ "source": "1a. Eyes present ...... Harmothoe (p. 76)\n1b. Eyes absent ...... Antinoe",
+ "translation": "1a. 眼あり ...... Harmothoe（76ページ）",
+ "expect": {
+  "keys": 1,
+  "branches": [
+   [
+    "1a",
+    "taxon",
+    "Harmothoe"
+   ],
+   [
+    "1b",
+    "taxon",
+    "Antinoe"
+   ]
+  ],
+  "findings": [
+   "missing_branch",
+   "single_branch"
+  ]
+ },
+ "why": "booklayout/keygraph.py:821。日译漏第二支。按运行器约定，译侧只计对照码。 ｜主会话裁定 r3：run_corpus 改为译文也跑 check，译文图检查命中 single_branch 属正确检出。"
+}

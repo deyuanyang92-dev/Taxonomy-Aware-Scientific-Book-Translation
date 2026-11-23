@@ -1,0 +1,26 @@
+{
+  "id": "r3_short_binomial",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Tail long ...... Ia io\n1b. Tail short ...... Myotis myotis",
+  "translation": "1a. 尾が長い ...... Ia xx\n1b. 尾が短い ...... Myotis myotis",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Ia io"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Myotis myotis"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "booklayout/keygraph.py:180、803。Ia io 的属名和种加词各仅两个字母。日译将 io 错录为 xx，应报告去向变化；错误拼写只用于模拟转录差错。"
+}

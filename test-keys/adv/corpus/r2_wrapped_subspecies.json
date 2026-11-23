@@ -1,0 +1,23 @@
+{
+  "id": "r2_wrapped_subspecies",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Hindwing banded ...... Papilio machaon\nbritannicus\n1b. Hindwing unbanded ...... Papilio",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Papilio machaon britannicus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Papilio"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:449、538–541 双名已被判完整，下一行的亚种加词触发闭表。"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "r2_gap_page",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Elytra striate    Carabidae (p. 18)\n1b. Elytra smooth ...... Staphylinidae",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabidae"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Staphylinidae"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:190–195 优先裁下末尾页码，宽空格后的科名留在性状内。"
+}

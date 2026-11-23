@@ -1,0 +1,53 @@
+{
+ "id": "real_marinov_thesis",
+ "format": "backref",
+ "lang": "en",
+ "source": "<!-- PDF p.31 -->\n### Key to the genera of subfamily *Polynoinae*\n1(8) 15 pairs of elytra, with lateral and one median antenna\n2(5) Body short, entirely covered by elytra\n3(4) Lateral antennae attached almost terminally . . . . 1. Genus *Harmothoe* Kinberg\n4(3) Lateral antennae attached ventrally . . . . 4. Genus *Antinoe* Kinberg\n5(2) Body not completely covered by elytra; posterior end without elytra\n6(7) Body short, narrowing posteriorly. 40—50 body segments . . . . . . . . 2. Genus *Lagisca* Malmgren\n7(6) Body long, worm-like, 50—100 segments . . 3. Genus *Polynoe* Savigny\n8(1) Elytra numerous, extending to posterior end of body . . . . . 5. Genus *Lepidasthenia* Malmgren\n\n### 1. Genus *Harmothoe* Kinberg, 1855\nBody relatively short, with no more than 40—50 segments.",
+ "expect": {
+  "keys": 1,
+  "branches": [
+   [
+    "1a",
+    "jump",
+    "2"
+   ],
+   [
+    "2a",
+    "jump",
+    "3"
+   ],
+   [
+    "3a",
+    "taxon",
+    "Harmothoe"
+   ],
+   [
+    "3b",
+    "taxon",
+    "Antinoe"
+   ],
+   [
+    "2b",
+    "jump",
+    "6"
+   ],
+   [
+    "6a",
+    "taxon",
+    "Lagisca"
+   ],
+   [
+    "6b",
+    "taxon",
+    "Polynoe"
+   ],
+   [
+    "1b",
+    "taxon",
+    "Lepidasthenia"
+   ]
+  ],
+  "findings": []
+ },
+ "why": "真实写法：Marinov 1977 b07.md 第 8–16 行（正反条成对编号，括号为对立条号，无去向接下一号）。结构照原书，3/4 去向据原书补全为合成值。旧 key-model 对原文识别 0 张表，keygraph 报 53 个 single_branch 误报。"
+}

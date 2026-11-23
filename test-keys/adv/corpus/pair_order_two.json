@@ -1,0 +1,26 @@
+{
+  "id": "pair_order_two",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to the two pines\n1a. Needles two per bundle ........ Pinus sylvestris (p. 12)\n1b. Needles five per bundle ........ Pinus strobus (p. 18)",
+  "translation": "两种松树的检索表\n1b. 针叶五针一束…………Pinus strobus（第 18 页）\n1a. 针叶二针一束…………Pinus sylvestris（第 12 页）",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus sylvestris"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Pinus strobus"
+      ]
+    ],
+    "findings": [
+      "order_changed"
+    ]
+  },
+  "why": "译文将完整的 b 支提前。两个标号各自的种名和页码均正确，只有顺序变化。"
+}

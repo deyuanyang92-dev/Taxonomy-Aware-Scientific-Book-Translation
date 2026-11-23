@@ -1,0 +1,30 @@
+{
+  "id": "en_duplicate_b",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to leaves\n1a. Leaves opposite ........ p. 8\n1b. Leaves alternate ........ p. 9\n1b. Leaves whorled ........ p. 10",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "8"
+      ],
+      [
+        "1b",
+        "page",
+        "9"
+      ],
+      [
+        "1b",
+        "page",
+        "10"
+      ]
+    ],
+    "findings": [
+      "duplicate_lead"
+    ]
+  },
+  "why": "三行各有性状，但后两行都印成 1b；不能据行序改成 1c。"
+}

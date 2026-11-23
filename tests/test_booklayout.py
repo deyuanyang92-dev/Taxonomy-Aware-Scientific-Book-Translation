@@ -779,8 +779,8 @@ def test_key_para_recovers_target_without_a_leader() -> None:
         set(),
     )
     first, second = doc.paragraphs
-    assert "".join(r.text for r in first.runs[-4:]).replace("\u202f", " ").endswith("\tE. vittata\t(p. 123)")
-    assert "".join(r.text for r in second.runs[-4:]).replace("\u202f", " ").endswith("\tL. collaris\t(p. 136)")
+    assert first.text.replace("\u202f", " ").endswith("\tE. vittata\t(p. 123)")
+    assert second.text.replace("\u202f", " ").endswith("\tL. collaris\t(p. 136)")
 
 
 def test_key_para_accepts_single_dot_before_couplet_number() -> None:
@@ -805,7 +805,7 @@ def test_key_para_keeps_long_couplet_as_one_tabbed_line() -> None:
     key_para(doc, left + " ......... O. anadonae (p. 69)", set())
     paragraph = doc.paragraphs[0]
     assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
-    assert "".join(r.text for r in paragraph.runs[-4:]).replace("\u202f", " ").endswith("\tO. anadonae\t(p. 69)")
+    assert paragraph.text.replace("\u202f", " ").endswith("\tO. anadonae\t(p. 69)")
 
 
 def test_key_target_is_non_breaking() -> None:
@@ -819,7 +819,7 @@ def test_key_target_is_non_breaking() -> None:
         set(),
     )
     paragraph = doc.paragraphs[0]
-    target = paragraph.runs[-3].text + paragraph.runs[-1].text
+    target = "".join(paragraph.text.split("\t")[-2:])
     assert " " not in target
     assert target.replace("\u202f", " ") == "L. torquata(p. 133)"
     # The workspace zh-check gate rejects U+00A0; U+202F must not leak in.
@@ -1670,8 +1670,8 @@ def test_key_para_splits_two_couplets_joined_in_one_block() -> None:
     first, second = doc.paragraphs
     assert first.runs[-1].text == "5"
     assert first.runs[-2].text == "\t"
-    assert "".join(r.text for r in second.runs[-4:]).replace("\u202f", " ").endswith("\tPseudofabriciola\t(p. 226)")
-    assert second.runs[-2].text == "\t"
+    assert second.text.replace("\u202f", " ").endswith("\tPseudofabriciola\t(p. 226)")
+    assert second.text.rsplit("\t", 1)[1].replace(chr(0x202f), " ") == "(p. 226)"
 
 
 def test_caption_italicises_bare_genus_but_not_sp() -> None:

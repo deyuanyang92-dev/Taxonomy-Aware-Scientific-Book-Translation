@@ -1,0 +1,43 @@
+{
+  "id": "r3_indent_wrapped",
+  "format": "indented",
+  "lang": "en",
+  "source": "Key to leaves\nLeaves opposite\n    Blades deeply\n        lobed ........ p. 12\n    Blades unlobed ........ p. 13\nLeaves alternate\n    Blades toothed ........ p. 14\n    Blades entire ........ p. 15",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "page",
+        "12"
+      ],
+      [
+        "2b",
+        "page",
+        "13"
+      ],
+      [
+        "1b",
+        "jump",
+        "3"
+      ],
+      [
+        "3a",
+        "page",
+        "14"
+      ],
+      [
+        "3b",
+        "page",
+        "15"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:524。同 en_indent_siblings，只将第一个叶节点性状折行；另一同层的 Blades unlobed 保留。"
+}

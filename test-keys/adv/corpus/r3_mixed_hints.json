@@ -1,0 +1,35 @@
+{
+  "id": "r3_mixed_hints",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(2). Head broad ...... 2\n1′. Head narrow ...... p. 10\n2(1). Eyes large ...... 1\n2′. Eyes small ...... p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "10"
+      ],
+      [
+        "2a",
+        "jump",
+        "1"
+      ],
+      [
+        "2b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "cycle"
+    ]
+  },
+  "why": "booklayout/keygraph.py:356。同表两个括号号互指但均有撇号备择；按回指式可检出真实回路。"
+}

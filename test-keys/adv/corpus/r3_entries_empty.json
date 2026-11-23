@@ -1,0 +1,18 @@
+{
+  "id": "r3_entries_empty",
+  "format": "other",
+  "lang": "en",
+  "source": "General introduction.",
+  "declared_entries": [
+    "1",
+    "5"
+  ],
+  "expect": {
+    "keys": 0,
+    "branches": [],
+    "findings": [
+      "no_keys"
+    ]
+  },
+  "why": "booklayout/keygraph.py:835。声明入口即预期有表；对照 booklayout/keymodel.py:355 和 run_corpus.py:28。"
+}

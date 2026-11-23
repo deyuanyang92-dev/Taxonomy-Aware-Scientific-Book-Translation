@@ -1,0 +1,23 @@
+{
+  "id": "r3_rank_zh",
+  "format": "ab",
+  "lang": "zh",
+  "source": "1a. 有眼 ...... 1. 属 Harmothoe Kinberg\n1b. 无眼 ...... 2. 属 Antinoe Kinberg",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:194。SPEC 明列中文阶元词「属」；终点字段只存拉丁属名。"
+}

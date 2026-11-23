@@ -1,0 +1,55 @@
+{
+  "id": "en_diamond",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to leaves\n1a. Leaves opposite ........ 2\n1b. Leaves alternate ........ 3\n2a. Blades hairy ........ 4\n2b. Blades glabrous ........ p. 8\n3a. Blades lobed ........ 4\n3b. Blades unlobed ........ p. 9\n4a. Margins entire ........ p. 10\n4b. Margins toothed ........ p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "jump",
+        "3"
+      ],
+      [
+        "2a",
+        "jump",
+        "4"
+      ],
+      [
+        "2b",
+        "page",
+        "8"
+      ],
+      [
+        "3a",
+        "jump",
+        "4"
+      ],
+      [
+        "3b",
+        "page",
+        "9"
+      ],
+      [
+        "4a",
+        "page",
+        "10"
+      ],
+      [
+        "4b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "multi_parent"
+    ]
+  },
+  "why": "两条检索路径在 4 汇合，按 SPEC 仅提示 multi_parent；汇合后仍能到达终点。"
+}

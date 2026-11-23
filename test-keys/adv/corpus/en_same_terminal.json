@@ -1,0 +1,23 @@
+{
+  "id": "en_same_terminal",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to pine genera represented in the collection\n1a. Needles two per bundle ........ Pinus\n1b. Needles five per bundle ........ Pinus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Pinus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "本批标本有两种束生针叶数，均归松属。共享分类终点不会形成偶句的多入边。"
+}

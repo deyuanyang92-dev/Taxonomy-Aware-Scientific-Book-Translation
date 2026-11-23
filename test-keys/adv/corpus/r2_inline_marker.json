@@ -1,0 +1,23 @@
+{
+  "id": "r2_inline_marker",
+  "format": "ab",
+  "lang": "en",
+  "source": "<!-- PDF p.8 -->1a. Leaves opposite ...... Acer\n1b. Leaves alternate ...... Quercus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Acer"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Quercus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:305–310 搜到分页注释就丢整行，连在注释后的第一支随之消失。"
+}

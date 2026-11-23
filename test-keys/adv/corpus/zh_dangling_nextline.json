@@ -1,0 +1,25 @@
+{
+  "id": "zh_dangling_nextline",
+  "format": "ab",
+  "lang": "zh",
+  "source": "检索表\n1a. 叶对生…………\n19\n1b. 叶互生…………第 19 页",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "19"
+      ],
+      [
+        "1b",
+        "page",
+        "19"
+      ]
+    ],
+    "findings": [
+      "dangling_jump"
+    ]
+  },
+  "why": "第一支折下去的 19 没有页码标志，表内也无第 19 偶句。"
+}

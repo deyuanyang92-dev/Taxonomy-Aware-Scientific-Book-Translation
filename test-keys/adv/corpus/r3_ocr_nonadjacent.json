@@ -1,0 +1,39 @@
+{
+ "id": "r3_ocr_nonadjacent",
+ "format": "prime",
+ "lang": "en",
+ "source": "1. Eyes present ...... 2\n2. Body short ...... Harmothoe\n2′. Body long ...... Antinoe\n11. Eyes absent ...... Nereis",
+ "translation": "1. 有眼 ...... 2\n2. 体短 ...... Harmothoe\n2′. 体长 ...... Antinoe\n1′. 无眼 ...... Nereis",
+ "expect": {
+  "keys": 1,
+  "branches": [
+   [
+    "1a",
+    "jump",
+    "2"
+   ],
+   [
+    "2a",
+    "taxon",
+    "Harmothoe"
+   ],
+   [
+    "2b",
+    "taxon",
+    "Antinoe"
+   ],
+   [
+    "11a",
+    "taxon",
+    "Nereis"
+   ]
+  ],
+  "findings": [
+   "extra_branch",
+   "missing_branch",
+   "single_branch",
+   "unreachable"
+  ]
+ },
+ "why": "booklayout/keygraph.py:159。原稿 1′ 在子偶句之后，模拟 OCR 错读 11。中文清稿保留 1′ 供对照；孤立读作撇号未确证。 ｜主会话裁定 r3：非相邻 11 不无条件改号；现报单支与不可达而阻断，为正确的安全失败。"
+}

@@ -1,0 +1,49 @@
+{
+  "id": "de_two_entry_join",
+  "format": "ab",
+  "lang": "de",
+  "source": "Bestimmungsschlüssel (Blüten: Einstieg 1, Früchte: Einstieg 2)\n1a. Blüten weiß ........ 3\n1b. Blüten gelb ........ S. 8\n2a. Früchte geflügelt ........ 3\n2b. Früchte ungeflügelt ........ S. 9\n3a. Blätter behaart ........ S. 10\n3b. Blätter kahl ........ S. 11",
+  "declared_entries": [
+    "1",
+    "2"
+  ],
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "3"
+      ],
+      [
+        "1b",
+        "page",
+        "8"
+      ],
+      [
+        "2a",
+        "jump",
+        "3"
+      ],
+      [
+        "2b",
+        "page",
+        "9"
+      ],
+      [
+        "3a",
+        "page",
+        "10"
+      ],
+      [
+        "3b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "multi_parent"
+    ]
+  },
+  "why": "两个声明入口共用叶部性状偶句 3，仅对汇合给出警告。"
+}

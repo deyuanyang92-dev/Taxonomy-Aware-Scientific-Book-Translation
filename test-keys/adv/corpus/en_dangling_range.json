@@ -1,0 +1,25 @@
+{
+  "id": "en_dangling_range",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to specimens\n1a. Leaves opposite ........ 5-6\n1b. Leaves alternate ........ p. 5",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "5"
+      ],
+      [
+        "1b",
+        "page",
+        "5"
+      ]
+    ],
+    "findings": [
+      "dangling_jump"
+    ]
+  },
+  "why": "范围取左端后表中无偶句 5。另一支的页码 5 不能满足跳转。"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "r3_last_missing_target",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(2) Eyes present ...... Harmothoe\n2(1) Eyes absent",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "none",
+        ""
+      ]
+    ],
+    "findings": [
+      "no_target"
+    ]
+  },
+  "why": "booklayout/keygraph.py:367。末条无去向且无下一条，报告缺终点。"
+}

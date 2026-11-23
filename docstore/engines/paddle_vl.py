@@ -415,7 +415,7 @@ def _attempt(
         if e.kind == "transient":
             raise PaddleJobError(f"job={job} {e}") from e  # 校验不过：允许重新提交
         raise
-    return ok, failed, {"job_id": job, "trace_id": d.get("_traceId")}
+    return ok, failed, {"job_id": job, "trace_id": d.get("_traceId"), "model": model}
 
 
 def run_chunk(

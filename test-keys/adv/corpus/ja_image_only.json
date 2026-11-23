@@ -1,0 +1,17 @@
+{
+ "id": "ja_image_only",
+ "format": "other",
+ "lang": "ja",
+ "source": "<!-- PDF p.48 -->\n検索表\n［図版：分岐線と文字は画像内］",
+ "declared_entries": [
+  "1"
+ ],
+ "expect": {
+  "keys": 1,
+  "branches": [],
+  "findings": [
+   "empty_key"
+  ]
+ },
+ "why": "调用方声明入口 1，文本层只有标题和图版占位。无法恢复任何分支，应报零表。 ｜主会话裁定 r3：有标题无有效分支改报 empty_key（error，同样阻断，且指明是哪张表）。"
+}

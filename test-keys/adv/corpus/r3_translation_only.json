@@ -1,0 +1,15 @@
+{
+  "id": "r3_translation_only",
+  "format": "other",
+  "lang": "en",
+  "source": "General introduction.",
+  "translation": "1а. Глаза есть ...... 1. Род Harmothoe Kinberg\n1б. Глаз нет ...... 2. Род Antinoe Kinberg",
+  "expect": {
+    "keys": 0,
+    "branches": [],
+    "findings": [
+      "key_count"
+    ]
+  },
+  "why": "booklayout/keygraph.py:809。原文纯叙述，俄译多出整表，应报表数不同。"
+}

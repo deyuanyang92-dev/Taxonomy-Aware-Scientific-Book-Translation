@@ -1,0 +1,23 @@
+{
+  "id": "r2_spp_terminal",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Several forms included ...... Nereis spp.\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis spp."
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:149–150 在复数 spp. 终点吞掉缩写句点，丢失原终点写法。"
+}

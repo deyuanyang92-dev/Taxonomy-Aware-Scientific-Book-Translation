@@ -1,0 +1,23 @@
+{
+  "id": "r3_serial_species_noleader",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to genera\n1a. Elytra spotted 2. H. reticulata (Claparède)\n1b. Elytra smooth ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "H. reticulata"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:272。沿用 real_marinov_two_leads 的编号种名和作者，仅模拟点线丢失。"
+}

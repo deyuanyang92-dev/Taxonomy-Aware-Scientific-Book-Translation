@@ -1,0 +1,23 @@
+{
+  "id": "r2_plate_panel",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Branchiae paired ...... Nereis pelagica (p. 76) (Fig. 4A)\n1b. Branchiae solitary ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis pelagica"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:67–68、158–169 去页码后，FIG_SUF 不接受分图字母 A，图注残留在学名中。"
+}

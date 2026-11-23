@@ -1,0 +1,25 @@
+{
+  "id": "fr_empty_tail",
+  "format": "dash",
+  "lang": "fr",
+  "source": "Clé des genres\n1. Aiguilles en faisceaux ........\n— Aiguilles isolées ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "none",
+        ""
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": [
+      "no_target"
+    ]
+  },
+  "why": "第一支的点线止于换行，下一行已有自己的支号与终点。"
+}

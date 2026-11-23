@@ -62,6 +62,7 @@ def cmd_text(st: Store, a) -> None:
             fix=not a.no_fix,
             layer_only=a.layer_only,
             ocr_threads=a.ocr_threads,
+            redo=a.redo_ocr,
             log=lambda m: print(m, flush=True),
         )
         print(json.dumps(r, ensure_ascii=False), flush=True)
@@ -595,6 +596,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--no-fix", action="store_true", help="不对共识文本再跑 lexicon 编辑距离纠错（保留引擎原文）")
     s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
     s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
+    s.add_argument("--redo-ocr", action="store_true",
+                   help="对已入库页重跑 OCR（仅 --engines paddle_vl）：结果只加为 alternates 版本并记模型名，不改主版本")
     s.set_defaults(fn=cmd_text)
 
     s = sub.add_parser("consensus", help="对已有 OCR 版本重算共识，不重复 OCR")

@@ -1,0 +1,33 @@
+{
+  "id": "r3_count_fallthrough",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(4) Number of antennae 1\n2(3) Body narrow ...... Harmothoe\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Antinoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nereis"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:367。末尾 1 是触角数，依原条序隐式接 2；前面的数量名词消除裸数歧义。"
+}

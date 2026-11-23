@@ -1,0 +1,23 @@
+{
+  "id": "r2_prime_control",
+  "format": "prime",
+  "lang": "ja",
+  "source": "１． 触角は長い . . . . . . Carabus\n１'. 触角は短い . . . . . . Nebria",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:26、60–61、310 检验全角数字、ASCII 撇号与稀疏点线同时出现时仍有两个终点。"
+}

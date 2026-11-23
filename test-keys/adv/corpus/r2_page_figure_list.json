@@ -1,0 +1,23 @@
+{
+  "id": "r2_page_figure_list",
+  "format": "ab",
+  "lang": "zh",
+  "source": "1a. 触角长 ...... 第 12 页（图 3、4）\n1b. 触角短 ...... Nebria",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:68、166–170 无法剥离中文并列图号；移除书页后括注被分类为学名。"
+}

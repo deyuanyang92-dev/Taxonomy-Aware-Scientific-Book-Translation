@@ -339,23 +339,89 @@ def add_parser(sub: Any) -> None:
     k.add_argument("--source", type=Path, required=True, help="source markdown with <!-- PDF p.N --> markers")
     k.add_argument("--translation", type=Path, help="translated markdown with the same markers")
     k.add_argument("--out", type=Path, help="write JSON report (keys, validation, alignment, blocks)")
+    k.add_argument("--expect-keys", action="store_true",
+                   help="source is declared to contain keys; zero recognised keys fails (auto if a key heading is present)")
+    k.add_argument("--entries", help="comma-separated expected entry numbers, e.g. 1,5")
     k.set_defaults(func=cmd_key_model)
 
 
+def _sided(findings: list[dict[str, Any]], side: str) -> list[dict[str, Any]]:
+    """Tag gate findings with the side (source/translation) so a double no_keys is readable."""
+    return [{**f, "side": side, "detail": f"{side}: {f.get('detail', '')}"} for f in findings]
+
+
+def _graph_report(args: Any, report: dict[str, Any]) -> int:
+    """Add report["graph"] from booklayout.keygraph; return the number of error-severity findings."""
+    from . import keygraph
+
+    src_md = args.source.read_text(encoding="utf-8")
+    entries = [e.strip() for e in (getattr(args, "entries", None) or "").split(",") if e.strip()] or None
+    expect = bool(getattr(args, "expect_keys", False)) or bool(entries) or any(
+        keygraph.HEADING_RE.match(ln) for ln in src_md.splitlines())
+    sk = keygraph.parse_text(src_md)
+    graph: dict[str, Any] = {"expect_keys": expect, "source_keys": len(sk),
+                             "source_branches": sum(len(k.branches) for k in sk), "source": [], "translation": [],
+                             "alignment": [], "gate": _sided(keygraph.gate(sk, expect), "source")}
+    for i, k in enumerate(sk, 1):
+        graph["source"] += [{**f, "key": i} for f in keygraph.check(k, entries)]
+    couplets = {b.couplet for k in sk for b in k.branches}
+    for e in entries or []:  # a declared entry that no recognised key contains
+        if sk and e not in couplets:
+            graph["gate"].append({**keygraph._f("dangling_jump", "error", e,
+                                                f"declared entry {e} is not in any recognised key"), "entry": e})
+    if args.translation:
+        tk = keygraph.parse_text(args.translation.read_text(encoding="utf-8"))
+        graph["translation_keys"] = len(tk)
+        for i, k in enumerate(tk, 1):
+            graph["translation"] += [{**f, "key": i} for f in keygraph.check(k, entries)]
+        graph["alignment"] = keygraph.align(sk, tk)
+        if expect and not tk:
+            graph["gate"] += _sided(keygraph.gate(tk, True), "translation")
+    items = graph["source"] + graph["translation"] + graph["alignment"] + graph["gate"]
+    graph["errors"] = sum(1 for f in items if f.get("severity") == "error")
+    graph["warnings"] = sum(1 for f in items if f.get("severity") == "warn")
+    report["graph"] = graph
+    return int(graph["errors"])
+
+
+def _fail_report(args: Any, what: str, err: Exception) -> int:
+    """Structured failure (unreadable input) instead of a traceback; keeps the gate-readable shape."""
+    report = {"ok": False, "error": f"{what} unreadable: {err}",
+              "graph": {"errors": 1, "warnings": 0, "source_keys": 0, "source_branches": 0,
+                        "gate": [{"code": "unreadable_input", "severity": "error", "lead": "",
+                                  "detail": f"{what}: {err}"}]}}
+    if args.out:
+        args.out.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"key-model: {report['error']}")
+    return 1
+
+
 def cmd_key_model(args: Any) -> int:
-    src = parse_key_text(args.source.read_text(encoding="utf-8"))
+    for what, path in (("source", args.source), ("translation", args.translation)):
+        if path is not None and not path.is_file():
+            return _fail_report(args, what, FileNotFoundError(str(path)))
+    try:
+        src = parse_key_text(args.source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError) as e:
+        return _fail_report(args, "source", e)
     report: dict[str, Any] = {"source_keys": [k.asdict() for k in src],
                               "source_problems": {str(i): validate_key(k) for i, k in enumerate(src, 1)},
                               "blocks": key_blocks(src)}
     findings: list[dict[str, Any]] = []
     if args.translation:
-        tgt = parse_key_text(args.translation.read_text(encoding="utf-8"))
+        try:
+            tgt = parse_key_text(args.translation.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError) as e:
+            return _fail_report(args, "translation", e)
         findings = align_keys(src, tgt)
         report["translation_keys"] = [k.asdict() for k in tgt]
         report["alignment"] = findings
-    bad = sum(len(v) for v in report["source_problems"].values()) + len(findings)
+    graph_bad = _graph_report(args, report)
+    bad = sum(len(v) for v in report["source_problems"].values()) + len(findings) + graph_bad
     report["ok"] = bad == 0
     if args.out:
         args.out.write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"keys={len(src)} branches={sum(len(k.branches) for k in src)} problems={bad}")
+    g = report["graph"]
+    print(f"keys={len(src)} branches={sum(len(k.branches) for k in src)} problems={bad} "
+          f"graph_keys={g['source_keys']} graph_errors={g['errors']} graph_warn={g['warnings']}")
     return 0 if bad == 0 else 1

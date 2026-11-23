@@ -1,0 +1,26 @@
+{
+  "id": "r2_trinomial",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Hindwing with a pale band ...... Papilio machaon britannicus\n1b. Character absent ...... Nephtys",
+  "translation": "Key to terminals\n1a. Hindwing with a pale band ...... Papilio machaon machaon\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Papilio machaon britannicus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:57、649–652 至多取双名；译文改第三词，前两词相同，仍应报去向改变。"
+}

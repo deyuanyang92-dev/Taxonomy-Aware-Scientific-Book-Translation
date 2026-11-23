@@ -358,7 +358,51 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_restyle(args: argparse.Namespace) -> int:
+    """Re-apply the heading styles of a profile to a finished DOCX (no re-typesetting)."""
+    import time
+
+    from docx import Document
+
+    from .builder import apply_profile, define_heading_styles
+    from .profile import StyleProfile
+
+    t0 = time.time()
+    prof = StyleProfile.from_file(args.profile)
+    apply_profile(prof)
+    doc = Document(str(args.docx))
+    define_heading_styles(doc, prof)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(args.out))
+    t_docx = time.time() - t0
+    msg = f"restyled={args.out} docx_s={t_docx:.2f}"
+    if args.pdf:
+        _convert_pdf(args.out, args.pdf_out)
+        msg += f" total_s={time.time() - t0:.2f}"
+    if args.html:
+        from .htmlout import docx_to_html
+        docx_to_html(args.out, args.html, prof)
+        msg += f" html={args.html}"
+    print(msg)
+    return 0
+
+
+def cmd_html(args: argparse.Namespace) -> int:
+    from .builder import apply_profile
+    from .htmlout import docx_to_html
+    from .profile import StyleProfile
+
+    prof = StyleProfile.from_file(args.profile)
+    apply_profile(prof)
+    print(docx_to_html(args.docx, args.out, prof, args.title or ""))
+    return 0
+
+
 def cmd_map_pages(args: argparse.Namespace) -> int:
+    if getattr(args, "profile", None):
+        from .builder import apply_profile
+        from .profile import StyleProfile
+        apply_profile(StyleProfile.from_file(args.profile))
     data = load_aligned(args.aligned)
     meta = _meta(args)
     page_map = make_page_map(args.pdf, data, meta)
@@ -966,6 +1010,56 @@ def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
     }
 
 
+def _delivery_problems(data: dict, pdf: str | None) -> dict:
+    """Added 2026-11-23 after Fauna Iberica Vol. 21: key couplets vanished.
+
+    Hard checks that ok:true must never skip: key pages carrying blocks the
+    builder cannot print, targets cut off from their couplet, hand-broken
+    lines inside justified text, and printed blocks that are absent from the PDF.
+    """
+    from .keyfix import repair_key_page
+
+    repaired: list[dict] = []
+    orphans: list[dict] = []
+    manual_breaks: list[dict] = []
+    expected: list[tuple[int, str]] = []
+    for page in data.get("pages", []):
+        _, counts = repair_key_page(page)
+        if counts["index_to_key"] or counts["targets_merged"]:
+            repaired.append({"page": page["page"], **counts})
+        if counts["orphan_targets"]:
+            orphans.append({"page": page["page"], "count": counts["orphan_targets"]})
+        for block in page.get("blocks", []):
+            tr = (block.get("translation") or "").strip()
+            if block.get("role") in ("body", "caption", "note") and "\n" in tr:
+                manual_breaks.append({"page": page["page"], "text": tr[:80]})
+            if block.get("role") in ("body", "caption", "heading", "key") and len(tr) >= 24:
+                expected.append((page["page"], tr))
+    missing: list[dict] = []
+    literal_tags: list[dict] = []
+    if pdf:
+        try:
+            import fitz
+
+            with fitz.open(pdf) as doc:
+                blob = "".join(page.get_text() for page in doc)
+            def squeeze(s: str) -> str:  # drop spaces, marks, half/full-width punctuation
+                return re.sub(r"[\W_]+", "", s)
+
+            for m in re.finditer(r".{0,25}</?(?:sup|sub|i|b|em)>.{0,10}", blob):
+                literal_tags.append({"text": m.group(0)})
+            blob = squeeze(blob)
+            for number, tr in expected:
+                probe = squeeze(tr)[:14]
+                if probe and probe not in blob:
+                    missing.append({"page": number, "text": tr[:60]})
+        except Exception:  # pragma: no cover - PDF reader unavailable
+            pass
+    return {"key_repaired_pages": repaired, "key_orphan_targets": orphans,
+            "manual_line_breaks": manual_breaks, "blocks_missing_in_pdf": missing,
+            "literal_markup_in_pdf": literal_tags}
+
+
 def cmd_qa(args: argparse.Namespace) -> int:
     """Run the three deterministic reviews used before delivery."""
     _require_figure_audit(args.figures)
@@ -991,6 +1085,26 @@ def cmd_qa(args: argparse.Namespace) -> int:
         )
 
     layout_problems = []
+    delivery = _delivery_problems(data, args.pdf)
+    if getattr(args, "profile", None) and json.loads(Path(args.profile).read_text(encoding="utf-8")).get("unwrap_lines"):
+        delivery["manual_line_breaks"] = []  # the builder joins them
+    report.update(delivery)
+    if delivery["key_orphan_targets"]:
+        structure_problems.append(f"{len(delivery['key_orphan_targets'])} key pages have a target with no couplet")
+    from .headings import stray_label_blocks
+    if getattr(args, "profile", None) and json.loads(Path(args.profile).read_text(encoding="utf-8")).get("promote_captions"):
+        from .headings import drop_stray_labels
+        drop_stray_labels(data)  # the builder drops them under this profile
+    strays = stray_label_blocks(data)
+    report["stray_label_blocks"] = strays
+    if strays:
+        structure_problems.append(f"{len(strays)} body blocks are lone figure-panel letters (pages {sorted({s['page'] for s in strays})[:6]}); enable promote_captions or remove them")
+    if delivery["literal_markup_in_pdf"]:
+        structure_problems.append(f"{len(delivery['literal_markup_in_pdf'])} literal <sup>/<sub>/<i> tags are printed in the PDF")
+    if delivery["blocks_missing_in_pdf"]:
+        structure_problems.append(f"{len(delivery['blocks_missing_in_pdf'])} printed blocks are missing from the PDF")
+    if delivery["manual_line_breaks"]:
+        layout_problems.append(f"{len(delivery['manual_line_breaks'])} justified paragraphs contain hand-made line breaks")
     if args.pdf:
         try:
             import fitz
@@ -1635,27 +1749,90 @@ def cmd_key_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_report(path: Path, label: str, problems: list[str]) -> dict | None:
+    """Read a JSON report; an unreadable or non-object file is a problem, not a traceback."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        problems.append(f"{label} unreadable ({path}): {e}")
+        return None
+    if not isinstance(payload, dict):
+        problems.append(f"{label} is not a JSON object ({path})")
+        return None
+    return payload
+
+
+def _gate_key_model(km_path: Path, problems: list[str]) -> dict:
+    kmj = _load_report(km_path, "key-model", problems)
+    if kmj is None:
+        return {}
+    g = kmj.get("graph")
+    if not isinstance(kmj.get("ok"), bool) or not isinstance(g, dict) or not isinstance(g.get("errors"), int):
+        problems.append(f"key-model report malformed ({km_path.name}): needs bool ok and graph.errors")
+        return kmj
+    if not kmj["ok"]:
+        problems.append(f"key-model not ok ({km_path.name}): graph errors {g['errors']}")
+    elif g["errors"] > 0:
+        problems.append(f"key-model inconsistent ({km_path.name}): ok=true but graph errors {g['errors']}")
+    return kmj
+
+
+def _gate_keyrender(kr_path: Path, kmj: dict, problems: list[str]) -> None:
+    krj = _load_report(kr_path, "keyrender", problems)
+    if krj is None:
+        return
+    summary = krj.get("summary")
+    if not isinstance(summary, dict) or not isinstance(krj.get("findings"), list):
+        problems.append(f"keyrender report malformed ({kr_path.name}): needs summary object and findings list")
+        return
+    fails = {r: n for r, n in summary.items() if n}
+    if fails or krj["findings"]:
+        problems.append(f"keyrender FAIL ({kr_path.name}): {fails or len(krj['findings'])}")
+    g = kmj.get("graph")
+    g = g if isinstance(g, dict) else {}
+    if g.get("source_keys", 0) > 0:  # key-model saw keys: the PDF must show a comparable number of branches
+        want = g.get("source_branches")
+        if want is None:
+            want = sum(len(k.get("branches", [])) for k in kmj.get("source_keys", []) if isinstance(k, dict))
+        got = krj.get("branches")
+        if not isinstance(got, int):
+            problems.append(f"keyrender report lacks branch count ({kr_path.name}): cannot confirm PDF coverage")
+        elif got == 0 or (want and got * 2 < want):
+            problems.append(f"keyrender saw {got} key branches in the PDF, key-model has {want}: "
+                            "key tables missing from the PDF")
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     """Refuse delivery unless every deterministic review is clean."""
     problems: list[str] = []
     for label, path in (("qa", args.qa), ("check", args.check)):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not payload.get("ok"):
+        payload = _load_report(path, label, problems)
+        if payload is not None and not payload.get("ok"):
             detail = payload.get("problems", [])
             problems.append(f"{label} not ok: {detail}")
-    key = json.loads(args.key_report.read_text(encoding="utf-8"))
+    key = _load_report(args.key_report, "key-report", problems) or {}
     if key.get("breaks"):
         problems.append(f"{len(key['breaks'])} key couplets still need a forced break")
     if key.get("defects"):
         problems.append(f"{len(key['defects'])} key leader defects remain")
+    km_path = getattr(args, "key_model", None)
+    kr_path = getattr(args, "keyrender", None)
+    kmj = _gate_key_model(km_path, problems) if km_path else {}
+    if kr_path:
+        _gate_keyrender(kr_path, kmj, problems)
     for style_path in args.style_report or []:  # scripts/taxostyle.py compare|audit 的 JSON 报告
-        style = json.loads(style_path.read_text(encoding="utf-8"))
-        if not style.get("ok"):
+        style = _load_report(style_path, "style report", problems)
+        if style is not None and not style.get("ok"):
             problems.append(f"taxonomic typography not ok ({style_path.name}): "
                             f"{style.get('errors', '?')} errors")
+    coverage = {"key_model": km_path is not None, "keyrender": kr_path is not None}
     report = {"ok": not problems, "problems": problems,
+              "coverage": coverage,
+              "unchecked": [k for k, v in coverage.items() if not v],
               "files": {"qa": str(args.qa), "check": str(args.check),
                         "key_report": str(args.key_report),
+                        "key_model": str(km_path) if km_path else None,
+                        "keyrender": str(kr_path) if kr_path else None,
                         "style_reports": [str(x) for x in args.style_report or []]}}
     if args.out:
         _write_json(args.out, report)
@@ -1751,12 +1928,27 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--title", help="fallback title when --metadata is omitted")
     b.set_defaults(func=cmd_build)
 
+    rs = sub.add_parser("restyle", help="re-apply heading styles of a profile to a finished DOCX (seconds, no re-typesetting)")
+    rs.add_argument("--docx", type=Path, required=True)
+    rs.add_argument("--profile", type=Path, required=True)
+    rs.add_argument("--out", type=Path, required=True)
+    rs.add_argument("--pdf", action="store_true", help="also convert to PDF")
+    rs.add_argument("--pdf-out", type=Path)
+    rs.add_argument("--html", type=Path, help="also write HTML (CSS from the same profile)")
+    rs.set_defaults(func=cmd_restyle)
+    ht = sub.add_parser("html", help="HTML from a finished DOCX; CSS generated from the profile")
+    ht.add_argument("--docx", type=Path, required=True)
+    ht.add_argument("--profile", type=Path, required=True)
+    ht.add_argument("--out", type=Path, required=True)
+    ht.add_argument("--title")
+    ht.set_defaults(func=cmd_html)
     m = sub.add_parser("map-pages", help="map source printed pages to output PDF pages")
     m.add_argument("--pdf", type=Path, required=True)
     m.add_argument("--aligned", type=Path, required=True)
     m.add_argument("--metadata", type=Path)
     m.add_argument("--out", type=Path, required=True)
     m.add_argument("--title")
+    m.add_argument("--profile", type=Path, help="same profile as the build (needed for heading contents)")
     m.set_defaults(func=cmd_map_pages)
 
     c = sub.add_parser("check", help="check an aligned package and optional PDF")
@@ -1780,6 +1972,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--metadata", type=Path)
     q.add_argument("--out", type=Path)
     q.add_argument("--title")
+    q.add_argument("--profile", type=Path, help="build profile (unwrap_lines makes hand-made breaks harmless)")
     q.set_defaults(func=cmd_qa)
 
     n = sub.add_parser("normalize", help="apply deterministic block repairs to aligned JSON")
@@ -1845,6 +2038,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--key-report", type=Path, required=True)
     g.add_argument("--style-report", type=Path, action="append",
                    help="taxostyle JSON report (compare/audit); repeatable; not ok blocks delivery")
+    g.add_argument("--key-model", type=Path, help="key_model.json; ok=false blocks delivery")
+    g.add_argument("--keyrender", type=Path, help="keyrender --report JSON; any finding blocks; missing file blocks")
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
     from . import alignmd, keymodel, pdffigures

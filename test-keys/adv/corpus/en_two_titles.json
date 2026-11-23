@@ -1,0 +1,33 @@
+{
+  "id": "en_two_titles",
+  "format": "ab",
+  "lang": "en",
+  "source": "<!-- PDF p.31 -->\nKey to conifers\n1a. Needles in bundles ........ Pinus\n1b. Needles solitary ........ Picea\n\nKey to broadleaved trees\n1a. Leaves opposite ........ Acer\n1b. Leaves alternate ........ Quercus",
+  "expect": {
+    "keys": 2,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ],
+      [
+        "1a",
+        "taxon",
+        "Acer"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Quercus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "同一物理页两个标题各自重启编号，分支按表的出现次序展平。"
+}

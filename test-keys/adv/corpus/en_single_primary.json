@@ -1,0 +1,20 @@
+{
+  "id": "en_single_primary",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to conifers\n1a. Needles in bundles ........ Pinus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ]
+    ],
+    "findings": [
+      "single_branch"
+    ]
+  },
+  "why": "主支和终点俱存，缺少与它配对的分支。"
+}

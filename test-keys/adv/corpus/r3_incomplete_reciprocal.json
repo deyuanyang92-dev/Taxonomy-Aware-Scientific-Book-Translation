@@ -1,0 +1,21 @@
+{
+  "id": "r3_incomplete_reciprocal",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(2) Eyes present ...... Harmothoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ]
+    ],
+    "findings": [
+      "single_branch",
+      "backref_mismatch"
+    ]
+  },
+  "why": "booklayout/keygraph.py:356。单独 1(2) 无对立条，按 SPEC 退回回指式，来源 2 也缺失。"
+}

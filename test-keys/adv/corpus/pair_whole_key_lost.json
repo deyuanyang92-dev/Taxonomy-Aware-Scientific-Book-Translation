@@ -1,0 +1,36 @@
+{
+  "id": "pair_whole_key_lost",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to specimens\n1a. Leaves opposite ........ p. 12\n1b. Leaves alternate ........ p. 18\n\nKey to the two pines\n1a. Needles two per bundle ........ Pinus sylvestris (p. 12)\n1b. Needles five per bundle ........ Pinus strobus (p. 18)",
+  "translation": "标本检索表\n1a. 叶对生…………第 12 页\n1b. 叶互生…………第 18 页",
+  "expect": {
+    "keys": 2,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "page",
+        "18"
+      ],
+      [
+        "1a",
+        "taxon",
+        "Pinus sylvestris"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Pinus strobus"
+      ]
+    ],
+    "findings": [
+      "key_count"
+    ]
+  },
+  "why": "原文第二表整张漏译。按表序配对，未配成对的整表记表数差；配对表内无缺支。"
+}

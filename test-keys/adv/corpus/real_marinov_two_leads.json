@@ -1,0 +1,23 @@
+{
+ "id": "real_marinov_two_leads",
+ "format": "backref",
+ "lang": "en",
+ "source": "### Key to the species of genus *Harmothoe*\n1(2) Surface of elytra spotted, evenly covered with numerous claw-like spinules ..... 1. *H. imbricata* (Linnaeus)\n\n2(1) Ventral chaetae slender, with two fine denticles at the tip ..... 2. *H. reticulata* (Claparède)\n\n### 1. *Harmothoe imbricata* (Linnaeus, 1767) (Plate VI, 2a–2g)",
+ "expect": {
+  "keys": 1,
+  "branches": [
+   [
+    "1a",
+    "taxon",
+    "H. imbricata"
+   ],
+   [
+    "1b",
+    "taxon",
+    "H. reticulata"
+   ]
+  ],
+  "findings": []
+ },
+ "why": "真实写法：Marinov 1977 b07.md 第 25–28 行，两条之间有空行，表后紧接种记述标题。"
+}

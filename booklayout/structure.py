@@ -26,6 +26,9 @@ def uncertain_boundaries(data: Mapping[str, Any]) -> list[dict[str, Any]]:
     for prev, nxt in zip(pages, pages[1:]):
         if prev.get("chapter") != nxt.get("chapter"):
             continue
+        pa, pb = prev.get("page"), nxt.get("page")
+        if isinstance(pa, int) and isinstance(pb, int) and pb - pa > 1:
+            continue  # sampled/non-contiguous pages: the paragraph cannot continue across a gap
         a_flow, b_flow = _flow(prev.get("blocks") or []), _flow(nxt.get("blocks") or [])
         if not a_flow or not b_flow:
             continue

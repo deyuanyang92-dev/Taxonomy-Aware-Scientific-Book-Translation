@@ -41,7 +41,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 STAGES = ["export", "translate", "figures", "align", "keycheck", "build", "qa", "gate"]
-SOFT = {"qa"}  # 失败不立刻停：闸口汇总
+SOFT = {"qa"}  # 失败不立刻停：闸口汇总；但任何必需检查非零都令最终 rc 非零、releasable=False
+STALE = {"keycheck": ("key_model.json",), "gate": ("gate.json",),
+         "qa": ("qa.json", "check.json", "key_report.json", "keyrender.json")}  # 运行前删除的旧报告
 
 
 def _sha(p: Path) -> str | None:
@@ -119,7 +121,9 @@ def plan(args: argparse.Namespace) -> list[dict[str, Any]]:
         add("gate", None, [], "no PDF：没有 key-report，闸口不运行；产物只是草稿，不得交付")
     else:
         add("gate", _bl("gate", "--qa", str(w / "qa.json"), "--check", str(w / "check.json"),
-                        "--key-report", str(w / "key_report.json"), "--out", str(w / "gate.json")),
+                        "--key-report", str(w / "key_report.json"),
+                        "--key-model", str(w / "key_model.json"), "--keyrender", str(w / "keyrender.json"),
+                        "--out", str(w / "gate.json")),
             [w / "gate.json"])
     for s in out:
         s["extra"] = []
@@ -128,6 +132,8 @@ def plan(args: argparse.Namespace) -> list[dict[str, Any]]:
             s["extra"].append(ck)
             if has_pdf:
                 s["extra"].append(_bl("key-report", "--pdf", str(pdf), "--out", str(w / "key_report.json")))
+                s["extra"].append([sys.executable, "-m", "booklayout.keyrender", str(pdf),
+                                   "--report", str(w / "keyrender.json")])
     return out
 
 
@@ -191,6 +197,12 @@ def run(args: argparse.Namespace) -> int:
                                                  ("metadata", args.metadata)) if p}}
     rc = 0
     record["releasable"] = False
+    soft_failed = False
+    if not args.dry:  # 旧报告不得冒充本轮结果：本轮要写的报告先删
+        for s in steps_plan:
+            if s["stage"] in only and s["stage"] not in skip:
+                for f in STALE.get(s["stage"], ()):
+                    (args.work / f).unlink(missing_ok=True)
     for s in steps_plan:
         if s["stage"] not in only or s["stage"] in skip:
             continue
@@ -218,12 +230,16 @@ def run(args: argparse.Namespace) -> int:
             record["failed"] = s["stage"]
             rc = 1
             break
+        if not ok and s["stage"] in SOFT:
+            soft_failed = True
+            rc = 1
         if not ok and s["stage"] == "gate":
             rc = 1
     if not args.dry:
         last = record["steps"][-1] if record["steps"] else {}
         if last.get("stage") == "gate" and "rc" in last:
-            record["releasable"] = last["rc"] == 0 and rc == 0
+            anybad = soft_failed or any(x.get("rc", 0) != 0 for x in record["steps"])
+            record["releasable"] = last["rc"] == 0 and rc == 0 and not anybad
             rc = 0 if record["releasable"] else 1
         (args.work / "publish_run.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"publish_run={args.work / 'publish_run.json'} failed={record['failed']} "

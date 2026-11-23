@@ -40,7 +40,12 @@ def test_key_line_has_no_indent_and_two_aligned_slots() -> None:
     assert right_tab.position.mm == pytest.approx(TEXT_W, abs=0.01)
     texts = [r.text for r in par.runs]
     assert texts.count("\t") == 2
-    assert texts[-1].replace(" ", " ") == "(p. 76)"
+    # 去向可能拆成多个 run（窄不换行空格 U+202F 单独成 run），比较最后一个制表位之后的全部文本
+    last_tab = len(texts) - 1 - texts[::-1].index("\t")
+    after = "".join(texts[last_tab + 1:])
+    for sp in (chr(0x202F), chr(0xA0)):
+        after = after.replace(sp, " ")
+    assert after == "(p. 76)"
     assert "O. farensis" in "".join(texts).replace(" ", " ")
 
 
@@ -75,7 +80,12 @@ def test_wrapped_name_line_gets_leader_from_left_margin() -> None:
     assert xml.count("<w:br/>") == 1
     # break, then a tab (leader from margin to name column), name, tab, target
     texts = [r.text for r in par.runs]
-    assert texts[-1].replace(" ", " ") == "40"
+    # 去向可能拆成多个 run（窄不换行空格 U+202F 单独成 run），比较最后一个制表位之后的全部文本
+    last_tab = len(texts) - 1 - texts[::-1].index("\t")
+    after = "".join(texts[last_tab + 1:])
+    for sp in (chr(0x202F), chr(0xA0)):
+        after = after.replace(sp, " ")
+    assert after == "(p. 76)"
     assert texts.count("\t") == 2
 
 

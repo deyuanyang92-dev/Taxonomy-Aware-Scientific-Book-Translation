@@ -1,0 +1,40 @@
+{
+  "id": "pair_numeric",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to specimens (needles: start at 1; cones: start at 2)\n1a. Needles two per bundle ........ Pinus sylvestris (p. 12)\n1b. Needles five per bundle ........ Pinus strobus (p. 18)\n2a. Scales armed ........ p. 22\n2b. Scales unarmed ........ p. 23",
+  "translation": "标本检索表（按针叶从 1 起，按球果从 2 起）\n1a. 针叶二针一束…………2\n1b. 针叶五针一束…………Pinus strobus（第 18 页）\n2a. 鳞片有刺…………第 22 页\n2b. 鳞片无刺…………第 23 页",
+  "declared_entries": [
+    "1",
+    "2"
+  ],
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus sylvestris"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Pinus strobus"
+      ],
+      [
+        "2a",
+        "page",
+        "22"
+      ],
+      [
+        "2b",
+        "page",
+        "23"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "译文 1a 将种名和所附页码换成表内已有的偶句号 2。双入口使两侧均无不可达节点。"
+}

@@ -1,0 +1,43 @@
+{
+  "id": "r3_restart_titled",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis\nKey to a second group\n1(2) Eyes present ...... Harmothoe\n2(1) Eyes absent ...... Antinoe",
+  "expect": {
+    "keys": 2,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Antinoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nereis"
+      ],
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:638。同页两标题，各从 1 编起。"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "la_ab_caps",
+  "format": "ab",
+  "lang": "la",
+  "source": "Clavis generum\n1A. Folia fasciculata ........ Pinus\n1B. Folia solitaria ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "拉丁文表以大写 A、B 作支号，规范化为小写。"
+}

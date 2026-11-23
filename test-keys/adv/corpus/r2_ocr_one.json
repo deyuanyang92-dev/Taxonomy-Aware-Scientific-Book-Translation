@@ -1,0 +1,34 @@
+{
+  "id": "r2_ocr_one",
+  "format": "prime",
+  "lang": "en",
+  "source": "Key (alternate leads marked by a prime)\n1. Elytra ridged ...... 2\n11. Elytra smooth ...... Nebria\n2. Tarsi lobed ...... Amara\n2'. Tarsi simple ...... Harpalus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Amara"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Harpalus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:60–64、132–139 原样接纳 OCR 数字。此处依据配对底稿，11. 是 1′.。",
+  "translation": "Key (alternate leads marked by a prime)\n1. Elytra ridged ...... 2\n1'. Elytra smooth ...... Nebria\n2. Tarsi lobed ...... Amara\n2'. Tarsi simple ...... Harpalus"
+}

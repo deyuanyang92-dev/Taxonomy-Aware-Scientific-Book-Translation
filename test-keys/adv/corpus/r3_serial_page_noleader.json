@@ -1,0 +1,23 @@
+{
+  "id": "r3_serial_page_noleader",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to genera\n1a. Elytra spotted 1. Genus Harmothoe Kinberg (p. 76)\n1b. Elytra smooth ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:266。带页码的编号属名为同一终点，按 SPEC 保留学名和页。"
+}

@@ -1,0 +1,25 @@
+{
+  "id": "r2_count_range",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Specimen with 20–30 chaetigers, last branchiferous chaetiger 12\n1b. Branchiae absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "none",
+        ""
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": [
+      "no_target"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:51、196–198 将末位鳃所在刚节的序号 12 当跳转；第一支缺去向。"
+}
