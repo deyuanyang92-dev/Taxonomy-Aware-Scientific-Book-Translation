@@ -139,3 +139,17 @@ def test_html_contains_every_docx_paragraph_in_order(tmp_path):
         pos = i
     assert "<h2>Genus Foo</h2>" in text and res["paragraphs"] == len(texts)
     assert "h2{font-size:" in text
+
+
+def test_promote_headings_species_line_and_stacked_ranks():
+    """Vol. 21 源文：一行种标题升为标题；异名录引文不升；连续两行阶元各成标题。"""
+    data = {"pages": [{"page": 50, "blocks": [
+        {"role": "body", "text": "Opisthodonta pterochaeta Southern, 1914 (figs. 13 y 14)"},
+        {"role": "body", "text": "Opisthodonta pterochaeta Southern, 1914. Proc. R. Ir. Acad., 31(2): 30"},
+        {"role": "body", "text": "Neopetitia amphophthalma (Siewing, 1956) comb. n. (fig. 12)"},
+        {"role": "body", "text": "Subfamilia Autolytinae Langerhans, 1879\nGénero Levidorum Hartman, 1967"},
+        {"role": "body", "text": "Cuerpo largo, delgado, sin coloración, hasta 7 mm de longitud, por 50 setígeros."}]}]}
+    promote_headings(data)
+    got = [(b["role"], b["text"]) for b in data["pages"][0]["blocks"]]
+    assert [r for r, _ in got] == ["heading", "body", "heading", "heading", "heading", "body"]
+    assert got[4] == ("heading", "Género Levidorum Hartman, 1967")

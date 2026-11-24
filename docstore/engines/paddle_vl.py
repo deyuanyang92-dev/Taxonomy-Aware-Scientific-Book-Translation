@@ -35,6 +35,7 @@ DEFAULT_MAX_BYTES = 45 * 1024 * 1024
 SIZE_TOL_PX = 2  # 页身份校验：返回宽高 vs 提交页 rect x2 的容差
 BLANK_DPI = 30
 BLANK_INK_FRAC = 0.005
+BLANK_TINT_DELTA = 40
 _sleep: Callable[[float], None] = time.sleep
 _now: Callable[[], float] = time.monotonic
 _FITZ_LOCK = threading.Lock()  # fitz(MuPDF) 非线程安全：所有 fitz 操作串行
@@ -241,7 +242,13 @@ def _is_blank(pdf_path: str, page_no: int) -> bool:
             return False
         pix = pg.get_pixmap(dpi=BLANK_DPI, colorspace=fitz.csGRAY)
         s = pix.samples
-        return sum(1 for b in s if b < 250) / max(1, len(s)) < BLANK_INK_FRAC
+        if not s:
+            return True
+        # 泛黄/灰底纸：以页面中位灰度为底色，偏离底色 >40 才算墨迹（2026-11-24：旧版用绝对 <250，
+        # 泛黄空白页被误判非空白，造成 1901 条 empty_suspect 假阳性）
+        base = sorted(s[:: max(1, len(s) // 4000)])
+        med = base[len(base) // 2]
+        return sum(1 for b in s if abs(b - med) > BLANK_TINT_DELTA) / len(s) < BLANK_INK_FRAC
 
 
 def _parse_result(
@@ -301,6 +308,40 @@ def _parse_result(
     if not all(isinstance(m, str) for m in mds):
         raise PaddleJobError("某页 markdown.text 不是字符串")
     return [str(m) for m in mds]
+
+
+def _layouts(text: str, pages: list[int], sizes: list[tuple[float, float]]) -> list[dict]:
+    """逐页取版面：prunedResult（块框/行框等云端原始结构）+ 云端页像素尺寸 + 提交页 pt 尺寸。
+    _parse_result 已验证结构，这里只搬运；缺 prunedResult 记 None（restore 时据此报缺，不伪造）。"""
+    out: list[dict] = []
+    for ln in text.split("\n"):
+        ln = ln[:-1] if ln.endswith("\r") else ln
+        if not ln.strip():
+            continue
+        res = json.loads(ln)["result"]
+        for it, dp in zip(res["layoutParsingResults"], res["dataInfo"]["pages"]):
+            out.append({"width_px": dp.get("width"), "height_px": dp.get("height"),
+                        "pruned_result": it.get("prunedResult") if isinstance(it, dict) else None})
+    for lay, p, (w, h) in zip(out, pages, sizes):
+        lay.update(page=p, pdf_w_pt=w, pdf_h_pt=h)
+    return out
+
+
+def save_layout(root: Any, key: str, page: int, meta: dict) -> None:
+    """把云端版面落盘：<root>/layout/<key>/pNNNN.json + 整个任务的原始 JSONL <root>/layout/<key>/jobs/<job_id>.jsonl。
+    OCR 一次就要把版面存下来，后续还原排版/对照原页不再重跑 OCR（2026-11-24 Vol21 教训）。"""
+    lay, raw = meta.get("_layout"), meta.get("_raw_jsonl")
+    if lay is None or raw is None:
+        return
+    d = Path(root) / "layout" / key
+    (d / "jobs").mkdir(parents=True, exist_ok=True)
+    job = str(meta.get("job_id") or "nojob")
+    jf = d / "jobs" / f"{job}.jsonl"
+    if not jf.exists():
+        jf.write_text(raw, encoding="utf-8")
+    rec = {**lay, "key": key, "job_id": job, "trace_id": meta.get("trace_id"), "model": meta.get("model"),
+           "raw_jsonl": f"jobs/{job}.jsonl"}
+    (d / f"p{int(page):04d}.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
 
 
 def _judge_pages(
@@ -411,6 +452,9 @@ def _attempt(
     try:
         mds = _parse_result(text, pdf_path, pages, sizes)
         ok, failed = _judge_pages(pdf_path, pages, mds)
+        for lay in _layouts(text, pages, sizes):
+            if lay["page"] in ok:
+                ok[lay["page"]][1].update(_layout=lay, _raw_jsonl=text)
     except PaddleJobError as e:
         if e.kind == "transient":
             raise PaddleJobError(f"job={job} {e}") from e  # 校验不过：允许重新提交
@@ -468,6 +512,18 @@ def run_chunk(
 
 # ---------------------------------------------------------------- 多块并发
 
+EMPTY_STORM_MIN = 3
+
+
+def empty_storm(reasons: Any) -> bool:
+    """True when a chunk's failures look like a systematic empty-response problem
+    (>= EMPTY_STORM_MIN pages and at least half of them 'empty_suspect').  Such a run
+    must stop and be checked against the official call rules, not retried blindly."""
+    rs = list(reasons)
+    n = sum(1 for r in rs if str(r).startswith("empty_suspect"))
+    return n >= EMPTY_STORM_MIN and 2 * n >= len(rs)
+
+
 def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = print) -> dict:
     """父进程里批量识别：分块、线程并发（DOCSTORE_PADDLE_CONCURRENCY，默认 4 块）。
     返回 {"ok": {页: (文本, 元数据)}, "failed": {页: 原因}, "quota_hit": bool}。配置错直接上抛。
@@ -484,6 +540,7 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
     failed.update(oversize)
     stop = threading.Event()
     quota = threading.Event()
+    empty = threading.Event()
     lock = threading.Lock()
     config_errs: list[PaddleConfigError] = []
     futs: list[Any] = []
@@ -497,6 +554,11 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
             if stop.is_set():
                 raise PaddleStopped(why)
             run_chunk(pdf_path, ps, session=_new_session(), log=log, chunk_no=i, data=data, stop=stop, out=(cok, cfail))
+            if empty_storm(cfail.values()):
+                empty.set()
+                stop.set()
+                why = "empty_storm: 连续空返回，已停止云提交"
+                log(f"[paddle] 块 {i} 空返回过多（{len(cfail)} 页），停止提交。请先查官方调用规则，不要反复重跑 OCR。")
         except PaddleQuotaError as e:
             quota.set()
             stop.set()
@@ -523,7 +585,7 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
                 fu.result()
     if config_errs:
         raise config_errs[0]
-    return {"ok": ok, "failed": failed, "quota_hit": quota.is_set()}
+    return {"ok": ok, "failed": failed, "quota_hit": quota.is_set(), "empty_storm": empty.is_set()}
 
 
 # ---------------------------------------------------------------- 单页（降级链用）

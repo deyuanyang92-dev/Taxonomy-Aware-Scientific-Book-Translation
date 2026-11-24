@@ -1,0 +1,1133 @@
+{
+"keys": [
+{
+"heading": "Key fixture (Travisia D, 2026-11-24)",
+"couplets": [
+{
+"num": 1,
+"backref": null,
+"leads": [
+{
+"text": "Branchiae (presence/absence): present",
+"kind": "jump",
+"target": "2",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (presence/absence): absent",
+"kind": "jump",
+"target": "49",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 2,
+"backref": 1,
+"leads": [
+{
+"text": "Branchiae present on (total number of chaetigers with branchiae): <21",
+"kind": "jump",
+"target": "3",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae present on (total number of chaetigers with branchiae): 21 to <25 or >=25",
+"kind": "jump",
+"target": "16",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 3,
+"backref": 2,
+"leads": [
+{
+"text": "Prostomium (form): pointed, more or less conical",
+"kind": "jump",
+"target": "4",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (form): rounded",
+"kind": "taxon",
+"target": "*Travisia profundi* Chamberlin, 1919",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 4,
+"backref": 3,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "jump",
+"target": "5",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width or longer than maximum width",
+"kind": "jump",
+"target": "6",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 5,
+"backref": 4,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. forbesii*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "taxon",
+"target": "*T. antarctica*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 6,
+"backref": 4,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "jump",
+"target": "7",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "jump",
+"target": "12",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 7,
+"backref": 6,
+"leads": [
+{
+"text": "Parapodial lobes (presence/absence): present",
+"kind": "jump",
+"target": "8",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Parapodial lobes (presence/absence): absent",
+"kind": "taxon",
+"target": "*T. oregonensis*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 8,
+"backref": 7,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "jump",
+"target": "9",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "jump",
+"target": "10",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 9,
+"backref": 8,
+"leads": [
+{
+"text": "Nephridiopores first present chaetiger: <7",
+"kind": "taxon",
+"target": "*T. doellojuradoi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Nephridiopores first present chaetiger: 7 to <11",
+"kind": "taxon",
+"target": "*T. chiloensis*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 10,
+"backref": 8,
+"leads": [
+{
+"text": "Notopodial lobes commence chaetiger: <3",
+"kind": "taxon",
+"target": "*T. sanrikuensis*, *T. antarctica*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Notopodial lobes commence chaetiger: >=14",
+"kind": "jump",
+"target": "11",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 11,
+"backref": 10,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. forbesii*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "taxon",
+"target": "*T. antarctica*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 12,
+"backref": 6,
+"leads": [
+{
+"text": "Parapodial lobes (presence/absence): present",
+"kind": "jump",
+"target": "13",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Parapodial lobes (presence/absence): absent",
+"kind": "taxon",
+"target": "*T. carnea*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 13,
+"backref": 12,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. forbesii*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "jump",
+"target": "14",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 14,
+"backref": 13,
+"leads": [
+{
+"text": "Branchiae (length): much shorter than body diameter",
+"kind": "jump",
+"target": "15",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (length): much longer than body diameter",
+"kind": "taxon",
+"target": "*T. tincta*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 15,
+"backref": 14,
+"leads": [
+{
+"text": "Branchiae first present on chaetiger: <3",
+"kind": "taxon",
+"target": "*T. antarctica*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae first present on chaetiger: 3 to <6 or >=6",
+"kind": "taxon",
+"target": "*T. una*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 16,
+"backref": 2,
+"leads": [
+{
+"text": "Branchiae present on (total number of chaetigers with branchiae): 21 to <25",
+"kind": "jump",
+"target": "17",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae present on (total number of chaetigers with branchiae): >=25",
+"kind": "jump",
+"target": "25",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 17,
+"backref": 16,
+"leads": [
+{
+"text": "Prostomium (form): pointed, more or less conical",
+"kind": "jump",
+"target": "18",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (form): truncate or rounded",
+"kind": "jump",
+"target": "24",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 18,
+"backref": 17,
+"leads": [
+{
+"text": "Branchiae (length): much shorter than body diameter",
+"kind": "jump",
+"target": "19",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (length): much longer than body diameter",
+"kind": "jump",
+"target": "23",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 19,
+"backref": 18,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "jump",
+"target": "20",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "jump",
+"target": "22",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 20,
+"backref": 19,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. kerguelensis*, *T. monroi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width or longer than maximum width",
+"kind": "jump",
+"target": "21",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 21,
+"backref": 20,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "taxon",
+"target": "*T. horsti*, *T. kerguelensis*, *T. monroi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "taxon",
+"target": "*T. oksae*, *T. kerguelensis*, *T. monroi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 22,
+"backref": 19,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. antarctica*, *T. monroi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "taxon",
+"target": "*T. araciae*, *T. antarctica*, *T. monroi*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 23,
+"backref": 18,
+"leads": [
+{
+"text": "Parapodial lobes (presence/absence): present",
+"kind": "taxon",
+"target": "*T. palmeri*, *T. kerguelensis trianulata*, *T.* cf. *kerguelensis.*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Parapodial lobes (presence/absence): absent",
+"kind": "taxon",
+"target": "*T. pupa*, *T. kerguelensis trianulata*, *T.* cf. *kerguelensis.*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 24,
+"backref": 17,
+"leads": [
+{
+"text": "Prostomium (form): truncate",
+"kind": "taxon",
+"target": "*Travisia foetida* Hartman, 1969",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (form): rounded",
+"kind": "taxon",
+"target": "*Travisia brevis* Moore, 1923",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 25,
+"backref": 16,
+"leads": [
+{
+"text": "Branchiae (form): cirriform",
+"kind": "jump",
+"target": "26",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (form): branched",
+"kind": "jump",
+"target": "47",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 26,
+"backref": 25,
+"leads": [
+{
+"text": "Branchiae first present on chaetiger: <3",
+"kind": "jump",
+"target": "27",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae first present on chaetiger: 3 to <6",
+"kind": "taxon",
+"target": "*T. hobsonae*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 27,
+"backref": 26,
+"leads": [
+{
+"text": "Neuropodial lobes commence chaetiger: <10",
+"kind": "jump",
+"target": "28",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Neuropodial lobes commence chaetiger: 10 to <15 or >=15",
+"kind": "jump",
+"target": "29",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 28,
+"backref": 27,
+"leads": [
+{
+"text": "Branchiae (length): much shorter than body diameter",
+"kind": "taxon",
+"target": "*T. granulata*, *T. olens.*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (length): about as long as diameter of body",
+"kind": "taxon",
+"target": "*T. novaezealandiae*, *T. olens.*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 29,
+"backref": 27,
+"leads": [
+{
+"text": "Neuropodial lobes commence chaetiger: 10 to <15",
+"kind": "jump",
+"target": "30",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Neuropodial lobes commence chaetiger: >=15",
+"kind": "jump",
+"target": "37",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 30,
+"backref": 29,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "jump",
+"target": "31",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "jump",
+"target": "32",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 31,
+"backref": 30,
+"leads": [
+{
+"text": "Nephridiopores first present chaetiger: <7",
+"kind": "taxon",
+"target": "*T. granulata*, *T. olens.*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Nephridiopores first present chaetiger: >=11",
+"kind": "taxon",
+"target": "*T. japonica*, *T. olens.*, *T.* cf. *kerguelensis.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 32,
+"backref": 30,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. japonica*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width or longer than maximum width",
+"kind": "jump",
+"target": "33",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 33,
+"backref": 32,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "jump",
+"target": "34",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "jump",
+"target": "36",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 34,
+"backref": 33,
+"leads": [
+{
+"text": "Nephridiopores first present chaetiger: <7",
+"kind": "jump",
+"target": "35",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Nephridiopores first present chaetiger: >=11",
+"kind": "taxon",
+"target": "*T. japonica*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 35,
+"backref": 34,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. lithophila*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "taxon",
+"target": "*T. tribus*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 36,
+"backref": 33,
+"leads": [
+{
+"text": "Notopodial lobes commence chaetiger: 3 to <14",
+"kind": "taxon",
+"target": "*T. amadoi*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Notopodial lobes commence chaetiger: >=14",
+"kind": "taxon",
+"target": "*T. japonica*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 37,
+"backref": 29,
+"leads": [
+{
+"text": "Notopodial lobes commence chaetiger: <3",
+"kind": "jump",
+"target": "38",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Notopodial lobes commence chaetiger: >=14",
+"kind": "jump",
+"target": "39",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 38,
+"backref": 37,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. granulata*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "taxon",
+"target": "*T. fusiformis*, *T. granulata*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 39,
+"backref": 37,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "jump",
+"target": "40",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "jump",
+"target": "42",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 40,
+"backref": 39,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. concinna*, *T. granulata*, *T. forbesii intermedia*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "jump",
+"target": "41",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 41,
+"backref": 40,
+"leads": [
+{
+"text": "Branchiae (length): much shorter than body diameter",
+"kind": "taxon",
+"target": "*T. granulata*, *T. concinna*, *T. forbesii intermedia*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (length): about as long as diameter of body",
+"kind": "taxon",
+"target": "*T. olens*, *T. concinna*, *T. forbesii intermedia*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 42,
+"backref": 39,
+"leads": [
+{
+"text": "Prostomium (proportions): shorter than maximum width",
+"kind": "taxon",
+"target": "*T.* cf. *kerguelensis.*, *T. forbesii intermedia*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): length about equal to maximum width or longer than maximum width",
+"kind": "jump",
+"target": "43",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 43,
+"backref": 42,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "jump",
+"target": "44",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "jump",
+"target": "46",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 44,
+"backref": 43,
+"leads": [
+{
+"text": "Branchiae (length): much shorter than body diameter",
+"kind": "jump",
+"target": "45",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Branchiae (length): about as long as diameter of body",
+"kind": "taxon",
+"target": "*T. olens*, *T. forbesii intermedia*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 45,
+"backref": 44,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. forbesii intermedia*, *T. elongata*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "taxon",
+"target": "*T. chinensis*, *T. elongata*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 46,
+"backref": 43,
+"leads": [
+{
+"text": "Posterior parapodia (developed into lappets, or not): similar to anterior parapodia",
+"kind": "taxon",
+"target": "*T. forbesii intermedia*, *T. amoyanus*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Posterior parapodia (developed into lappets, or not): developed into lateral lappets",
+"kind": "taxon",
+"target": "*T. gigas*, *T. amoyanus*, *T. olens.*, *T. kerguelensis trianulata*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 47,
+"backref": 25,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "taxon",
+"target": "*Travisia arborifera* Fauvel, 1932",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "jump",
+"target": "48",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 48,
+"backref": 47,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "taxon",
+"target": "*Travisia chinensis* Grube, 1869",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "taxon",
+"target": "*Travisia filamentosa* León-González, 1998",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 49,
+"backref": 1,
+"leads": [
+{
+"text": "Mouth located: on chaetiger 1",
+"kind": "jump",
+"target": "50",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Mouth located: between chaetigers 1 and 2",
+"kind": "taxon",
+"target": "*T.* sp NHM_1244, *T. glandulosa*, *T. nigrocincta*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 50,
+"backref": 49,
+"leads": [
+{
+"text": "Parapodial lobes (presence/absence): present",
+"kind": "jump",
+"target": "51",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Parapodial lobes (presence/absence): absent",
+"kind": "taxon",
+"target": "*T. fusus*, *T. glandulosa*, *T. nigrocincta*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+},
+{
+"num": 51,
+"backref": 50,
+"leads": [
+{
+"text": "Prostomium (proportions): length about equal to maximum width",
+"kind": "taxon",
+"target": "*T. glandulosa*, *T. zieglerae*, *T. nigrocincta*",
+"page": null,
+"fig": "",
+"name_zh": ""
+},
+{
+"text": "Prostomium (proportions): longer than maximum width",
+"kind": "taxon",
+"target": "*T. gravieri*, *T. zieglerae*, *T. nigrocincta*",
+"page": null,
+"fig": "",
+"name_zh": ""
+}
+]
+}
+],
+"lang": "en",
+"source_style": "dash"
+}
+]
+}

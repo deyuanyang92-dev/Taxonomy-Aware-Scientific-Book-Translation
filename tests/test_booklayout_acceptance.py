@@ -122,8 +122,14 @@ def test_build_release_gate_renames_draft_and_pilot_blocks(tmp_path, monkeypatch
     monkeypatch.setattr(cli, "_report", lambda *a, **k: {
         "source_pages": 0, "blocks": 0, "untranslated_blocks": 0,
         "untranslated_content_blocks": 0, "figures": 0})
-    base = ["build", "--aligned", str(ms), "--figures", str(tmp_path), "--out", str(tmp_path / "b.docx")]
-    # no acceptance -> draft-labelled, nonzero
+    base = ["build", "--aligned", str(ms), "--figures", str(tmp_path), "--out", str(tmp_path / "b.docx"), "--no-cache"]
+    # no acceptance at all -> draft-labelled, exit 0
+    assert cli.main(base) == 0
+    assert built[-1].name == "b.DRAFT.docx"
+    # already-draft name is not doubled
+    assert cli.main(["build", "--aligned", str(ms), "--figures", str(tmp_path), "--out", str(tmp_path / "c.DRAFT.docx"), "--no-cache"]) == 0
+    assert built[-1].name == "c.DRAFT.docx"
+    # invalid acceptance -> draft-labelled, nonzero
     bad = tmp_path / "acc_bad.json"
     bad.write_text(json.dumps({"schema": "x"}))
     assert cli.main(base + ["--release-acceptance", str(bad)]) == 4

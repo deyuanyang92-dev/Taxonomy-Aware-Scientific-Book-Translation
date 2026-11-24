@@ -257,6 +257,7 @@ def test_cli_build_writes_report(tmp_path: Path) -> None:
         "--out", str(out),
         "--report", str(report),
     ]) == 0
+    out = out.with_name("cli.DRAFT.docx")  # no acceptance given -> draft-labelled
     assert out.exists()
     payload = json.loads(report.read_text(encoding="utf-8"))
     assert payload["blocks"] == 5
@@ -1064,7 +1065,7 @@ def test_patch_blocks_edits_and_removes_by_id() -> None:
     assert [b["block_id"] for b in blocks] == ["b0", "b2"]
     assert blocks[0]["translation"] == "New"
     assert blocks[1]["role"] == "body"
-    assert report == {"applied": ["b0", "b1", "b2"], "removed": ["b1"], "missing": ["missing"], "stale": [], "invalid": []}
+    assert report == {"applied": ["b0", "b1", "b2"], "removed": ["b1"], "missing": ["missing"], "stale": [], "invalid": [], "inserted": []}
 
 
 def test_backfill_source_restores_text_and_geometry() -> None:

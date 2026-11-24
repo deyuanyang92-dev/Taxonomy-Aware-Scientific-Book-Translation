@@ -1,22 +1,27 @@
-# 进度 2026-11-24
+# 进度 2026-11-24（第十一段）
 ## 目标
-设计「性状矩阵 → 多阶元混合检索表（科→属→种）」制作软件，在 keykit 内新增 matrix 模块；先调研现有软件，再 Opus 定计划，Codex 对抗优化算法与逻辑。用户要求：haiku 下载、sonnet/haiku 整理、opus 顶层计划、尽量用 REPL 省 token。
+Ophelia 属物种检索表（用户在测试检索表制作水平）：以 Tebble 体式为主干，交付 Word+PDF。
 ## 已完成
-- haiku 下载 17 项到 survey/repos/（记录 survey/DOWNLOAD_A/B/C.tsv）。失败 3 项：DKey/DrawWing（无公开仓库）、biokey（CTAN 取不到）、Free DELTA（sourceforge 克隆失败）。monographaR 取自 CRAN Archive 1.3.0；Xper2/Xper2 仅 1 文件，未确认是原版。
-- sonnet 读码笔记 15 份：survey/notes/*.md（monographaR、dimoose、dichotomousKey、dichot、Clavis、clavis-pipeline、open-delta、sdd-sdk、keybase_model、keybase、TSKey、tombiovis、TaxonWorks、Symbiota、edichokey）。
-- 要点：dimoose 评分 a*b/cost，全 0 退化 (a+b)/cost（matrix.R:409-410），多态两支都走，记忆化 DAG，mergeKeys 把属表接科表叶（prune.R:384），validate() 五类错误；open-delta 含完整 KEY 算法（MPL 1.1，文件头判断）；Clavis 只有 schema+校验，无建树；monographaR 靠 rpart；dichot 与检索表无关，应剔除；sdd-sdk 仅 clavis.ts。
+- 用户指出旧表 examples/ophelia_judged.*（粗矩阵、计数分区间、体式被拆散）水平低；已查证属实（Tebble 1953: 365 检索表以 body formula 分种）。
+- 新表：examples/ophelia_bodyformula.py 手工定义二歧树（35 种、33 偶句），脚本断言每种恰出现一次、偶句皆二分；走 keykit make 出 docx/pdf，verify 0 问题，PDF 2 页已目检。
+- 主干：有无鳃 → 鳃起始刚节 Xa → Yb → Za → 有无 n → 鳃形（二叉 ashworthi、基部膨大 bulbibranchiata）→ 肛乳突；终点写全体式。
+- 数据：/mnt/p/粘海蛹新种-宁德合作-2026/00_学习笔记/06_物种比较总表.md（34 种 + limacina）。
 ## 未完成 / 下一步
-- 派 Opus 子代理读 survey/notes/ 出总计划（keykit/matrix.py：矩阵 IR、分裂准则、多态/数值/缺失、层级链接 mergeKeys 式、输出到现有 KeyIR），写 survey/PLAN.md。
-- 再派 codex-reviewer 对抗审算法与逻辑（用户已点名 Codex）。
-- 精读 open-delta KEY 算法笔记，决定借鉴点。
+- 第一件：等用户对新表的意见。
+- 根因防再犯未做：keykit 加检查——计数性状被分区间时报错；属的标准鉴别性状（Ophelia=体式）未用时报错；配测试。
+- denticulata / neglecta 体式相同并列；glabra、simplex 无体式未收。
+- 上段遗留：D 表改法待选；judge.apply() 就地改矩阵；中文二歧排版（--lang zh）未做。
+- git 未提交；按路径精确 add。
 ## 关键决定
-- 新功能放 keykit，不动 booklayout；许可证 GPL 的 dimoose/monographaR 只借思路不抄码。
-- 用户在中途打断过一次，后续步骤等用户确认再继续。
+- 文献冲突不处理（用户 2026-11-24 明令），取总表首列数值。
+- 检索表交付 = docx+pdf。
 ## 文件位置
-- /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/{repos,notes,DOWNLOAD_*.tsv}
-- keykit：.../test-keys/keykit/（README.md、RULES.md、SPEC_tool.md）
+- test-keys/examples/ophelia_bodyformula.{py,ir.json,docx,pdf,report.json}
+- 旧表（作废参考）：test-keys/examples/ophelia_judged.*
+- 物种知识库：/mnt/p/粘海蛹新种-宁德合作-2026/00_学习笔记/14_物种知识库/；性状证据 15_性状使用证据_2026-09-30.md
 ## 坑
-- yzz-tasks 钩子会把子代理回报的要点行误抽成任务清单；已改写 .claude/tasks-2ccd2862-*.md。
-- 工作区有 92 个未提交改动，动手前建议先 commit。
+- 做属级检索表前先查项目已有知识库与名家检索表（Tebble 1953），不要只用粗矩阵自动建树。
+- 两个 make 并行会抢 soffice 配置目录；串行跑。
+- 长去向文本（多种并列带命名人）会触发 L3；并列终点去命名人。
 ## 仍在跑的任务
 - 无

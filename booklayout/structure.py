@@ -15,28 +15,52 @@ _TERMINAL = re.compile(r"""[.!?…:;]["')\]”’]*$""")
 SINGLE_BLOCK_CHARS = 1800
 
 
+# A checklist line: a taxon name ending in its author's year, e.g.
+# "Syllis westheidei San Martín, 1984" or "Género Dioplosyllis Gidholm, 1962".
+# A block made only of such lines is a list, not an unfinished sentence.
+_CHECKLIST_LINE = re.compile(
+    r"^[A-ZÀ-Þ].*(?:\b(?:1[5-9]|20)\d\d\)?|\b(?:gen|sp|nom|comb|stat)\. (?:n|nov)\.)$")
+
+
 def _flow(blocks: list[dict]) -> list[dict]:
-    return [b for b in blocks if b.get("role") != "caption"]
+    from .normalize import _caption_like
+
+    return [b for b in blocks if not _caption_like(b)]
+
+
+def _is_checklist(text: str) -> bool:
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return bool(lines) and all(_CHECKLIST_LINE.match(ln) for ln in lines)
 
 
 def uncertain_boundaries(data: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Return records for page boundaries whose paragraph structure is unclear."""
     pages = data.get("pages", [])
     found: list[dict[str, Any]] = []
-    for prev, nxt in zip(pages, pages[1:]):
+    for i, prev in enumerate(pages[:-1]):
+        a_flow = _flow(prev.get("blocks") or [])
+        if not a_flow:
+            continue
+        # Pages holding only figures and captions do not end a paragraph:
+        # compare with the next page that has running text (normalize joins
+        # across them the same way).
+        j = i + 1
+        while j < len(pages) - 1 and not _flow(pages[j].get("blocks") or []):
+            j += 1
+        nxt = pages[j]
         if prev.get("chapter") != nxt.get("chapter"):
             continue
         pa, pb = prev.get("page"), nxt.get("page")
-        if isinstance(pa, int) and isinstance(pb, int) and pb - pa > 1:
+        if isinstance(pa, int) and isinstance(pb, int) and pb - pa > j - i:
             continue  # sampled/non-contiguous pages: the paragraph cannot continue across a gap
-        a_flow, b_flow = _flow(prev.get("blocks") or []), _flow(nxt.get("blocks") or [])
-        if not a_flow or not b_flow:
+        b_flow = _flow(nxt.get("blocks") or [])
+        if not b_flow:
             continue
         a, b = a_flow[-1], b_flow[0]
         if a.get("role") != "body" or a.get("boundary_reviewed"):
             continue
         text = (a.get("translation") or "").rstrip()
-        if not text or _TERMINAL.search(text):
+        if not text or _TERMINAL.search(text) or _is_checklist(text):
             continue
         head = (b.get("translation") or "").lstrip()
         if b.get("role") == "body" and head[:1].islower():

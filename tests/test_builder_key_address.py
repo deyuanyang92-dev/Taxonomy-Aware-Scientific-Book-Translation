@@ -56,7 +56,8 @@ def test_couplet_short_tail_fills_line_then_wraps():
 
 
 def test_couplet_address_that_fits_stays_on_the_line():
-    p = _couplet("侧触手自口前叶前端腹侧生出，具基节；触须基节无刚毛")
+    # the dot leader keeps the 40 mm floor shared with the key-leader gate (COUPLET_MIN_LEADER_MM)
+    p = _couplet("侧触手自口前叶前端腹侧生出，具基节")
     assert not _breaks(p)
     assert sum(r.text.count("\t") for r in p.runs) == 2  # marker tab + leader tab
 

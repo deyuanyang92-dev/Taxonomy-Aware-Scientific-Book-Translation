@@ -1745,6 +1745,23 @@ def _trim_embedded_duplicate_list(blocks: list[dict], page: dict, changed: list[
                 break
 
 
+_FIG_CAPTION = re.compile(r"^\s*(?:Figs?|L[aá]ms?|Plates?)\.?\s*\d", re.I)
+
+
+def _caption_like(block: dict) -> bool:
+    """A caption, or a body block that opens like one ("Fig. 5. ...").
+
+    OCR layouts leave captions as body; the builder promotes them later
+    (promote_captions).  Without this a caption heading the next page hid the
+    paragraph continuing under it (Fauna Vol. 21 pp. 13-14, 27-28, 31-32, 35-36).
+    """
+    if block.get("role") == "caption":
+        return True
+    if block.get("role") == "body" and block.get("label") == "vision_footnote":
+        return True  # PaddleOCR-VL labels figure captions and their continuations so
+    return block.get("role") == "body" and bool(_FIG_CAPTION.match(block.get("text") or block.get("translation") or ""))
+
+
 def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None:
     """Join body paragraphs split by a source page break.
 
@@ -1769,8 +1786,8 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         # page's own last block.
         # A figure caption standing between the two fragments (at the end of
         # this page or the start of the next) does not end the paragraph.
-        a_flow = [x for x in a_blocks if x.get("role") != "caption"]
-        b_flow = [x for x in b_blocks if x.get("role") != "caption"]
+        a_flow = [x for x in a_blocks if not _caption_like(x)]
+        b_flow = [x for x in b_blocks if not _caption_like(x)]
         if carry is not None and carry[1] == prev.get("page"):
             a = carry[0]
         elif a_flow:
@@ -1778,7 +1795,9 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         else:
             continue
         if not b_flow:
-            carry = None
+            # A page holding only figures and captions: the paragraph goes on
+            # after it (Fauna Vol. 21 pp. 13-15, "desa-" / "parece").
+            carry = (a, nxt.get("page")) if a.get("role") == "body" else None
             continue
         b = b_flow[0]
         if a.get("role") != "body" or b.get("role") != "body":
@@ -1794,7 +1813,8 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         # join, after the punctuation is set aside.
         leading = re.match(r"^[,;]\s*", tb)
         probe = tb[leading.end():] if leading else tb
-        if terminal.search(ta) or not probe[:1].islower():
+        # "(Heacox y Schröder, 1978)" continues the sentence too (Vol. 21 p. 22).
+        if terminal.search(ta) or not (probe[:1].islower() or probe[:1] == "("):
             carry = None
             continue
         a["translation"] = ta + " " + tb
@@ -1875,9 +1895,9 @@ def block_src_hash(block: dict[str, Any]) -> str:
 
 _EDIT_FIELDS = ("translation", "role", "level")
 _OLD_KEY = {"translation": "old_translation", "role": "old_role", "level": "old_level"}
-_EDIT_KEYS = {"block_id", "old_hash", "page", "remove", *_EDIT_FIELDS, *_OLD_KEY.values(), "old_prev", "old_next",
+_EDIT_KEYS = {"block_id", "old_hash", "page", "remove", "boundary_reviewed", *_EDIT_FIELDS, *_OLD_KEY.values(), "old_prev", "old_next",
               "old_struct"}
-_PATCH_KEYS = {"version", "edits"}
+_PATCH_KEYS = {"version", "edits", "inserts"}
 NOHASH = "~"  # a neighbour exists but has no usable source hash ("" means: no neighbour at all)
 
 
@@ -1964,7 +1984,11 @@ def _edit_problem(edit: Any, strict: bool = False) -> str:
         return f"unknown field(s): {sorted(unknown)}"
     if "remove" in edit and not isinstance(edit["remove"], bool):
         return "remove must be a JSON boolean"
-    has_fields = any(f in edit for f in _EDIT_FIELDS)
+    if "boundary_reviewed" in edit and not isinstance(edit["boundary_reviewed"], bool):
+        return "boundary_reviewed must be a JSON boolean"
+    # boundary_reviewed records a reviewer's decision on a page boundary that
+    # structure.uncertain_boundaries flagged; it changes no text.
+    has_fields = any(f in edit for f in _EDIT_FIELDS) or "boundary_reviewed" in edit
     if edit.get("remove") and has_fields:
         return "remove cannot be combined with field updates"
     if not edit.get("remove") and not has_fields:
@@ -2007,6 +2031,8 @@ def _patch_problem(patch: Any) -> str:
         return "version must be integer 1 or 2"
     if not isinstance(patch.get("edits"), list):
         return "edits must be an array"
+    if "inserts" in patch and not isinstance(patch["inserts"], list):
+        return "inserts must be an array"
     return ""
 
 
@@ -2108,9 +2134,40 @@ def apply_block_edits(data: dict[str, Any], patch: dict[str, Any],
             invalid.append(f"{bid}: {why}")
             continue
         block.update({f: edit[f] for f in _EDIT_FIELDS if f in edit})
+        if "boundary_reviewed" in edit:
+            block["boundary_reviewed"] = edit["boundary_reviewed"]
         applied.append(bid)
+    inserted: list[str] = []
+    for ins in patch.get("inserts", []):
+        # {"after_block_id": id, "block": {"block_id", "role", "translation", ...}}: a line the
+        # page lost (source-check "missing"); goes right after the named block, same page.
+        new = ins.get("block") if isinstance(ins, dict) else None
+        before = ins.get("before_block_id") if isinstance(ins, dict) else None
+        after = ins.get("after_block_id") if isinstance(ins, dict) else None
+        nid = new.get("block_id") if isinstance(new, dict) else None
+        if not (isinstance(nid, str) and nid and isinstance(new.get("translation"), str)
+                and (isinstance(after, str)) != (isinstance(before, str))):
+            invalid.append(f"insert {nid or ins!r}: needs exactly one of after_block_id/before_block_id "
+                           "and block with block_id, role, translation")
+            continue
+        after = after if isinstance(after, str) else before
+        if safe_key(after) not in by_id:
+            missing.append(after)
+            continue
+        if safe_key(nid) in by_id:
+            invalid.append(f"{nid}: insert block_id already exists")
+            continue
+        why = _role_problem(new)
+        if why:
+            invalid.append(f"{nid}: {why}")
+            continue
+        page, anchor = by_id[safe_key(after)]
+        pos = next(i for i, b in enumerate(page["blocks"]) if b is anchor) + (0 if ins.get("before_block_id") else 1)
+        page["blocks"].insert(pos, dict(new))
+        by_id[safe_key(nid)] = (page, page["blocks"][pos])
+        inserted.append(nid)
     report: dict[str, Any] = {"applied": applied, "removed": removed, "missing": missing,
-                              "stale": stale, "invalid": invalid}
+                              "stale": stale, "invalid": invalid, "inserted": inserted}
     if strict and not allow_partial and (missing or stale or invalid):
         return {**report, "applied": [], "removed": [],
                 "not_applied": applied, "not_applied_removed": removed}
@@ -2145,9 +2202,24 @@ def _split_reference_blocks(blocks: list[dict], changed: list[dict]) -> None:
     blocks[:] = out
 
 
-def normalize_aligned(data: dict[str, Any]) -> dict[str, Any]:
-    """Apply every deterministic repair in place; return a change report."""
+def normalize_aligned(data: dict[str, Any], source_only: bool = False) -> dict[str, Any]:
+    """Apply every deterministic repair in place; return a change report.
+
+    ``source_only``: the "translation" is the source text itself (OCR'd original
+    typeset untranslated, e.g. Fauna Iberica Vol. 21 in Spanish).  Only the
+    language-neutral repairs run (split/cross-page paragraph joins); the rules
+    that rewrite Spanish structure words into the target language
+    (``spanish_y``, ``structured_from_source``, ``heading_from_source``, ...) are skipped.
+    """
     changed: list[dict] = []
+    if source_only:
+        for page in data.get("pages", []):
+            blocks = page.get("blocks", [])
+            _merge_split_paragraphs(blocks, changed)
+            page["blocks"] = [b for b in blocks if not b.get("_drop")]
+        _merge_cross_page_paragraphs(data.get("pages", []), changed)
+        return {"changes": changed, "changed_blocks": len(changed),
+                "changed_pages": len({c.get("page", (c.get("block_id") or "")[:5]) for c in changed})}
     for page in data.get("pages", []):
         blocks = page.get("blocks", [])
         _merge_split_paragraphs(blocks, changed)
@@ -2193,7 +2265,7 @@ def normalize_aligned(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "changes": changed,
         "changed_blocks": len(changed),
-        "changed_pages": len({c.get("page", c.get("block_id", "")[:5]) for c in changed}),
+        "changed_pages": len({c.get("page", (c.get("block_id") or "")[:5]) for c in changed}),
     }
 
 

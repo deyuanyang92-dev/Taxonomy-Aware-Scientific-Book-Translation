@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from . import audit as audit_module
+from . import styles as styles_module
 from . import treatments as treatments_module
 from . import builder as builder_module
 from .builder import BookMeta, BookPaths, build, load_aligned, make_page_map
@@ -191,6 +192,7 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         for b in body_blocks
         if b.get("role") == "body"
         and not (b.get("text") or "").lstrip().startswith("*")  # credit footnote: author surnames are caps in the source
+        and not (b.get("translation") or "").lstrip().startswith("©")  # copyright notice: set in capitals in the source (Fauna Vol. 21 p. 3)
         and len(re.findall(r"[A-Za-z]", b.get("translation") or "")) >= 40
         and sum(c.isupper() for c in b.get("translation") or "") / max(
             1, sum(c.isalpha() for c in b.get("translation") or "")) > 0.9
@@ -280,14 +282,17 @@ def cmd_build(args: argparse.Namespace) -> int:
             print("pilot gate failed: " + "; ".join(bad), file=sys.stderr)
             return 5
     draft_reasons: list[str] = []
-    if args.release_acceptance:
+    if not args.release_acceptance:
+        draft_reasons = ["no release acceptance (translation_review not recorded): unreviewed manuscript"]
+    else:
         from .acceptance import verify_acceptance
         draft_reasons = verify_acceptance(
             json.loads(args.release_acceptance.read_text(encoding="utf-8")), args.aligned)
-        if draft_reasons:
+    if draft_reasons:
+        if not args.out.stem.endswith(".DRAFT"):  # idempotent: caller may already use the draft name
             args.out = args.out.with_name(args.out.stem + ".DRAFT" + args.out.suffix)
-            if args.pdf_out:
-                args.pdf_out = args.pdf_out.with_name(args.pdf_out.stem + ".DRAFT" + args.pdf_out.suffix)
+        if args.pdf_out and not args.pdf_out.stem.endswith(".DRAFT"):
+            args.pdf_out = args.pdf_out.with_name(args.pdf_out.stem + ".DRAFT" + args.pdf_out.suffix)
     paths = BookPaths(
         aligned=args.aligned,
         figures_dir=args.figures,
@@ -354,7 +359,7 @@ def cmd_build(args: argparse.Namespace) -> int:
         print(f"pdf={pdf}")
     if draft_reasons:
         print("DRAFT, release refused: " + "; ".join(draft_reasons), file=sys.stderr)
-        return 4
+        return 4 if args.release_acceptance else 0
     return 0
 
 
@@ -779,6 +784,19 @@ def _reference_problems(pdf: Path, meta: BookMeta) -> dict:
     return {"wrong_page_refs": wrong, "page_refs_checked": checked}
 
 
+def _residue_check_applies(profile_path) -> bool:
+    """The Spanish-residue check only makes sense for a translation.
+
+    A profile whose ``lang`` is Spanish lays out the Spanish original
+    (Fauna Ibérica Vol. 21 OCR layout, 2026-11-25); its "Clave de especies"
+    is the text, not residue.
+    """
+    if not profile_path:
+        return True
+    lang = str(json.loads(Path(profile_path).read_text(encoding="utf-8")).get("lang") or "")
+    return not lang.lower().startswith("es")
+
+
 def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
     """Third review: repeated or implausibly short translated paragraphs."""
     from collections import Counter
@@ -1048,9 +1066,14 @@ def _delivery_problems(data: dict, pdf: str | None) -> dict:
 
             for m in re.finditer(r".{0,25}</?(?:sup|sub|i|b|em)>.{0,10}", blob):
                 literal_tags.append({"text": m.group(0)})
-            blob = squeeze(blob)
+            # OCR LaTeX left in the text: "M $ ^{a} $ Ángeles" (Fauna Vol. 21 p. 4).
+            for m in re.finditer(r".{0,25}\$\s*[\^_]\{.{0,10}", blob):
+                literal_tags.append({"text": m.group(0)})
+            # Case-blind: a heading style may set the text in capitals or
+            # small caps ("FAMILIA SYLLIDAE GRUBE, 1850", Fauna Vol. 21 p. 10).
+            blob = squeeze(blob).casefold()
             for number, tr in expected:
-                probe = squeeze(tr)[:14]
+                probe = squeeze(tr)[:14].casefold()
                 if probe and probe not in blob:
                     missing.append({"page": number, "text": tr[:60]})
         except Exception:  # pragma: no cover - PDF reader unavailable
@@ -1117,6 +1140,18 @@ def cmd_qa(args: argparse.Namespace) -> int:
             )
             report.update(_pdf_layout_problems(args.pdf))
             report.update(_reference_problems(args.pdf, meta))
+            from .taxonlist import pdf_list_style_mismatches
+            report["taxon_list_style_mismatch"] = pdf_list_style_mismatches(args.pdf)
+            from .runstyle import run_style_mismatches
+            report["run_style_mismatch"] = run_style_mismatches(args.pdf)
+            if report["run_style_mismatch"]:
+                layout_problems.append(
+                    f"{len(report['run_style_mismatch'])} runs of same-kind short lines mix font sizes "
+                    f"(first page {report['run_style_mismatch'][0]['first_page']})")
+            if report["taxon_list_style_mismatch"]:
+                layout_problems.append(
+                    f"{len(report['taxon_list_style_mismatch'])} taxon-name lists mix font size/bold "
+                    f"(first page {report['taxon_list_style_mismatch'][0]['first_page']}): one scanned list must print in one style")
             if report["wrong_page_refs"]:
                 layout_problems.append(
                     f"{len(report['wrong_page_refs'])} contents/index page references "
@@ -1148,6 +1183,8 @@ def cmd_qa(args: argparse.Namespace) -> int:
         layout_problems.append("no PDF supplied; layout review skipped")
 
     text = _text_qa(data, meta)
+    if not _residue_check_applies(getattr(args, "profile", None)):
+        text["spanish_residue"] = []  # a Spanish-language layout: Spanish is the text
     text_problems = []
     if text["duplicate_paragraphs"]:
         text_problems.append(f"{len(text['duplicate_paragraphs'])} paragraphs are repeated on the same page")
@@ -1359,7 +1396,7 @@ def cmd_normalize(args: argparse.Namespace) -> int:
 
 def _normalize_locked(args: argparse.Namespace) -> int:
     data = load_aligned(args.aligned)
-    report = normalize_aligned(data)
+    report = normalize_aligned(data, source_only=getattr(args, "source_only", False))
     out = args.out or args.aligned
     _write_json(out, data)
     _write_json(args.report, report)
@@ -1825,7 +1862,13 @@ def cmd_gate(args: argparse.Namespace) -> int:
         if style is not None and not style.get("ok"):
             problems.append(f"taxonomic typography not ok ({style_path.name}): "
                             f"{style.get('errors', '?')} errors")
-    coverage = {"key_model": km_path is not None, "keyrender": kr_path is not None}
+    sc_path = getattr(args, "source_check", None)
+    if sc_path:
+        sc = _load_report(sc_path, "source-check", problems)
+        if sc is not None and not sc.get("ok"):
+            problems.append(f"source-check not ok (text differs from the scanned source): {sc.get('open', {})}")
+    coverage = {"key_model": km_path is not None, "keyrender": kr_path is not None,
+                "source_check": sc_path is not None}
     report = {"ok": not problems, "problems": problems,
               "coverage": coverage,
               "unchecked": [k for k, v in coverage.items() if not v],
@@ -1833,6 +1876,7 @@ def cmd_gate(args: argparse.Namespace) -> int:
                         "key_report": str(args.key_report),
                         "key_model": str(km_path) if km_path else None,
                         "keyrender": str(kr_path) if kr_path else None,
+                        "source_check": str(sc_path) if sc_path else None,
                         "style_reports": [str(x) for x in args.style_report or []]}}
     if args.out:
         _write_json(args.out, report)
@@ -1919,7 +1963,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="pilot report; the full build is refused (exit 5) unless every pilot item passed")
     b.add_argument("--release-acceptance", type=Path,
                    help="acceptance.json from `booklayout acceptance`; without a valid one the output "
-                        "is renamed *.DRAFT.* and the command exits 4")
+                        "is renamed *.DRAFT.* and the command exits 4; "
+                        "with no acceptance given the output is also renamed *.DRAFT.* (exit 0)")
     b.add_argument("--out", type=Path, required=True, help="output DOCX")
     b.add_argument("--pdf", action="store_true", help="convert DOCX to PDF with LibreOffice")
     b.add_argument("--pdf-out", type=Path, help="PDF path when --pdf is used")
@@ -1979,6 +2024,8 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--aligned", type=Path, required=True)
     n.add_argument("--out", type=Path, help="output JSON (default: rewrite --aligned)")
     n.add_argument("--report", type=Path, help="write normalization_report.json")
+    n.add_argument("--source-only", action="store_true",
+                   help="translation is the source text (untranslated original layout): only language-neutral paragraph joins")
     n.set_defaults(func=cmd_normalize)
 
     kc = sub.add_parser("kana-check", help="fail if kana remain outside reference blocks (EN edition)")
@@ -2040,15 +2087,21 @@ def build_parser() -> argparse.ArgumentParser:
                    help="taxostyle JSON report (compare/audit); repeatable; not ok blocks delivery")
     g.add_argument("--key-model", type=Path, help="key_model.json; ok=false blocks delivery")
     g.add_argument("--keyrender", type=Path, help="keyrender --report JSON; any finding blocks; missing file blocks")
+    g.add_argument("--source-check", type=Path, help="source-check JSON; ok=false blocks delivery")
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
     from . import alignmd, keymodel, pdffigures
 
     alignmd.add_parser(sub)
     audit_module.add_parser(sub)
+    from . import sourcecheck as sourcecheck_module
+    sourcecheck_module.add_parser(sub)
+    from . import sourcefix as sourcefix_module
+    sourcefix_module.add_parser(sub)
     treatments_module.add_parser(sub)
     pdffigures.add_parser(sub)
     keymodel.add_parser(sub)
+    styles_module.add_parser(sub)
 
     pr = sub.add_parser("profile", help="print the default style profile, or --validate a profile file")
     pr.add_argument("--validate", type=Path)

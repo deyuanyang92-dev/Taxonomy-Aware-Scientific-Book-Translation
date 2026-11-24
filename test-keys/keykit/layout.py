@@ -127,7 +127,7 @@ def mark_width_mm(irs: list[KeyIR], profile: Profile) -> float:
             for m in mark_texts(c, k0, profile):
                 longest = max(longest, len(m))
             k0 += len(c.leads)
-    return max(8.0, longest * 0.55 * profile.font_size * PT_MM + 2.0)
+    return max(9.0, longest * 0.55 * profile.font_size * PT_MM + 3.0)
 
 
 def _runs(p, parts: list[tuple[str, bool]], profile: Profile, bold: bool = False) -> None:
@@ -222,7 +222,7 @@ def render_docx(irs: list[KeyIR], profile: Profile, out: Path,
         hp.paragraph_format.keep_with_next = True
         hp.paragraph_format.space_before = Pt(12)
         hp.paragraph_format.space_after = Pt(4)
-        _runs(hp, [(ir.heading, False)], profile, bold=True)
+        _runs(hp, md_parts(ir.heading), profile, bold=True)  # 标题里的 *属名* 斜体
         cuts = sorted(i for i in (page_before or {}).get(ki, set()) if 0 < i < len(ir.couplets))
         k = 0
         for a, b in zip([0, *cuts], [*cuts, len(ir.couplets)], strict=True):

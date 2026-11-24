@@ -115,6 +115,17 @@ class BookMeta:
     abstract_cut: str = ""
     include_front_matter: bool = False
     include_contents: bool = True
+    # Source-only reproduction (OCR of the original, no translation): the
+    # book's own cover, title and contents pages are printed instead of
+    # synthesized ones.
+    title_page: bool = True  # False: no title page made from title/volume
+    contents_in_place: bool = False  # print role "index" contents lines where they stand
+    contents_indent_prefixes: list[str] = field(default_factory=list)  # e.g. ["Género"]
+    own_pages: list[int] = field(default_factory=list)  # source pages that start a new page and are followed by one
+    centered_pages: list[int] = field(default_factory=list)  # source pages set centred (cover, title)
+    # Source pages printed as the scan itself (cover photo, logo plates that OCR
+    # cannot reproduce): figs_dir/source_pages/pNNNN.png, one full page each.
+    image_pages: list[int] = field(default_factory=list)
     authors_title: str = "AUTHORS"
     authors: list[tuple[str, str]] = field(default_factory=list)
     contributions_title: str = "CONTRIBUTIONS"
@@ -278,6 +289,25 @@ def _markdown_chunks(text: str) -> list[tuple[str, bool, bool]]:
     return [(c.replace('*', ''), it, bd) for c, it, bd in chunks if c.replace('*', '')]
 
 
+# Zoological convention (ICZN governs only the names; typography is custom): names above genus rank (family-group
+# -oidea/-idae/-inae/-ini) are set roman; only genus- and species-group names
+# are italic.  Applied to every emitted run so no caller can print one in italic.
+_FAMILY_GROUP_RX = re.compile(r"\b[A-Z][a-z]{2,}(?:oidea|idae|inae|ini)\b")
+
+
+def _roman_family_group(pieces: list[tuple[str, bool, bool]]) -> list[tuple[str, bool, bool]]:
+    out: list[tuple[str, bool, bool]] = []
+    for chunk, ital, bd in pieces:
+        pos = 0
+        for m in _FAMILY_GROUP_RX.finditer(chunk):
+            if m.start() > pos:
+                out.append((chunk[pos:m.start()], ital, bd))
+            out.append((m.group(0), False, bd))
+            pos = m.end()
+        out.append((chunk[pos:], ital, bd)) if pos else out.append((chunk, ital, bd))
+    return [p for p in out if p[0]]
+
+
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None,
              invert: bool = False):
@@ -354,6 +384,7 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
             pieces.append((chunk[pos:], italic, bold))
     if not pieces:
         pieces = [(text.replace('*', ''), italic, bold)]
+    pieces = _roman_family_group(pieces)
     for chunk, ital, bd in pieces:
         run = par.add_run(chunk)
         run.font.name = BODY_FONT
@@ -802,7 +833,7 @@ def key_signature(left: str, right: str) -> str:
 # A couplet leader shorter than this reads as an ellipsis; below it the address
 # moves to a new leader-filled line.  The Imajima original sets leaders of
 # about 8 mm on the same line (v2001 p.5, "Arctonoinae ....... 31").
-COUPLET_MIN_LEADER_MM = 8.0
+COUPLET_MIN_LEADER_MM = MIN_KEY_LEADER_MM_B  # same floor as the key-leader gate (cli.MIN_KEY_LEADER_MM); was 8 mm -> gate FAIL on Fauna Vol21 couplet 23
 COUPLET_FILL_MIN_MM = 3.0  # shorter remainders end the line without dots
 _MM_PER_PT = 25.4 / 72
 _FONT_CACHE: dict = {}
@@ -943,6 +974,23 @@ def couplet_para(doc, block: dict, text: str, genera, mark_mm: float = 9.0, hang
     _suppress_hyphenation(p)
     return p
 
+
+
+def key_couplets(doc, text: str, genera) -> list:
+    """Set a key block as hanging couplets (profile ``key_style: "couplet"``).
+
+    Fauna Ibérica sets a key at body size: marker in a hanging indent, the
+    text, a dot leader and the address ("*Neopetitia* (p. 49)" or "4") flush
+    right as one unit.  The "tabs" style's separate taxon-name column split
+    such an address: the name landed at the end of the text line and
+    "(p. 49)" on a dot line of its own (Vol. 21 p. 47, 2026-11-25).
+    """
+    out = []
+    for marker, body, right in parse_key_rows(text):
+        name, target = split_key_target(right) if right else ("", "")
+        block = {"couplet": {"marker": marker, "name": name, "target": target}}
+        out.append(couplet_para(doc, block, body, genera))
+    return out
 
 
 _KEY_MARK = re.compile(r"^\s*(\d{1,3}[.)]|[•·*]|[-–—])\s*")
@@ -1181,7 +1229,7 @@ def _translator_preface(meta: BookMeta) -> str:
 
 
 def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path | None):
-    if meta.title:
+    if meta.title and meta.title_page:
         para(doc, meta.title, size=18, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, before=30, after=4)
         if meta.volume:
             para(doc, meta.volume, size=13, align=WD_ALIGN_PARAGRAPH.CENTER, after=30)
@@ -1331,12 +1379,45 @@ def iter_pages(data, meta: BookMeta):
 from .keyfix import is_key_page  # noqa: E402
 
 
+_CONTENTS_LINE = re.compile(r"^(?P<title>.*?\S)\s*(?:(?:\.\s*){2,}|…+)\s*(?P<page>[\dIVXLCivxlc]+)$")
+
+
+def contents_lines(doc, text: str, genera, meta: BookMeta) -> None:
+    """Source contents lines ("Género Syllis ..... 336"): title, dot leader,
+    page number flush right.  Without this the builder silently dropped the
+    contents of a source-only book (Fauna Ibérica 21, pp. 6-7)."""
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = _CONTENTS_LINE.match(line)
+        indent = 5 if any(line.startswith(x) for x in meta.contents_indent_prefixes) else 0
+        p = para(doc, "", size=10, left=indent, after=0.5, line=1.0)
+        p.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        add_runs(p, m.group("title") if m else line, _sz(10), genera=genera)
+        if m:
+            p.add_run("\t")
+            add_runs(p, m.group("page"), _sz(10))
+
+
 def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Path,
                 key_breaks: set[str] | None = None):
     current_chapter = None
+    rendered_any = prev_own = False
     for p in iter_pages(data, meta):
         if meta.skip_after_page is not None and p["page"] >= meta.skip_after_page:
             continue
+        img_page = p["page"] in meta.image_pages
+        own = p["page"] in meta.own_pages or img_page
+        if rendered_any and (own or prev_own):
+            page_break(doc)
+        prev_own, rendered_any = own, True
+        if img_page:
+            scan = figs_dir / "source_pages" / f"p{p['page']:04d}.png"
+            if scan.is_file():
+                image_para(doc, scan, max_w=TEXT_W, max_h=PAGE_H - 40)
+                continue
+        n_before = len(doc.paragraphs)
         ch = p["chapter"]
         is_index = _is_index_chapter(ch, meta)
         if is_index:
@@ -1471,6 +1552,8 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             elif role == "key":
                 if PROFILE.key_style == "table" and is_key_page(p):
                     _KEY_STATE["rows"].extend(parse_key_rows(text))
+                elif PROFILE.key_style == "couplet":
+                    key_couplets(doc, text, genera)
                 else:
                     key_para(doc, text, genera, key_breaks)
                 prev_body = None
@@ -1493,9 +1576,16 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                      before=2.0 if b.get("rank") == 0 else 0.0, after=0.4, keep=True, genera=genera)
                 prev_body = None
             elif role == "index":
+                if meta.contents_in_place:
+                    contents_lines(doc, text, genera, meta)
                 continue
             prev_body = prev_body if role == "body" else None
         key_flush(doc, genera)
+        if p["page"] in meta.centered_pages:
+            for par in doc.paragraphs[n_before:]:
+                pf = par.paragraph_format
+                pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                pf.first_line_indent = pf.left_indent = Mm(0)
     render_index(doc, data, genera, page_map, meta)
 
 

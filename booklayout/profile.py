@@ -94,6 +94,8 @@ class StyleProfile:
     # baselines).  "table": a borderless 3-column table (marker | characters | target),
     # one row per couplet, the target flush right in its own column, so a long
     # couplet can never strand its target or leader (Google sample, user 2026-11-23).
+    # "couplet": hanging marker, text, one dot-leader right tab, the address
+    # ("Name (p. N)" or a couplet number) flush right as one unit (Fauna Ibérica).
     unwrap_lines: bool = False  # join hard line breaks inside body/caption/note blocks
     key_style: str = "tabs"
     citation_before: float = 1.0  # mm-free pt gap above a citation/synonymy line
@@ -144,8 +146,8 @@ class StyleProfile:
             raise ValueError("type sizes must be positive")
         if self.heading_levels not in ("source", "taxon"):
             raise ValueError(f"heading_levels must be source or taxon, not {self.heading_levels!r}")
-        if self.key_style not in ("tabs", "table"):
-            raise ValueError(f"key_style must be 'tabs' or 'table', not {self.key_style!r}")
+        if self.key_style not in ("tabs", "table", "couplet"):
+            raise ValueError(f"key_style must be 'tabs', 'table' or 'couplet', not {self.key_style!r}")
         if len(self.key_headers) != 3:
             raise ValueError("key_headers needs exactly 3 strings (marker, characters, target)")
         if self.footer_style not in ("center", "folio"):

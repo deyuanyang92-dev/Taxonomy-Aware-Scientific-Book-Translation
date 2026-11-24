@@ -329,6 +329,7 @@ def textify(
                 txt, meta = res["ok"][n]
                 save(n, [("paddle_vl", txt, None, meta.get("seconds", 0.0))],
                      extra={k: meta.get(k) for k in ("job_id", "trace_id", "chunk", "empty_reason")})
+                paddle_vl.save_layout(store.root, key, n, meta)
             cloud_ok = len(res["ok"])
             ocr_pages = [n for n in need_ocr if n not in res["ok"]]
             if ocr_pages:  # run_pages 已含重试与拆块：失败页不再逐页调云，只用本地 fallback
@@ -484,6 +485,7 @@ def _redo_paddle(store: Store, key: str, path: str, have: list[int], pages: list
                    **{k: meta.get(k) for k in ("model", "job_id", "trace_id", "chunk", "empty_reason", "seconds")}},
         )
         store.put_version(key, n, v, index=False, promote=False)
+        paddle_vl.save_layout(store.root, key, n, meta)
     store.con.commit()
     failed = {n: res["failed"][n] for n in sorted(res["failed"])}
     log(f"[{key}] 重跑完成：通过 {len(res['ok'])} 页，失败 {len(failed)} 页"

@@ -40,8 +40,8 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-STAGES = ["export", "translate", "figures", "align", "keycheck", "build", "qa", "gate"]
-SOFT = {"qa"}  # 失败不立刻停：闸口汇总；但任何必需检查非零都令最终 rc 非零、releasable=False
+STAGES = ["export", "translate", "figures", "align", "styles", "keycheck", "build", "qa", "gate"]
+SOFT = {"qa", "styles"}  # styles 为补充信息（粗体/标题级别/斜体 sidecar），失败不阻断排版  # 失败不立刻停：闸口汇总；但任何必需检查非零都令最终 rc 非零、releasable=False
 STALE = {"keycheck": ("key_model.json",), "gate": ("gate.json",),
          "qa": ("qa.json", "check.json", "key_report.json", "keyrender.json")}  # 运行前删除的旧报告
 
@@ -103,6 +103,13 @@ def plan(args: argparse.Namespace) -> list[dict[str, Any]]:
         add("figures", None, [fig / "source_figure_audit.json"], "未给 --pdf：不抽图，写空 source_figure_audit.json")
     add("align", _bl("align-md", "--source", str(src), "--translation", str(tgt), "--out", str(aligned),
                      "--report", str(w / "align_report.json")), [aligned])
+    if args.key and args.pdf:
+        sty = _bl("styles-measure", "--pdf", str(args.pdf), "--key", args.key, "--pages", args.pages or "1-1000")
+        add("styles", sty, [], "排版样式测量（本地，不调 OCR）：字高/粗细/斜体/标题级别 -> styles/<key>/")
+        out[-1]["extra"] = [_bl("styles-annotate", "--key", args.key),
+                            _bl("styles-attach", "--key", args.key, "--aligned", str(aligned))]
+    else:
+        add("styles", None, [], "未给 --key/--pdf：跳过排版样式测量")
     add("keycheck", _bl("key-model", "--source", str(src), "--translation", str(tgt),
                         "--out", str(w / "key_model.json")), [w / "key_model.json"])
     build = _bl("build", "--aligned", str(aligned), "--figures", str(fig), "--translation", str(tgt),
@@ -126,7 +133,7 @@ def plan(args: argparse.Namespace) -> list[dict[str, Any]]:
                         "--out", str(w / "gate.json")),
             [w / "gate.json"])
     for s in out:
-        s["extra"] = []
+        s.setdefault("extra", [])
     for s in out:
         if s["stage"] == "qa":
             s["extra"].append(ck)

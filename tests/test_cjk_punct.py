@@ -29,6 +29,7 @@ def test_no_chapter_heading_and_page_break_before(tmp_path):
     from booklayout import cli
     cli.main(["build", "--aligned", str(tmp_path / "a.json"), "--metadata", str(tmp_path / "m.json"),
               "--figures", str(tmp_path), "--out", str(out)])
+    out = out.with_name("o.DRAFT.docx")  # no acceptance -> draft-labelled
     assert out.exists()
     d = docx.Document(str(out))
     texts = [p.text for p in d.paragraphs if p.text.strip()]

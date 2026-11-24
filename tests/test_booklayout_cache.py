@@ -46,7 +46,7 @@ def env(tmp_path, monkeypatch):
         args = cli.build_parser().parse_args(argv)
         return args.func(args)
 
-    return {"run": run, "calls": calls, "aligned": aligned, "fig": fig, "meta": meta, "out": out,
+    return {"run": run, "calls": calls, "aligned": aligned, "fig": fig, "meta": meta, "out": out.with_name("book.DRAFT.docx"),
             "report": tmp_path / "rep.json"}
 
 
@@ -54,7 +54,7 @@ def test_unchanged_inputs_skip_docx_and_pdf(env):
     assert env["run"]() == 0
     assert env["run"]() == 0
     assert env["calls"] == {"build": 1, "pdf": 1}
-    assert json.loads(env["report"].read_text(encoding="utf-8"))["out_pdf"].endswith("book.pdf")
+    assert json.loads(env["report"].read_text(encoding="utf-8"))["out_pdf"].endswith("book.DRAFT.pdf")
 
 
 @pytest.mark.parametrize("what", ["aligned", "meta", "figure_new", "figure_edit"])

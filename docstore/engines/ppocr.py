@@ -216,6 +216,20 @@ def ppocr_rows(pdf_path: str, page_no: int, dpi: int) -> tuple[list[Any], float]
     return out, width
 
 
+def save_rows_layout(root: str | Path, key: str, pdf_path: str, pages: list[int], dpi: int) -> int:
+    """把本地 PP-OCR 行框（缓存里的 rows）复制进资料库 <root>/layout/<key>/ppocr/pNNNN.json，
+    与云版面同处，不依赖 ~/.cache（2026-11-24：版面必须随库保存，避免重复 OCR）。返回写入页数。"""
+    d = Path(root) / "layout" / key / "ppocr"
+    d.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for p in pages:
+        cf = _cache_file(pdf_path, p, dpi)
+        if cf.exists():
+            (d / f"p{int(p):04d}.json").write_text(cf.read_text(encoding="utf-8"), encoding="utf-8")
+            n += 1
+    return n
+
+
 def ppocr_run(pdf_path: str, page_no: int, dpi: int) -> tuple[str, float | None]:
     rows, width = ppocr_rows(pdf_path, page_no, dpi)
     return rows_to_text(rows, width)

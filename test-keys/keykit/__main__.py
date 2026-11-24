@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from collections import Counter
@@ -57,6 +58,39 @@ def _fix_all(irs: list[KeyIR], renum: bool, zh: bool) -> dict[str, Any]:
     return rep
 
 
+def _tabkey(a: argparse.Namespace) -> int:
+    from . import tabkey as tk
+    src = Path(a.input)
+    if src.suffix.lower() in (".pdf", ".png", ".jpg", ".jpeg"):
+        md = tk.datalab_md(src, [int(x) for x in (a.pages or "1").split(",")])
+        Path(a.o + ".ocr.md").write_text(md, "utf-8")
+        rows = tk.merge_halves(tk.md_tables(md))
+    else:
+        rows = tk.load_table(src)
+    cb = Path(a.codebook) if a.codebook else None
+    avoid = set() if a.no_policy else tk.avoid_chars(cb)
+    if avoid:
+        rows = tk.drop_columns(rows, avoid)
+    key, rep, res = tk.run(rows, nbins=a.bins, codebook=tk.load_codebook(Path(a.codebook) if a.codebook else None),
+                           include_free=a.include_free, unknown_all=a.unknown_all)
+    tree: tk.Node = rep.pop("_tree")  # type: ignore[assignment]
+    if a.docx:
+        ir = tk.to_ir(res.matrix, tree, res.bins, a.title + " (taxa listed together could not be separated with the available data)")
+        dump_irs([ir], Path(a.o + ".ir.json"))  # type: ignore[list-item]
+        main(["make", a.o + ".ir.json", "-o", a.o + ".docx", "--lang", "en", "--source-style", "dash"])
+    if avoid:
+        rep["policy_excluded"] = sorted(avoid)
+    Path(a.o + ".key.txt").write_text(key + "\n", "utf-8")
+    Path(a.o + ".report.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1), "utf-8")
+    with Path(a.o + ".codebook.csv").open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["character", "raw", "state"])
+        w.writerows((c, s, "") for c, s in res.codebook)
+    print(key)
+    print(json.dumps(rep, ensure_ascii=False, indent=1))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="keykit")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -93,7 +127,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--renumber", action="store_true")
     p.add_argument("--zh-names", action="store_true")
     common(p)
+    p = sub.add_parser("tabkey", help="性状表(CSV/TSV/XLSX/MD/PDF/图) -> 检索表 + 报告 + 编码草稿")
+    p.add_argument("input")
+    p.add_argument("-o", required=True, help="输出前缀；写 .key.txt .report.json .codebook.csv")
+    p.add_argument("--pages", help="PDF 页码，如 4,5（PDF/图片经 Datalab 识别）")
+    p.add_argument("--bins", type=int, default=3)
+    p.add_argument("--codebook")
+    p.add_argument("--include-free", action="store_true")
+    p.add_argument("--unknown-all", action="store_true", help="未知值进每个状态组（缺值多的文献表用；默认同 DELTA：含未知则该性状不可用）")
+    p.add_argument("--no-policy", action="store_true", help="忽略 codebook 的 key_policy=avoid 列")
+    p.add_argument("--docx", action="store_true", help="同时出发表用 DOCX+PDF（二歧偶句版式）")
+    p.add_argument("--title", default="Key to taxa")
     a = ap.parse_args(argv)
+    if a.cmd == "tabkey":
+        return _tabkey(a)
 
     try:
         if a.cmd == "parse":
@@ -134,7 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         out = render_docx(irs, prof, Path(a.o))
         pdf = to_pdf(out)
         # 两遍排版：量点线长度，短于 1 字宽（L9）的分支——fill 模式改按 L5(B) 重排；wrap 模式只报告
-        short = {ki: {i for i, g in d.items() if g < prof.font_size} for ki, d in leader_gaps(pdf, irs, prof).items()}
+        # 量不到的分支（去向被挤出行尾、折断，L3）也按 L5(B) 重排（2026-11-24 Travisia D 偶句 5）
+        nflat = {ki: sum(len(c.leads) for c in k.couplets) for ki, k in enumerate(irs)}
+        short = {ki: {i for i in range(nflat[ki]) if d.get(i, -1.0) < prof.font_size}
+                 for ki, d in leader_gaps(pdf, irs, prof).items()}
         short = {k: v for k, v in short.items() if v}
         rep["pass2_breaks"] = {str(k): sorted(v) for k, v in short.items()}
         if short and prof.overflow == "fill":

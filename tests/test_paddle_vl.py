@@ -74,7 +74,8 @@ class FakeSession:
             grp = sizes[i:i + 4]
             mds = [self.overrides.get(round(w) - 300, f"cloud page {round(w) - 300}") for w, _ in grp]
             out.append({"logId": f"{jid}-{i}", "errorCode": 0, "errorMsg": "Success", "result": {
-                "layoutParsingResults": [{"markdown": {"text": m}} for m in mds],
+                "layoutParsingResults": [{"markdown": {"text": m}, "prunedResult": {"parsing_res_list": [
+                    {"block_bbox": [1, 2, 3, 4], "block_label": "text", "block_content": m}]}} for m in mds],
                 "dataInfo": {"numPages": len(grp), "pages": [{"width": w * 2, "height": h * 2} for w, h in grp],
                              "type": "pdf"}}})
         return self.mutate(out) if self.mutate else out
@@ -332,7 +333,8 @@ def test_empty_page_three_states(tmp_path):
 def test_nonempty_text_passes_with_none_reason(tmp_path):
     pdf = make_pdf(tmp_path / "a.pdf", ["image"])
     ok, failed, _ = _attempt(FakeSession(overrides={1: "# **Title**"}), pdf, [1])
-    assert ok[1] == ("Title", {"empty_reason": None}) and not failed
+    assert ok[1][0] == "Title" and ok[1][1]["empty_reason"] is None and not failed
+    assert ok[1][1]["_layout"]["pruned_result"] and ok[1][1]["_raw_jsonl"]  # 版面随结果带出
 
 
 # ---------------------------------------------------------------- 错误分类
@@ -820,6 +822,20 @@ def test_fitz_ops_hold_global_lock(monkeypatch, tmp_path):
     assert seen and all(seen)
 
 
+def test_is_blank_tinted_paper_and_text(tmp_path):
+    """泛黄空白页（灰度 <250 但均匀）必须判空白；有文字页必须判非空白。"""
+    doc = fitz.open()
+    pg = doc.new_page(width=200, height=280)
+    pg.draw_rect(pg.rect, color=None, fill=(0.96, 0.92, 0.82))  # 米黄底
+    pg2 = doc.new_page(width=200, height=280)
+    pg2.draw_rect(pg2.rect, color=None, fill=(0.96, 0.92, 0.82))
+    pg2.draw_rect(fitz.Rect(20, 20, 180, 120), color=None, fill=(0, 0, 0))  # 大块墨迹
+    p = str(tmp_path / "t.pdf")
+    doc.save(p)
+    assert paddle_vl._is_blank(p, 1) is True
+    assert paddle_vl._is_blank(p, 2) is False
+
+
 def test_textify_failed_pages_not_retried_in_cloud_and_no_fallback_raises(monkeypatch, lib):
     st, key, local = lib
     fs = use(monkeypatch, FakeSession(overrides={2: ""}))
@@ -987,3 +1003,18 @@ def test_textify_redo_requires_paddle_only(lib):
     st, key, _ = lib
     with pytest.raises(ValueError, match="redo-ocr"):
         textify.textify(st, key, workers=1, engines=["ppocr"], redo=True, log=lambda m: None)
+
+
+def test_layout_saved_per_page_and_raw_jsonl(tmp_path):
+    """版面必须随 OCR 一次落盘：每页 prunedResult + 页尺寸 + job_id，且保留整任务原始 JSONL。"""
+    pdf = make_pdf(tmp_path / "a.pdf", ["image"] * 3)
+    ok, failed = paddle_vl.run_chunk(pdf, [1, 2, 3], session=FakeSession(), log=lambda s: None)
+    assert not failed and sorted(ok) == [1, 2, 3]
+    root = tmp_path / "lib"
+    for n in ok:
+        paddle_vl.save_layout(root, "K", n, ok[n][1])
+    rec = json.loads((root / "layout" / "K" / "p0002.json").read_text(encoding="utf-8"))
+    assert rec["page"] == 2 and rec["job_id"] and rec["pruned_result"]["parsing_res_list"][0]["block_bbox"] == [1, 2, 3, 4]
+    assert rec["width_px"] == rec["pdf_w_pt"] * 2
+    raw = root / "layout" / "K" / rec["raw_jsonl"]
+    assert raw.exists() and json.loads(raw.read_text(encoding="utf-8").splitlines()[0])["errorCode"] == 0

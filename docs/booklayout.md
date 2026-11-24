@@ -216,6 +216,35 @@ booklayout qa \
 
 人工并排核对（脚本做不到的部分，必须做并留痕）：①每卷至少抽 5 页含检索表/图注/列表的页，对原书页图；②对照 Google 样章同页的密度与段落；③所有 `qa` 数字写入交付说明；④任何新缺陷类型先写回归测试（`tests/test_booklayout_delivery_guards.py`）再修。交付脚本须先跑全部关口，失败不得写入 `排版成品/`：参考实现 `排版成品/run_gates.py <21|21en|25|36|41>`（构建两遍→qa→图审计→zh check→stylecheck→ms check，全过才复制 DOCX/PDF 并生成 HTML）。
 
+## source-check：成品对照原书扫描（不用大模型，2026-11-25）
+
+gate、qa、check 只比对 aligned 数据和成品。数据本身来自 OCR，所以 VL-OCR 改写的词句、漏掉的行，这三道检查都拦不住。source-check 的做法是：用 Tesseract 对原书 PDF 独立 OCR 一遍，再和成品 PDF 逐词全局对齐。两边不一致时，由 aspell 词典和 WoRMS 学名判断哪一边对。
+
+```
+python3 -m booklayout source-check --source-pdf 原书.pdf --pages 1-50 --pdf 成品.pdf \
+    --metadata meta.json --work work/sc --out work/sc/report.json \
+    --source-furniture "FAUNA IB[ÉE]RICA" --source-furniture "POLYCHA"
+python3 -m booklayout gate ... --source-check work/sc/report.json
+```
+
+- 原书 OCR 缓存在 `work/tesseract/pNNNN.tsv`。50 页首次运行约 2 分钟（`--jobs`），再次运行约 5 秒。
+- 每个待看项按 Tesseract 词框裁出原书小图，放在 `work/crops/`（`--no-crops` 关闭），人工只看小图。
+- 判定类型（tess_noise 不计入；其余未列入 `--accepted` 的项，都会让 ok=false）：
+
+| 类型 | 含义 |
+|---|---|
+| missing | 原书整行在成品中找不到 |
+| moved | 原书整行出现在成品的邻近页，但不在对齐位置（顺序错，或图注换了位置） |
+| output_error | 原书读到的是真词，成品不是；或领域词在原书 OCR 中多次高置信出现，而成品写法从未出现 |
+| conflict | 两边都是真词，但不一样（如 especie→superficie；重音不同） |
+| name_suspect | 两边读法相同，但把一个 OCR 易混字符（b/h、c/e、l/i…）换掉后就是已知学名（如 krobnii→krohnii） |
+| review | 两边都不在词典里，需要人看 |
+| tess_noise | 成品是真词，Tesseract 读错了 |
+
+- `--accepted` 是 JSON 文件，内容为已人工确认无误的 id 列表；`--names` 可多次给出领域词表（一行一词），用来减少 review。
+- 第 21 卷前 50 页实测：Sonnet 逐页看图核对共列出 110 处问题，source-check 覆盖其中 94 处。漏掉的主要有三类：两边 OCR 都读成真词（sílido→sólido）、标点或括号差异、栏目顺序。
+- 已知误报：两栏图注换位会报 moved；aspell 缺少的专业词会落入 review。
+
 ## 速度
 
 一次成书只需三遍命令：`build`（第一遍）→ `map-pages` → `build`（第二遍）。三本 450–640 源页的书，第一遍约 60–110 秒，第二遍相近；不要每改一行就重排全书。先用 `normalize`/`repair` 改对齐 JSON，再重排；版式问题用 `qa` 定位到具体页，不要逐页翻 PDF。
@@ -327,3 +356,19 @@ python3 -m booklayout.keyrender book.pdf [--pages 3-6] [--report kr.json]   # �
 - 接入：`key-model` 输出 `report["graph"]`。`--expect-keys` 或 `--entries` 声明有表时，识别出 0 张表就报 no_keys，退出码为 1；声明的入口不存在时报 dangling_jump。`gate --key-model … --keyrender …` 遇到以下任一情况判不通过：报告缺失或字段不全、ok 与 errors 矛盾、有任何 finding、PDF 中识别到的分支数少于 key-model 的一半。旧调用不传这两份报告，仍返回 0，并在 `coverage`/`unchecked` 字段标明未检查。`publish_book.py` 运行前删除本轮要写的旧报告；任一必需检查失败，就不可发布。
 - 已知限制见 `keygraph.LIMITS`。主要有：无标题的纯缩进表无法和普通列表区分，只能靠调用方声明有表来阻断；非相邻的 OCR「11」不自动改号，改为报错阻断；需要原书表清单才能发现局部整表丢失。
 - 真实书回归：Marinov 1977 `b07.md` 识别 4 张表，只剩 1 条 error：3(4) 原文缺去向。
+
+## OCR 校正防线：source-fix 与 inserts
+
+流程：aligned → `source-check --aligned`（OCR 阶段闸，条目带 block/字符定位）→ `source-fix`（词框 450 dpi psm 8 二次投票，生成补丁）→ `patch-blocks` → 循环到无 output_error → `build` → `source-check --pdf`（终闸，可加 `--accepted ids.json` 登记已人工核对条目）→ `gate --source-check`。
+
+- `source-check` 必须加 `--source-furniture '<页眉正则>'`，否则页眉会报 missing。
+- `source-fix` 的 `accent_unsafe` 守卫：重音/变音差异不自动改（Tesseract 会丢或错读变音）。
+- Tesseract 弱点：斜体 h 读成 b；图号后缀（279C、98F）读成数字。b/h 分歧不得自动保留，须看图。
+- 补丁文件新增 `inserts`：`{after_block_id | before_block_id, block:{block_id, role, translation, ...}}`；块号重复判 invalid，锚点不存在判 missing。
+
+## 扫描整页与多栏图注（Vol. 25 样本）
+
+- `image_pages`（元数据）：列出的页直接印原书扫描图（`figures/source_pages/pNNNN.png`，缺文件时退回 OCR 文字），用于封面等无法用文字还原的页。
+- `scripts/vl_to_aligned.py` 的 `merge_caption_columns`：以「Fig./Tabla/Lám. N」开头的图注被 VL 拆成多栏块时，按同一行 y0 并成一个图注；图内无标号的短 caption 文字丢弃；学名行不并入。
+- `fix_latex_superscripts` 同时处理 `$ ^{a} $` 与 `\textsuperscript{a}`。
+- 前言页末尾的页边界由人工核对后用 patch-blocks 设 `boundary_reviewed: true`。

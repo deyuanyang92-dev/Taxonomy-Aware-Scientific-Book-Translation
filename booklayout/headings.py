@@ -32,7 +32,12 @@ def toc_title(text: str) -> str:
 
 _ZH2 = re.compile(r"^[A-Z][A-Za-zæøöüéèáíóúñ-]+\s*(?:亚科|族|属)(?![一-鿿])")
 _ZH1 = re.compile(r"^[A-Z][A-Za-zæøöüéèáíóúñ-]+\s*(?:超科|科|目|纲|亚纲|门)(?![一-鿿])")
-_HEAD_SRC = re.compile(r"^(Familia|Subfamilia|G[eé]nero|Orden|Clase|Tribu)\s+[A-Z]")
+_HEAD_SRC = re.compile(r"^(Familia|Subfamilia|G[eé]nero|Subg[eé]nero|Orden|Clase|Tribu)\s+[A-Z]")
+# 种标题（一行）：「Opisthodonta pterochaeta Southern, 1914 (figs. 13 y 14)」「X y (Siewing, 1956) comb. n. (fig. 12)」；
+# 有期刊引文（「1914. Proc. R. Ir. Acad., 31(2): 30」）的是异名录，不是标题
+_SPECIES_HEAD = re.compile(
+    r"^[A-Z][a-zæøöüéèáíóúñ-]+ (?:\([A-Z][a-z]+\) )?[a-z-]{3,}(?: [a-z-]{3,})? \(?[A-ZÁÉÍÓÚ][^.:]{0,80}?,? \d{4}\)?"
+    r"(?: (?:comb|sp|stat)\. n(?:ov)?\.)?(?: \((?:figs?|lám)\.[^)]{0,40}\))?$")
 
 
 def promote_headings(data: dict, max_first: int = 110) -> int:
@@ -47,19 +52,25 @@ def promote_headings(data: dict, max_first: int = 110) -> int:
         out: list[dict] = []
         for b in page.get("blocks", []):
             tx = b.get("text") or ""
-            if b.get("role") == "body" and _HEAD_SRC.match(tx):
+            if b.get("role") == "body" and "\n" not in tx.strip() and _SPECIES_HEAD.match(" ".join(tx.split())):
+                out.append(dict(b, role="heading", level=3))
+                n += 1
+                continue
+            # 连续几行都是阶元行（「Subfamilia Autolytinae …\nGénero Levidorum …」）：逐行成标题
+            split = False
+            while b.get("role") == "body" and _HEAD_SRC.match(tx):
                 first, _, rest = tx.partition("\n")
-                if len(first) <= max_first and not first.rstrip().endswith((".", ",", ";")) or re.search(r"\d{4}$", first):
-                    tr = b.get("translation") or ""
-                    tfirst, _, trest = tr.partition("\n")
-                    head = dict(b, role="heading", text=first, translation=tfirst or tr, level=2)
-                    head.pop("block_id", None)
-                    out.append(head)
-                    n += 1
-                    if rest.strip():
-                        out.append(dict(b, text=rest, translation=trest))
-                    continue
-            out.append(b)
+                if not (len(first) <= max_first and not first.rstrip().endswith((".", ",", ";")) or re.search(r"\d{4}$", first)):
+                    break
+                tr = b.get("translation") or ""
+                tfirst, _, trest = tr.partition("\n")
+                head = dict(b, role="heading", text=first, translation=tfirst or tr, level=2)
+                head.pop("block_id", None)
+                out.append(head)
+                n += 1
+                b, tx, split = dict(b, text=rest, translation=trest), rest, True
+            if tx.strip() or not split:
+                out.append(b)
         page["blocks"] = out
     return n
 
@@ -158,5 +169,7 @@ def promote_captions(data: dict, max_len: int = 700) -> int:
                 prev_cap = b if b.get("role") == "caption" else None
             keep.append(b)
         page["blocks"] = keep
+    from .taxonlist import unify_taxon_lists
+    n += unify_taxon_lists(data)  # a checklist page is one list, not headings + body (Vol. 21 p. 35)
     promote_headings(data)
     return n

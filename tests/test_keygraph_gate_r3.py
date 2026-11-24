@@ -50,12 +50,12 @@ KR = {"rules": {}, "summary": {"KR1": 0}, "findings": [], "branches": 4}
 
 def test_coverage_field_legacy(tmp_path: Path) -> None:
     rc, rep = _gate(tmp_path)
-    assert rc == 0 and rep["unchecked"] == ["key_model", "keyrender"]
+    assert rc == 0 and rep["unchecked"] == ["key_model", "keyrender", "source_check"]
 
 
 def test_files_record_new_reports(tmp_path: Path) -> None:
     rc, rep = _gate(tmp_path, KM, KR)
-    assert rc == 0 and rep["unchecked"] == []
+    assert rc == 0 and rep["unchecked"] == ["source_check"]
     assert rep["files"]["key_model"].endswith("km.json") and rep["files"]["keyrender"].endswith("kr.json")
 
 
