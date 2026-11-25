@@ -573,6 +573,17 @@ def cmd_attach(st: Store, a) -> None:
             print(f"  PDF p{pg} ↔ 已有 p{best}  相似度 {ratio}  {flag}")
 
 
+def cmd_split(a) -> None:
+    from . import pdfsplit
+
+    out = Path(a.out)
+    for x in a.pdfs:
+        rows = pdfsplit.split_pdf(Path(x), out, size=a.size, overwrite=a.overwrite)
+        n = sum(r["pages"] for r in rows)
+        w = sum(r["status"] == "written" for r in rows)
+        print(f"{rows[0]['tag']}\t{n} 页 → {len(rows)} 块（新写 {w}）\t{out / rows[0]['tag']}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="docstore", description="本地资料库：登记、文本化、核对、检索、引页")
     ap.add_argument("--root", help="库根（默认 $DOCSTORE_ROOT 或 /mnt/p/翻译-译作/参考资料/_资料库）")
@@ -797,6 +808,17 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("file")
     s.set_defaults(fn=cmd_struct)
 
+    s = sub.add_parser("ocr-batch", help="PaddleOCR 云 OCR 批处理（manifest/run/report/reclassify/preflight/unblock/backfill-layout）")
+    from . import ocr_batch
+    ocr_batch.add_arguments(s)
+
+    s = sub.add_parser("split", help="PDF 按每 N 页切块，每卷一个子目录 + manifest.tsv（零模型，不需要资料库）")
+    s.add_argument("pdfs", nargs="+")
+    s.add_argument("--out", required=True, help="输出根目录；每个 PDF 在其下建 <卷标>/ 子目录")
+    s.add_argument("--size", type=int, default=50, help="每块页数（默认 50）")
+    s.add_argument("--overwrite", action="store_true", help="已存在的块也重写（默认跳过）")
+    s.set_defaults(fn=cmd_split)
+
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")
     s.add_argument("new")
@@ -805,6 +827,11 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.cmd in WRITE_CMDS and not a.by and not os.environ.get("DOCSTORE_AGENT"):
         print("提醒：未指定 --by，也未设 DOCSTORE_AGENT，写入者将记为 unknown。", file=sys.stderr)
+    if a.cmd == "ocr-batch":  # 不需要资料库 Store
+        return ocr_batch.dispatch(a)
+    if a.cmd == "split":  # 不需要资料库 Store
+        cmd_split(a)
+        return 0
     st = Store(a.root)
     a.fn(st, a)
     return 0

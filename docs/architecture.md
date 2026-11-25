@@ -59,6 +59,7 @@ _资料库/
 | `docstore page <key> <页> [--image] [--json]` | 取一页文本（显示 producer、引擎、其他版本、校正记录），或渲染页图 |
 | `docstore cite <key> <页>` | 规范引注（作者. 年份. 书名. 印刷页（PDF 页）. [docstore:key]） |
 | `docstore export <key> --txt\|--md [-o 文件]` | 导出全文 |
+| `docstore split <pdf…> --out <目录> [--size 50] [--overwrite]` | 把 PDF 按每 N 页（默认 50）切块，每卷一个子目录 `<卷标>/<卷标>_B01_p001-050.pdf` 并写 `manifest.tsv`（块号、起止页、页数）；不需要资料库，重跑不覆盖（除非 `--overwrite`）。实现 `docstore/pdfsplit.py` |
 | `docstore status` | 每份资料的页数、已文本化页数、各核对等级页数、各 producer 页数 |
 | `docstore rebuild` | 由 registry.tsv 与 pages/*.json 重建 sqlite |
 | `docstore detect <目录>` | 扫描库外疑似页面库，报告格式、对应资料（sha256 / 目录名 / 页数）、是否已导入 |
