@@ -1,0 +1,9 @@
+monographaR	-	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/monographaR	失败:PACKAGES无此包	-	-	0
+dimoose	https://github.com/leipzig/dimoose.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/dimoose	ok	无	R(159)/Python(28)/JavaScript(6)	432
+dichotomousKey	https://github.com/HaoLi111/dichotomousKey.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/dichotomousKey	ok	LICENSE	R(11)	17
+dichot	https://github.com/earth-chris/dichot.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/dichot	ok	LICENSE	Python(11)	28
+edichokey	https://github.com/Mikumikunisiteageru/edichokey.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/edichokey	ok	无	LaTeX(3)	6
+biokey	-	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/biokey	失败:CTAN两镜像	-	-	0
+dichokey	https://mirrors.ctan.org/macros/latex/contrib/dichokey.zip	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/dichokey	ok	无	LaTeX(3)	5
+monographaR(重试)	https://cran.r-project.org/src/contrib/Archive/monographaR/monographaR_1.3.0.tar.gz	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/monographaR	ok(CRAN Archive v1.3.0,已下架)	无	R(35)	43
+biokey(重试)	https://ctan.org/pkg/biokey	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/biokey	失败:CTAN包页无zip链接,mirrors与ctan.org均未取到	-	-	0

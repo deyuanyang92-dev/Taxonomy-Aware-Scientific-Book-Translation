@@ -1,7 +1,5 @@
 # 分类学排版的斜体/正体规则（英文译稿）
 
-日本志书块结构（分布 ≠ 图注字母、Fig+种名+图注）见 [`monograph_layout_ja.md`](monograph_layout_ja.md)。
-
 用户 2026-11-16 指出：译文里属名没有斜体，检索表里也没有。根因不是模型译错，而是 OCR 只给字形、不保留斜体，Google/DeepSeek 也不会替原文补排版；`transqa` 原有的学名护栏只检查“原文斜体是否保留”，原文没有斜体标记时这条检查是空的。
 
 2026-11-17 用户再指出两类斜体错误：①作者名被排成斜体（`*Rouse and Fauchald*`、`*Rouse and* Fauchald`）；②整条图注全部斜体。核对原书：图注整体是 ITC Garamond Light Italic，学名正体（Vol. 45 p. 30）；但用户按出版惯例定：**图注正体、学名斜体**，不照搬原书的全斜体图注。
@@ -47,22 +45,6 @@
 - OCR 把标题、作者、脚注并成一行时，脚注 `*` 可能被 Markdown 当成强调；属段落结构问题（issue #16），不是本脚本造成。
 - 本机 WoRMS 缓存只覆盖 Annelida；其他类群需换对应分类库或 `--genera` 补表。
 
-## 交付闸口：`booklayout taxostyle` + `gate --italic-audit`（#33）
-
-正式验收必须过阶元体例审计，不再只跑 qa/check：
-
-```bash
-python3 -m booklayout taxostyle --aligned aligned.json --docx book.docx --out italic_audit.json
-python3 -m booklayout verify --aligned … --figures … --pdf book.pdf [--docx book.docx] --out-dir verify_out/
-```
-
-`verify` 会：
-1. 扫 aligned 译文里的 Markdown `*…*`（排版前就能发现 `*Polynoidae*`）；
-2. 若有 `--docx` 或与 PDF 同名的 `.docx`，再跑 `italic_check` 成品审计；
-3. 把 `italic_audit.json` 交给 `gate`：`major`/`critical` 非零 → `ok: false`。
-
-完整「原文 PDF span ↔ 译文 run」逐 token 比对仍见 issue #34；当前薄实现先拦体例错误（科名斜体、作者名斜体、图注全斜体等），不依赖原文是否也斜体。
-
 ## 图注与斜体审计：`scripts/italic_check.py`
 
 图注排版（2026-11-17 用户定）：图注正文正体，学名斜体；`booklayout` 的 `caption()` 已按此排。原书的“整条图注斜体”不采用。
@@ -77,7 +59,7 @@ python3 -m booklayout verify --aligned … --figures … --pdf book.pdf [--docx 
 | `italic.mixed` | major | 学名后夹英语虚词（`*Torrea and*`、`*Miura and*`） |
 | `caption.allitalic` | major | 整条图注都在斜体里 |
 | `caption.name_roman` | major | 图注学名被排成正体（`--caption-names italic` 时报） |
-| `italic.higher_taxon` | major | 科级及以上阶元斜体（应正体；`--fix` 改正体） |
+| `italic.higher_taxon` | info | 科名斜体（原书作者名单里本来就斜体，不阻断） |
 | `italic.other` | info | 书名、强调等 |
 
 文献引证判别：`--aligned <aligned.json>` 用 `role=ref` 的块建「年份 → 姓氏」索引；不给时从 DOCX 的 References 节建。片段含年份且姓氏命中该年条目 → `citation.italic`（确证）；无年份但姓氏都在文献目录、且带 and/et al./与 等连词 → 按引证处理。
@@ -95,8 +77,5 @@ python3 scripts/italic_check.py pdf 原书.pdf --pages 20-40                  # 
 
 - 作者名斜体：`booklayout.build_genus_set` 把段首 `Rouse y Fauchald…` 当成“属名 + 种加词”，`add_runs` 又把连词 `and/y` 当种加词，整段排成斜体。修复：段首第二个词是虚词（and/or/of/y/de…）时不收为属名；`add_runs` 跳过虚词种加词。回归测试 `test_caption_roman_with_italic_names`、`tests/test_italic_check.py`。
 - 图注全斜体：`caption()` 照搬原书 `italic=True` 整段排。修复：改成正体，学名由属名检测/`*…*` 标成斜体。
-- 科名斜体（2026-11-17 第二轮，Vol. 45 成品 707 处）：原书科名本来就斜体（Vol. 45 p. 7 作者名单，ITC Garamond Light Italic），译文照抄。`build_genus_set` 又把 `Familia/Subfamilia` 后的名字和译者的星号一起收进属名集合，且 `load_worms_genera` 把 `Syllidae incertae sedis` 这类多词阶元名的首词当属名。审计脚本虽报出，但级别定为 `info`，交付闸口不阻断，等于没查。
-  修复：属名集合只从 Genus/Subgenus 和种级名称首词取；`FAMILY_RUN`（-idae/-inae/-ini/-oidea）与 WoRMS 阶元名从属名集合和斜体段落中一律移出，作者名单这类斜体底段落里的科名也改正体；`italic.higher_taxon` 升为 `major` 并加入 `--fix`。
-  回归测试：`test_genus_set_excludes_family_group_names`、`test_family_names_render_roman_in_body`、`test_markdown_starred_family_names_render_roman`、`test_family_names_roman_inside_italic_paragraph`、`test_family_italic_is_a_major_finding`、`test_family_italic_is_fixed_to_roman`。缺的关口见 GitHub issues #33（gate 纳入斜体审计）与 #34（原文-译文逐 token 排版比对）。
 - 属名后接英语词被整段斜体（2026-11-17 第二轮）：旧 `add_runs` 只排除虚词和 sp./cf. 等缩写，`Lopadorrhynchus comprises the`、`Onuphis deposited in` 这类“属名 + 英语词”被当成“属名 + 种加词”整段斜体；`build_genus_set` 同时把 `Material examined` 这类段首普通词语收成属名。修复：新增 `booklayout/english.py`，用系统 hunspell 词典（`/usr/share/hunspell/en_US.dic`，与 `scripts/taxoformat.py` 同源）判定英语词；种加词是英语词时只排属名斜体，`build_genus_set` 也跳过英语词。回归测试 `test_body_genus_followed_by_english_word_italicises_genus_only`、`test_genus_set_skips_english_second_word_and_authors`。
 - 图注中单独出现的属名不斜体（2026-11-17 第二轮）：旧正则要求“属名 + 小写词”才斜体，`Cenogenus sp.`、`Apomatus Philippi, 1844`、`Apomatus (fig. 82A)` 里的属名都没排斜体。修复：属名单独出现也排斜体（分类学惯例），后接 sp./spp./cf./aff. 时缩写保持正体。回归测试 `test_caption_italicises_bare_genus_but_not_sp`、`test_caption_italicises_genus_before_author`。

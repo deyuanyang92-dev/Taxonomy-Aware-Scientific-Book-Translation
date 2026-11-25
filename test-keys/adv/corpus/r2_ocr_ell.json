@@ -1,0 +1,24 @@
+{
+  "id": "r2_ocr_ell",
+  "format": "prime",
+  "lang": "en",
+  "source": "1. Eyes present ...... Nereis\n1l. Eyes absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:135–138 把代替撇号的小写 l 当第十二支；对校本保留原撇号。",
+  "translation": "1. Eyes present ...... Nereis\n1'. Eyes absent ...... Nephtys"
+}

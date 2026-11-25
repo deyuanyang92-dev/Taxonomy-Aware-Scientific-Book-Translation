@@ -5,8 +5,7 @@
 整句、整「骨架」很少重复（骨架重复 ≥2 次只覆盖描述 23%），但短语层高度重复：最常见 1000 个 2–5 词短语覆盖
 描述/标签段词次 38%，2000 个 45%。
 
-    python3 phrase_table.py extract CORPUS.md... -o cand.tsv --sl de [--top 2000 --min-freq 15 --max-n 8]
-    python3 phrase_table.py patterns CORPUS.md... -o patterns.tsv --sl de   # 句式骨架
+    python3 phrase_table.py extract CORPUS.md... -o cand.tsv --sl de [--top 2000 --min-freq 15]
     python3 phrase_table.py translate cand.tsv --sl de --tl en --glossary G.tsv [--engine deepseek-flash]   # 写 en 列
     python3 phrase_table.py google cand.tsv --sl de --tl en                                                  # 写 google 列（免费）
     python3 phrase_table.py export cand.tsv -o phrases_de_en.tsv    # 术语表格式：de | en | variants(google=en) | evidence
@@ -48,25 +47,16 @@ def ngrams(text: str) -> list[list[str]]:
     return paras
 
 
-def extract(
-    files: list[str],
-    sl: str,
-    top: int,
-    min_freq: int,
-    kinds: set[str] | None = None,
-    *,
-    max_n: int = 5,
-) -> list[dict]:
+def extract(files: list[str], sl: str, top: int, min_freq: int, kinds: set[str] | None = None) -> list[dict]:
     from transqa.taxoblocks import kind
     cnt: Counter = Counter()
     stop = EDGE_STOP.get(sl, set())
-    ns = tuple(range(2, max(2, max_n) + 1))
     for f in files:
         for p in re.split(r"\n\s*\n", Path(f).read_text(encoding="utf-8")):
             if p.lstrip().startswith("<!--") or (kinds and kind(p, sl) not in kinds):
                 continue
             for w in ngrams(p):
-                for n in ns:
+                for n in (2, 3, 4, 5):
                     for i in range(len(w) - n + 1):
                         g = tuple(w[i:i + n])
                         if g[0].lower() in stop or g[-1].lower() in stop or g.count("#") == n:
@@ -86,62 +76,6 @@ def extract(
         if len(keep) >= top:
             break
     return [{"de": " ".join(g), "freq": c, "en": "", "google": "", "status": ""} for g, c in keep]
-
-
-# 句式骨架：实词保留，数字→#，学名样→SP，常见功能词→_
-_FUNC = {
-    "de": set(
-        "der die das den dem des ein eine einer einem eines und oder zu zum zur im am vom "
-        "bei mit von aus auf in an als wie bis sowie jedoch aber nur noch auch sehr etwas "
-        "ist sind war waren wird werden hat haben hatte hatten sich".split()
-    ),
-    "en": set(
-        "the a an and or of to in on at by with from as for is are was were be been being "
-        "has have had do does did this that these those".split()
-    ),
-}
-
-
-def _skeleton_token(w: str, sl: str) -> str:
-    if w == "#" or w.isdigit():
-        return "#"
-    low = w.lower()
-    if low in _FUNC.get(sl, set()):
-        return "_"
-    # 学名样：大写开头且后续小写较长，或全小写拉丁尾
-    if re.match(r"^[A-Z][a-z]{3,}$", w) and low.endswith(
-        ("us", "a", "um", "is", "ae", "ii", "orum", "ibus")
-    ):
-        return "SP"
-    return w
-
-
-def extract_patterns(
-    files: list[str],
-    sl: str,
-    top: int,
-    min_freq: int,
-    kinds: set[str] | None = None,
-) -> list[dict]:
-    """抽取描述句式骨架（如 Prostomium _ # Augen），供提示词例句 / 风险对照。"""
-    from transqa.taxoblocks import kind
-    cnt: Counter = Counter()
-    for f in files:
-        text = Path(f).read_text(encoding="utf-8", errors="replace")
-        for p in re.split(r"\n\s*\n", text):
-            if p.lstrip().startswith("<!--") or (kinds and kind(p, sl) not in kinds):
-                continue
-            for w in ngrams(p):
-                if len(w) < 4 or len(w) > 16:
-                    continue
-                sk = tuple(_skeleton_token(x, sl) for x in w)
-                # 至少 2 个实词
-                if sum(1 for t in sk if t not in {"_", "#", "SP"}) < 2:
-                    continue
-                cnt[sk] += 1
-    rows = [{"pattern": " ".join(g), "freq": c} for g, c in cnt.items() if c >= min_freq]
-    rows.sort(key=lambda r: (-r["freq"], -len(r["pattern"])))
-    return rows[:top]
 
 
 def _read(path: str) -> list[dict]:
@@ -235,15 +169,7 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--sl", default="de")
     e.add_argument("--top", type=int, default=2000)
     e.add_argument("--min-freq", type=int, default=15)
-    e.add_argument("--max-n", type=int, default=5, help="最长 n-gram（长短语可到 8）")
     e.add_argument("--kinds", default="description,locality,ecology,distribution,caption")
-    ptn = sub.add_parser("patterns", help="抽取句式骨架（实词+#_/SP），供提示词/对照")
-    ptn.add_argument("files", nargs="+")
-    ptn.add_argument("-o", "--out", required=True)
-    ptn.add_argument("--sl", default="de")
-    ptn.add_argument("--top", type=int, default=400)
-    ptn.add_argument("--min-freq", type=int, default=5)
-    ptn.add_argument("--kinds", default="description,locality,ecology,distribution,caption")
     t = sub.add_parser("translate")
     t.add_argument("table")
     t.add_argument("--sl", default="de")
@@ -260,29 +186,9 @@ def main(argv: list[str] | None = None) -> None:
     x.add_argument("--glossary", help="只采纳「规范译法含术语表定名、Google 没有」的差异为异写")
     a = ap.parse_args(argv)
     if a.cmd == "extract":
-        rows = extract(
-            a.files,
-            a.sl,
-            a.top,
-            a.min_freq,
-            set(a.kinds.split(",")) if a.kinds else None,
-            max_n=a.max_n,
-        )
+        rows = extract(a.files, a.sl, a.top, a.min_freq, set(a.kinds.split(",")) if a.kinds else None)
         _write(a.out, rows)
         print(f"短语 {len(rows)} → {a.out}")
-    elif a.cmd == "patterns":
-        rows = extract_patterns(
-            a.files,
-            a.sl,
-            a.top,
-            a.min_freq,
-            set(a.kinds.split(",")) if a.kinds else None,
-        )
-        with open(a.out, "w", encoding="utf-8", newline="") as fp:
-            w = csv.DictWriter(fp, fieldnames=["pattern", "freq"], delimiter="\t")
-            w.writeheader()
-            w.writerows(rows)
-        print(f"句式 {len(rows)} → {a.out}")
     elif a.cmd == "translate":
         print(f"新译 {translate(a.table, a.sl, a.tl, a.glossary, a.engine)}")
     elif a.cmd == "google":

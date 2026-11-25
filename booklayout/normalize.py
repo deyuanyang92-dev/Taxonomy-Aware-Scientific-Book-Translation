@@ -22,8 +22,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from .textaudit import looks_like_japanese_prose
-
 _SPACE = re.compile(r"\s+")
 _YEAR = re.compile(r"\b(?:1[5-9]\d\d|20\d\d)\b")
 _JOURNAL_PAGE = re.compile(r"\b\d+\s*(?:\([^)]*\))?\s*:\s*\d+(?:\s*[-–]\s*\d+)?")
@@ -567,9 +565,6 @@ def _structured_from_source(blocks: list[dict], page: dict, changed: list[dict])
             )
             token = _latin_token(source)
             contaminated = bool(re.search(r"(?:\.\s*){3,}|…", translation))
-            # 日/中源文的检索表标题被灌进整表时，译文含 ……；不得回写成源文假名墙
-            if re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", source):
-                contaminated = False
             missing = token is not None and token not in translation
             duplicated = _duplicated_elsewhere(blocks, block, translation)
             if structural or contaminated or (missing and duplicated):
@@ -995,286 +990,26 @@ def _function_word_join(blocks: list[dict], changed: list[dict]) -> None:
             )
 
 
-_BOX_GLYPH = re.compile(r"(?<=[\u3040-\u30ff\u3400-\u9fff])\u25a1|\u25a1(?=[\u3040-\u30ff\u3400-\u9fff])")
-
-
-def _box_glyph_to_kou(blocks: list[dict], changed: list[dict]) -> None:
-    """OCR reads the kanji 口 as the box glyph U+25A1; it renders as a missing-glyph box.
-
-    Only a box touching a CJK character is repaired (a lone box may be a real symbol).
-    Source and translation carry the same OCR residue, so both are repaired.
-    """
-    for block in blocks:
-        for field in ("text", "translation"):
-            value = block.get(field)
-            if not value or "\u25a1" not in value:
-                continue
-            fixed = _BOX_GLYPH.sub("\u53e3", value)
-            if fixed != value:
-                block[field] = fixed
-                changed.append({"rule": "box_glyph_to_kou", "block_id": block.get("block_id"),
-                                "field": field})
-
-
 def _leading_punctuation(blocks: list[dict], changed: list[dict]) -> None:
     """Repair punctuation left at the start of a block by a page-break split."""
     for index, block in enumerate(blocks):
         if block.get("role") not in ("body", "note", "key", "entry", "citation"):
             continue
         text = _norm(block.get("translation"))
-        match = re.match(r"^([.,;:)])\s*", text)
+        match = re.match(r"^([.,;:)])\s+", text)
         if match is None:
             continue
-        rest = text[match.end():].strip()
-        if not rest:
-            continue
-        head = rest[:1]
         if match.group(1) == ")" and index > 0:
             previous = blocks[index - 1]
             before = _norm(previous.get("translation"))
             if before and not before.endswith(")"):
                 previous["translation"] = before + ")"
-        elif match.group(1) == "," and index > 0:
-            # 切段残留：",26,29…" 或 ", and on every segment…" → 并回上块
-            previous = blocks[index - 1]
-            before = _norm(previous.get("translation"))
-            if before and (head.isdigit() or head.islower() or head in "*("):
-                if before.endswith((",", "…", "—", "-")):
-                    previous["translation"] = f"{before} {rest}".replace("  ", " ")
-                else:
-                    previous["translation"] = f"{before}, {rest}"
-                block["translation"] = ""
-                block["_drop"] = True
-                changed.append({
-                    "rule": "leading_comma_merge",
-                    "block_id": block.get("block_id"),
-                })
-                continue
-        elif match.group(1) in ";." and index > 0:
-            previous = blocks[index - 1]
-            before = _norm(previous.get("translation"))
-            if before and (head.islower() or head.isdigit() or head in "*("):
-                glue = "" if before.endswith(match.group(1)) else match.group(1)
-                previous["translation"] = f"{before}{glue} {rest}".replace("  ", " ")
-                block["translation"] = ""
-                block["_drop"] = True
-                changed.append({
-                    "rule": "leading_punct_merge",
-                    "block_id": block.get("block_id"),
-                })
-                continue
-        elif not head.isupper():
+        elif not text[match.end():][:1].isupper():
             continue
-        block["translation"] = rest
+        block["translation"] = text[match.end():].strip()
         changed.append(
             {"rule": "leading_punctuation", "block_id": block.get("block_id")}
         )
-
-
-def _index_leaders_to_entry(page: dict, blocks: list[dict], changed: list[dict]) -> None:
-    """学名索引行（含错挂在科名章下的）：Genus Author, year…………页码 → entry。"""
-    for block in blocks:
-        if block.get("role") not in ("body", "key"):
-            continue
-        text = _norm(block.get("translation"))
-        if not re.search(r"…{2,}\s*\d{1,3}(?:,\s*\d{1,3})*\s*$", text):
-            continue
-        if not re.search(r"[A-Z][a-z]{2,}", text):
-            continue
-        if not (
-            re.search(r"\b(?:1[789]\d{2}|20\d{2}|\d{3})\b", text)
-            or re.search(r"\bsp\.\s*[A-Z]\b", text)
-        ):
-            continue
-        block["role"] = "entry"
-        changed.append({
-            "rule": "index_leaders_to_entry",
-            "block_id": block.get("block_id"),
-            "page": page.get("page"),
-        })
-
-
-def _key_heading_from_body(blocks: list[dict], changed: list[dict]) -> None:
-    """Body that is only a key title → heading (今岛英译常见)。"""
-    for block in blocks:
-        if block.get("role") != "body":
-            continue
-        text = _norm(block.get("translation"))
-        if re.match(
-            r"Key to (?:the )?(?:species|genera|subfamilies|families)\b",
-            text,
-            re.I,
-        ):
-            block["role"] = "heading"
-            block["level"] = block.get("level") or 2
-            changed.append({
-                "rule": "key_heading_from_body",
-                "block_id": block.get("block_id"),
-            })
-
-
-def _body_leaders_to_key(blocks: list[dict], changed: list[dict]) -> None:
-    """Body with leaders + tabbable taxon → restore key role."""
-    from .builder import split_key_couplet
-    from .keyrepair import looks_like_species_desc_key
-
-    for block in blocks:
-        if block.get("role") != "body":
-            continue
-        text = _norm(block.get("translation"))
-        source = _norm(block.get("text"))
-        if not re.search(r"…{2,}|\.{5,}", text):
-            continue
-        if looks_like_species_desc_key(text, source):
-            continue
-        if split_key_couplet(text, source or None) is None:
-            continue
-        block["role"] = "key"
-        changed.append({
-            "rule": "body_leaders_to_key",
-            "block_id": block.get("block_id"),
-        })
-
-
-def _trim_key_dump_heading(blocks: list[dict], changed: list[dict]) -> None:
-    """超长「种の検索」标题块被整表灌进 heading → 收成短标题。"""
-    for block in blocks:
-        if block.get("role") != "heading":
-            continue
-        source = _norm(block.get("text"))
-        trans = _norm(block.get("translation"))
-        words = len(re.findall(r"[A-Za-z]{2,}", trans))
-        has_key_src = bool(re.search(r"種の検索|の検索", source))
-        has_key_en = bool(
-            re.search(r"\bKey to\b.{0,40}\b(?:species|genera)\b", trans, re.I)
-        )
-        # 整表灌进：源文是检索表标题，译文过长或夹带 ……/偶行号
-        dumpish = has_key_src and (
-            words > 12
-            or "…" in trans
-            or re.search(r"(?:\.\s*){3,}", trans)
-            or re.search(r"\b\d{1,2}\b.+\b\d{1,2}\b", trans)
-        )
-        already_title = bool(re.match(r"Key to\b", trans, re.I)) and has_key_src
-        if not dumpish and not already_title and not (
-            words > 20 and (has_key_src or has_key_en)
-        ):
-            continue
-
-        def _family_from_keys() -> str | None:
-            for other in blocks:
-                if other is block or other.get("role") != "key":
-                    continue
-                blob = _norm(other.get("translation"))
-                match = re.search(
-                    r"\*([A-Z][a-z]{3,}(?:us|is|a|um))(?:\*\s+\*?|\s+)[a-z]{3,}",
-                    blob,
-                )
-                if match and not match.group(1).endswith("ous"):
-                    stem = match.group(1)
-                    name = stem[:-2] + "idae" if stem.endswith("us") else stem + "idae"
-                    if name.endswith("usidae"):
-                        name = name[:-6] + "idae"
-                    return name
-            for other in blocks:
-                if other is block or other.get("role") != "key":
-                    continue
-                blob = _norm(other.get("translation"))
-                match = re.search(r"\*?([A-Z][a-z]+idae)\*?", blob)
-                if match:
-                    return match.group(1)
-            return None
-
-        fam = _family_from_keys()
-        if re.search(r"日本産|Japanese", source + " " + trans, re.I):
-            title = (
-                f"Key to Japanese species of {fam}" if fam else "Key to Japanese species"
-            )
-        else:
-            title = f"Key to species of {fam}" if fam else "Key to species"
-        if trans == title:
-            continue
-        block["translation"] = title
-        block["level"] = block.get("level") or 2
-        changed.append({
-            "rule": "trim_key_dump_heading",
-            "block_id": block.get("block_id"),
-            "title": title,
-        })
-
-
-def _body_couplet_number_to_key(blocks: list[dict], changed: list[dict]) -> None:
-    """正文里偶行末跳转号、无点线 → 收回 key，交给 repair-keys 补制表符。"""
-    from .keyrepair import looks_like_species_desc_key
-
-    page_has_key = any(b.get("role") == "key" for b in blocks)
-    for block in blocks:
-        if block.get("role") != "body":
-            continue
-        # 保留换行：_norm 会把换行压成空格，偶行号就丢了
-        raw = (block.get("translation") or "").replace("\r\n", "\n").replace("\r", "\n")
-        text = raw.strip()
-        if not text or re.search(r"…{2,}|\.{5,}", text):
-            continue
-        if re.search(r"\(new name\)", text, re.I):
-            continue  # 和名索引行，不是检索表
-        if looks_like_species_desc_key(text, _norm(block.get("text"))):
-            continue
-        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-        hit = next(
-            (
-                ln
-                for ln in lines
-                if len(ln) >= 28 and re.search(r"\s([1-9]|[1-9]\d)\s*$", ln)
-            ),
-            None,
-        )
-        if hit is None:
-            # 已被压成单行：“… smooth 5 Anterior …”
-            match = re.search(
-                r"(.{28,}?)\s([1-9]|[1-9]\d)(?=\s+[A-Z*])",
-                re.sub(r"\s+", " ", text),
-            )
-            hit = match.group(0) if match else None
-        if hit is None:
-            continue
-        # 避免把普通计量句收成检索表：同页已有 key，或行内像鉴别特征
-        if not page_has_key and not re.search(
-            r"\b(?:parapod|chaeta|elytr|antenna|segment|notopod|neuropod|"
-            r"疣足|刚毛|触手|背鳞)\b",
-            hit,
-            re.I,
-        ):
-            continue
-        block["role"] = "key"
-        changed.append({
-            "rule": "body_couplet_number_to_key",
-            "block_id": block.get("block_id"),
-        })
-
-
-_PARTIAL_KANA_FIXES = (
-    (re.compile(r"ナナテイ?ソ?メ?矶沙蚕科"), "欧努菲虫科"),
-    (re.compile(r"ナナテイソメ科"), "欧努菲虫科"),
-    (re.compile(r"与ナナテ"), "与欧努菲虫"),
-)
-
-
-def _fix_partial_kana_glosses(blocks: list[dict], changed: list[dict]) -> None:
-    """半截片假名科名等明显漏译 → 确定性替换。"""
-    for block in blocks:
-        text = _norm(block.get("translation"))
-        if not text or not re.search(r"[\u3040-\u30ff]", text):
-            continue
-        updated = text
-        for pattern, repl in _PARTIAL_KANA_FIXES:
-            updated = pattern.sub(repl, updated)
-        if updated != text:
-            block["translation"] = updated
-            changed.append({
-                "rule": "fix_partial_kana_glosses",
-                "block_id": block.get("block_id"),
-            })
 
 
 def _citation_body_bleed(blocks: list[dict], changed: list[dict]) -> None:
@@ -1608,9 +1343,7 @@ def _merge_split_paragraphs(blocks: list[dict], changed: list[dict]) -> None:
             and kept[-1].get("role") == "body"
             and text
             and text[0].islower()
-            # 含中文句号；也勿把「a：体前部」图注拼回分布段
-            and not re.search(r"[.!?;:。．！？]\s*$", _norm(kept[-1].get("translation")))
-            and not re.match(r"[a-zA-Zａ-ｚ][:：]", text)
+            and not re.search(r"[.!?;:]\s*$", _norm(kept[-1].get("translation")))
         ):
             kept[-1]["translation"] = (
                 _norm(kept[-1].get("translation")) + " " + text
@@ -2012,6 +1745,23 @@ def _trim_embedded_duplicate_list(blocks: list[dict], page: dict, changed: list[
                 break
 
 
+_FIG_CAPTION = re.compile(r"^\s*(?:Figs?|L[aá]ms?|Plates?)\.?\s*\d", re.I)
+
+
+def _caption_like(block: dict) -> bool:
+    """A caption, or a body block that opens like one ("Fig. 5. ...").
+
+    OCR layouts leave captions as body; the builder promotes them later
+    (promote_captions).  Without this a caption heading the next page hid the
+    paragraph continuing under it (Fauna Vol. 21 pp. 13-14, 27-28, 31-32, 35-36).
+    """
+    if block.get("role") == "caption":
+        return True
+    if block.get("role") == "body" and block.get("label") == "vision_footnote":
+        return True  # PaddleOCR-VL labels figure captions and their continuations so
+    return block.get("role") == "body" and bool(_FIG_CAPTION.match(block.get("text") or block.get("translation") or ""))
+
+
 def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None:
     """Join body paragraphs split by a source page break.
 
@@ -2034,13 +1784,22 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         # A paragraph can run over more than one page break; after a join the
         # merged block belongs to the next page, so reuse it instead of the
         # page's own last block.
+        # A figure caption standing between the two fragments (at the end of
+        # this page or the start of the next) does not end the paragraph.
+        a_flow = [x for x in a_blocks if not _caption_like(x)]
+        b_flow = [x for x in b_blocks if not _caption_like(x)]
         if carry is not None and carry[1] == prev.get("page"):
             a = carry[0]
-        elif a_blocks:
-            a = a_blocks[-1]
+        elif a_flow:
+            a = a_flow[-1]
         else:
             continue
-        b = b_blocks[0]
+        if not b_flow:
+            # A page holding only figures and captions: the paragraph goes on
+            # after it (Fauna Vol. 21 pp. 13-15, "desa-" / "parece").
+            carry = (a, nxt.get("page")) if a.get("role") == "body" else None
+            continue
+        b = b_flow[0]
         if a.get("role") != "body" or b.get("role") != "body":
             carry = None
             continue
@@ -2054,11 +1813,12 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         # join, after the punctuation is set aside.
         leading = re.match(r"^[,;]\s*", tb)
         probe = tb[leading.end():] if leading else tb
-        if terminal.search(ta) or not probe[:1].islower():
+        # "(Heacox y Schröder, 1978)" continues the sentence too (Vol. 21 p. 22).
+        if terminal.search(ta) or not (probe[:1].islower() or probe[:1] == "("):
             carry = None
             continue
         a["translation"] = ta + " " + tb
-        nxt["blocks"] = b_blocks[1:]
+        nxt["blocks"] = [x for x in b_blocks if x is not b]
         # Tell the coverage check that this page's opening source block moved
         # to the previous page; the words are not missing from the book.
         # Patch-rebuilt blocks have no source text, so fall back to the
@@ -2071,7 +1831,8 @@ def _merge_cross_page_paragraphs(pages: list[dict], changed: list[dict]) -> None
         )
         nxt["_merged_first_block_into"] = prev.get("page")
         # Do not carry the paragraph past blocks that follow it on this page.
-        carry = (a, nxt.get("page")) if not nxt["blocks"] else None
+        carry = (a, nxt.get("page")) if all(
+            x.get("role") == "caption" for x in nxt["blocks"]) else None
         changed.append({
             "rule": "cross_page_paragraph_merge",
             "page": prev.get("page"),
@@ -2118,1427 +1879,347 @@ def backfill_source(data: dict[str, Any], source: dict[str, Any]) -> dict[str, A
     return {"filled_blocks": len(filled), "unmatched_blocks": unmatched, "changes": filled}
 
 
-def apply_block_edits(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+def block_src_hash(block: dict[str, Any]) -> str:
+    """Fingerprint of a block's SOURCE text only (32 hex chars, sha256).
+
+    Blocks without source text hash to "" so that no old_hash can match them:
+    a lock that falls back to the translation would go stale on every edit.
+    """
+    import hashlib
+
+    text = (block.get("text") or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+_EDIT_FIELDS = ("translation", "role", "level")
+_OLD_KEY = {"translation": "old_translation", "role": "old_role", "level": "old_level"}
+_EDIT_KEYS = {"block_id", "old_hash", "page", "remove", "boundary_reviewed", *_EDIT_FIELDS, *_OLD_KEY.values(), "old_prev", "old_next",
+              "old_struct"}
+_PATCH_KEYS = {"version", "edits", "inserts"}
+NOHASH = "~"  # a neighbour exists but has no usable source hash ("" means: no neighbour at all)
+
+
+def block_struct_digest(block: dict[str, Any]) -> str:
+    """Digest of the WHOLE block (canonical JSON, every field), 32 hex chars.
+
+    A delete binds to it so that replaying the delete after any field changed
+    (table cell, list item, figure entry, couplet target/name, ...) is stale
+    instead of silently dropping the edit.
+    """
+    import hashlib
+    import json
+
+    raw = json.dumps(block, sort_keys=True, ensure_ascii=False, default=repr)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+def neighbour_hash(hashes: list[str], j: int) -> str:
+    """Hash of the block at book index ``j``: "" outside the book, NOHASH when textless."""
+    if j < 0 or j >= len(hashes):
+        return ""
+    return hashes[j] or NOHASH
+
+
+def safe_key(x: Any) -> Any:
+    """Hashable key for any JSON id: strings as-is, anything else by type+repr."""
+    return x if isinstance(x, str) else ("#nonstr", type(x).__name__, repr(x))
+
+
+def block_neighbours(data: dict[str, Any]) -> dict[Any, tuple[str, str]]:
+    """``block_id`` -> (prev, next) source hashes over the WHOLE book order.
+
+    Same semantics as ``blockid.fingerprint_table`` (neighbours cross page
+    boundaries; "" only at the book's first/last block).
+    """
+    flat = [b for p in data.get("pages", []) for b in p.get("blocks", [])]
+    hs = [block_src_hash(b) for b in flat]
+    return {safe_key(b.get("block_id")): (neighbour_hash(hs, i - 1), neighbour_hash(hs, i + 1))
+            for i, b in enumerate(flat)}
+
+
+def _old_problem(edit: dict[str, Any]) -> str:
+    for f, k in _OLD_KEY.items():
+        if k not in edit:
+            continue
+        v = edit[k]
+        if f == "level":
+            if v is not None and (isinstance(v, bool) or not isinstance(v, int) or v < 1):
+                return "old_level must be null or a positive integer"
+        elif not isinstance(v, str) and not (f == "role" and v is None):
+            return f"{k} must be a string" + (" or null" if f == "role" else "")
+    return ""
+
+
+def _role_problem(block: dict[str, Any]) -> str:
+    """Whole-block structure check, the same validator the builder input goes through."""
+    from booklayout.profile import validate_aligned
+
+    errs = validate_aligned({"pages": [{"page": 0, "blocks": [block]}]})
+    return errs[0].split(": ", 1)[-1] if errs else ""
+
+
+def _field_problem(field: str, value: Any) -> str:
+    if field == "translation":
+        return "" if isinstance(value, str) else "translation must be a string"
+    if field == "role":
+        from booklayout.profile import ROLES
+
+        return "" if isinstance(value, str) and value in ROLES else f"role must be one of {sorted(ROLES)}"
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return "level must be a positive integer"
+    return ""
+
+
+def _edit_problem(edit: Any, strict: bool = False) -> str:
+    """Why an edit is malformed, or "" when it is well formed."""
+    if not isinstance(edit, dict):
+        return "edit is not an object"
+    bid = edit.get("block_id")
+    if not isinstance(bid, str) or not bid:
+        return "block_id must be a non-empty string"
+    unknown = set(edit) - _EDIT_KEYS
+    if unknown:
+        return f"unknown field(s): {sorted(unknown)}"
+    if "remove" in edit and not isinstance(edit["remove"], bool):
+        return "remove must be a JSON boolean"
+    if "boundary_reviewed" in edit and not isinstance(edit["boundary_reviewed"], bool):
+        return "boundary_reviewed must be a JSON boolean"
+    # boundary_reviewed records a reviewer's decision on a page boundary that
+    # structure.uncertain_boundaries flagged; it changes no text.
+    has_fields = any(f in edit for f in _EDIT_FIELDS) or "boundary_reviewed" in edit
+    if edit.get("remove") and has_fields:
+        return "remove cannot be combined with field updates"
+    if not edit.get("remove") and not has_fields:
+        return "edit has no operation"
+    for f in _EDIT_FIELDS:
+        if f in edit:
+            why = _field_problem(f, edit[f])
+            if why:
+                return why
+    for k in ("old_prev", "old_next"):
+        if k in edit and not isinstance(edit[k], str):
+            return f"{k} must be a string hash"
+    why = _old_problem(edit)
+    if why:
+        return why
+    if strict:
+        if isinstance(edit.get("page"), bool) or not isinstance(edit.get("page"), int):
+            return "version 2 requires integer page"
+        if not isinstance(edit.get("old_hash"), str):
+            return "version 2 requires old_hash (string)"
+        if edit.get("remove") and not isinstance(edit.get("old_struct"), str):
+            return "version 2 delete requires old_struct (block_struct_digest)"
+        need = list(_EDIT_FIELDS) if edit.get("remove") else [f for f in _EDIT_FIELDS if f in edit]
+        for f in need:
+            if _OLD_KEY[f] not in edit:
+                return f"version 2 requires {_OLD_KEY[f]}"
+        for k in ("old_prev", "old_next"):
+            if k not in edit:
+                return f"version 2 requires {k}"
+    return ""
+
+
+def _patch_problem(patch: Any) -> str:
+    if not isinstance(patch, dict):
+        return "patch must be a JSON object"
+    if set(patch) - _PATCH_KEYS:
+        return f"unknown top-level key(s): {sorted(set(patch) - _PATCH_KEYS, key=repr)}"
+    ver = patch.get("version", 1)
+    if type(ver) is not int or ver not in (1, 2):
+        return "version must be integer 1 or 2"
+    if not isinstance(patch.get("edits"), list):
+        return "edits must be an array"
+    if "inserts" in patch and not isinstance(patch["inserts"], list):
+        return "inserts must be an array"
+    return ""
+
+
+def apply_block_edits(data: dict[str, Any], patch: dict[str, Any],
+                      allow_partial: bool = False) -> dict[str, Any]:
     """Apply block-level translation edits by block_id.
 
     Companion to :func:`apply_page_patch` for repairs that touch one or two
-    blocks of a page: replace a translation, change a role, or remove a block.
-    Removed blocks are dropped; the page keeps its other blocks in order.
+    blocks of a page: replace a translation, change a role or level, or remove
+    a block.  Removed blocks are dropped; the page keeps its other blocks in order.
+
+    The patch must be an object with integer ``version`` (1 or 2) and an
+    ``edits`` array, else ``ValueError``.  Edits are validated strictly
+    (non-empty string ids, boolean ``remove``, known fields, ``role`` from the
+    builder's role set, integer ``level``, at least one operation).
+    ``old_hash`` locks the source text; ``old_translation`` / ``old_role`` /
+    ``old_level`` are preconditions on the current values.  Patch ``"version": 2``
+    makes ``old_hash``, the logical ``page``, ``old_prev`` and ``old_next``
+    mandatory, requires an ``old_*`` for every changed field (a delete needs
+    ``old_translation``, ``old_role`` and ``old_level``, null allowed), and makes the batch all-or-nothing: any invalid, missing or
+    stale edit leaves ``data`` untouched unless ``allow_partial``.  Report keys:
+    applied, removed, missing, stale, invalid.  Duplicate block ids in ``data``
+    raise ``ValueError`` (an id must name exactly one block).  Optional
+    ``old_prev`` / ``old_next`` carry the source hashes of the adjacent blocks
+    (``""`` only at the book's first/last block, same as ``fingerprint_table``);
+    a mismatch is ``stale`` (same-text re-split guard).  Residual risk: two
+    identical blocks with identical neighbours are indistinguishable without a
+    persistent docstore block id (P3).
     """
+    import copy
+    from collections import Counter
+
+    bad = _patch_problem(patch)
+    if bad:
+        raise ValueError(bad)
+    ids: list[Any] = [b.get("block_id") for p in data.get("pages", []) for b in p.get("blocks", [])]
+    counts = Counter(i for i in ids if isinstance(i, str) and i)
+    dup = sorted(i for i, n in counts.items() if n > 1)
+    if dup:
+        raise ValueError(f"duplicate block_id in aligned data: {dup[:5]}")
+    work = copy.deepcopy(data)
     by_id = {
-        b.get("block_id"): (p, b)
-        for p in data.get("pages", [])
+        safe_key(b.get("block_id")): (p, b)
+        for p in work.get("pages", [])
         for b in p.get("blocks", [])
     }
+    neigh = block_neighbours(data)
     applied: list[str] = []
     removed: list[str] = []
     missing: list[str] = []
-    for edit in patch.get("edits", []):
-        bid = edit.get("block_id")
-        if bid not in by_id:
-            missing.append(str(bid))
+    stale: list[str] = []
+    invalid: list[str] = []
+    strict = patch.get("version", 1) >= 2
+    for edit in patch["edits"]:
+        problem = _edit_problem(edit, strict)
+        if problem:
+            who = edit.get("block_id") if isinstance(edit, dict) else repr(edit)
+            invalid.append(f"{who}: {problem}")
+            continue
+        bid = edit["block_id"]
+        if safe_key(bid) not in by_id:
+            missing.append(bid)
             continue
         page, block = by_id[bid]
+        # Optimistic lock: block ids are positional (p004_01), so a re-split can
+        # make an id point at different text.  A patch that carries old_hash is
+        # applied only if the block's source text still matches.
+        locked = "old_hash" in edit or strict
+        if locked and (not edit.get("old_hash") or edit["old_hash"] != block_src_hash(block)):
+            stale.append(bid)
+            continue
+        if ("page" in edit and edit["page"] != page.get("page")) or (strict and edit["page"] != page.get("page")):
+            stale.append(bid)
+            continue
+        if "old_struct" in edit and edit["old_struct"] != block_struct_digest(block):
+            stale.append(bid)
+            continue
+        if "old_prev" in edit or "old_next" in edit:
+            # Neighbour fingerprint over the ORIGINAL book order: rejects a
+            # same-text block that a re-split moved to a different spot.
+            prev_h, next_h = neigh[bid]
+            if edit.get("old_prev", prev_h) != prev_h or edit.get("old_next", next_h) != next_h:
+                stale.append(bid)
+                continue
+        olds = {"translation": block.get("translation") or "", "role": block.get("role"),
+                "level": block.get("level")}
+        if any(k in edit and edit[k] != olds[f] for f, k in _OLD_KEY.items()):
+            stale.append(bid)
+            continue
         if edit.get("remove"):
             page["blocks"] = [b for b in page["blocks"] if b is not block]
-            removed.append(str(bid))
-            applied.append(str(bid))
+            del by_id[safe_key(bid)]
+            removed.append(bid)
+            applied.append(bid)
             continue
-        if "translation" in edit:
-            block["translation"] = edit["translation"]
-        for field in ("role", "level"):
-            if field in edit:
-                block[field] = edit[field]
-        applied.append(str(bid))
-    return {"applied": applied, "removed": removed, "missing": missing}
-
-
-_PANEL_LEGEND = re.compile(
-    r"^(?P<head>.+?[。．])\s+(?P<tail>[a-zA-Zａ-ｚ][:：].+)$",
-    re.S,
-)
-# 分布段无句号时：……马达加斯加 a：体前部
-_DIST_PANEL = re.compile(
-    r"^(?P<head>(?:◆?分布|栖于|产于).+?)"
-    r"(?P<tail>\s+[a-zA-Zａ-ｚ][:：].+)$",
-    re.S,
-)
-_PANEL_ONLY = re.compile(
-    r"^[a-zA-Zａ-ｚ][:：].*(?:背面|腹面|疣足|刚毛|足刺|吻|咽|齿冠|体前|体中|体后)"
-)
-_FIG_CAPTION = re.compile(
-    r"^(?:Fig\.?\s*|图\s*|図\s*)(?P<num>\d+['′ʹ\"]?[a-zA-Z]?)",
-    re.I,
-)
-_SPECIES_LINE = re.compile(
-    r"^(?:[\u4e00-\u9fff]{2,24}(?:属|亞属|亚属|屬|种)?\s+)?"
-    r"\*?([A-Z][a-z]{2,})\*?"
-    r"(?:\s+\*?([a-z][a-z-]{2,})\*?)?"
-    r".{0,40}$"
-)
-_TAXON_NAME_LINE = re.compile(
-    # 可带中文属名前缀：「伪囊鳞虫属 *Paradyte* Pettibone, 1969」
-    r"^(?:[\u4e00-\u9fff]{2,24}(?:属|亞属|亚属|屬|种)?\s+)?"
-    r"\*?([A-Z][a-z]{2,})\*?"
-    r"(?:\s+\*?([a-z][a-z-]{2,})\*?)?"
-    r"(?:"
-    r"\s+\([A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]*\)"  # (Author)
-    r"|\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]*(?:\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.']*){0,2}"  # Author
-    r")?"
-    r"(?:,?\s*\d{4}[a-z]?)?"
-    r"\.?\s*$"
-)
-_REF_HEADINGS = {
-    "引用文献",
-    "参考文献",
-    "references",
-    "reference",
-    "literature cited",
-}
-# 残缺命名人年份整段（图旁 OCR）：(Pettibone, 199) → 删
-_TRUNCATED_AUTHOR_YEAR = re.compile(
-    r"^\(\s*[A-ZÀ-Ö][A-Za-zÀ-ÿ.'-]+(?:\s+(?:&\s*)?[A-ZÀ-Ö][A-Za-zÀ-ÿ.'-]+)*"
-    r",\s*\d{1,3}\s*\)\s*$"
-)
-# 文献条目：Author, year. … / 内田…, 1975-1987.
-_BIBLIO_LINE = re.compile(
-    r"^(?:"
-    r"[A-ZÀ-Ö][A-Za-zÀ-ÿ.'-]+(?:,\s*[A-Z]\.)*(?:\s+(?:&\s*|and\s+)?[A-ZÀ-Ö][A-Za-zÀ-ÿ.'-]+)*"
-    r",\s*\d{4}"
-    # 日文作者名与年份之间不得跨逗号/句号：描述段里嵌入的「Author, 1974」不是书目条目
-    # （2001 p139「体長4mm，…… Fauchald, 1974 ……」被整段回退成日文原文并标 ref）
-    # 间隙内也不得出现拉丁字母：「分類—チロリ科には Glycera Savigny, 1818」是科介绍里的
-    # 属名权威，不是文献（2007 p176、2001 p136 整段被回退成日文原文）
-    r"|[\u4e00-\u9fffぁ-ゖァ-ヶー]{2,20}[^,，。．A-Za-z]{0,40},\s*\d{4}"
-    r")"
-)
-
-
-_CAPTION_FIG = re.compile(
-    r"^(?P<head>(?:Fig\.?\s*|图\s*|図\s*)\d+['′ʹ\"]?[a-zA-Z]?)\s*(?P<rest>.*)$",
-    re.I | re.S,
-)
-# 图号后误留的日名片假名，或被 OCR/初译成假拉丁的单字（ユビシリス→Ubisilis）
-_KANA = re.compile(r"[ァ-ヶーぁ-ゖ]+")
-_FAKE_LATIN = re.compile(
-    r"^(?P<junk>[A-Za-z][A-Za-z-]{2,24})(?=\s+\*?[A-Z][a-z]{2,}|\s*$)"
-)
-
-
-def _scrub_caption_ocr_junk(blocks: list[dict], changed: list[dict]) -> None:
-    """删图题里 Fig.N 后的日名残片/假拉丁（今岛 Fig.3 ユビシリス→Ubisilis）。"""
-    for block in blocks:
-        if block.get("role") != "caption":
+        trial = {**block, **{f: edit[f] for f in _EDIT_FIELDS if f in edit}}
+        why = _role_problem(trial)
+        if why:
+            invalid.append(f"{bid}: {why}")
             continue
-        text = _norm(block.get("translation"))
-        src = _norm(block.get("text"))
-        m = _CAPTION_FIG.match(text or "")
-        if not m:
+        block.update({f: edit[f] for f in _EDIT_FIELDS if f in edit})
+        if "boundary_reviewed" in edit:
+            block["boundary_reviewed"] = edit["boundary_reviewed"]
+        applied.append(bid)
+    inserted: list[str] = []
+    for ins in patch.get("inserts", []):
+        # {"after_block_id": id, "block": {"block_id", "role", "translation", ...}}: a line the
+        # page lost (source-check "missing"); goes right after the named block, same page.
+        new = ins.get("block") if isinstance(ins, dict) else None
+        before = ins.get("before_block_id") if isinstance(ins, dict) else None
+        after = ins.get("after_block_id") if isinstance(ins, dict) else None
+        nid = new.get("block_id") if isinstance(new, dict) else None
+        if not (isinstance(nid, str) and nid and isinstance(new.get("translation"), str)
+                and (isinstance(after, str)) != (isinstance(before, str))):
+            invalid.append(f"insert {nid or ins!r}: needs exactly one of after_block_id/before_block_id "
+                           "and block with block_id, role, translation")
             continue
-        head, rest = m.group("head"), (m.group("rest") or "").strip()
-        if not rest:
+        after = after if isinstance(after, str) else before
+        if safe_key(after) not in by_id:
+            missing.append(after)
             continue
-        new_rest = rest.lstrip(".．。 ")
-        # 片假名整段去掉（日名应走「日名「…」」块，不进图题）
-        if _KANA.search(new_rest):
-            # ムカイシマシリス（向岛裂虫）→ 向岛裂虫；纯假名则清空
-            new_rest = re.sub(
-                r"[ァ-ヶーぁ-ゖ]+（([^）]+)）",
-                r"\1",
-                new_rest,
-            )
-            new_rest = _KANA.sub("", new_rest).strip(" ，,")
-        # 假拉丁单字后紧跟真属名/双名 → 删假字（Ubisilis *Exogone…*）
-        fake = _FAKE_LATIN.match(new_rest)
-        if fake:
-            after = new_rest[fake.end() :].lstrip(" ，,")
-            if after.startswith("*") or re.match(
-                r"[A-Z][a-z]{2,}(?:\s+[a-z]|\s+\()", after
-            ):
-                new_rest = after
-            elif src and _KANA.search(src):
-                # 源文是假名图题，译文这一个拉丁词就是误译
-                new_rest = after
-        new_text = (head + (" " + new_rest if new_rest else "")).strip()
-        if new_text != text:
-            block["translation"] = new_text
-            changed.append({
-                "rule": "scrub_caption_ocr_junk",
-                "block_id": block.get("block_id"),
-                "before": text[:80],
-                "after": new_text[:80],
-            })
+        if safe_key(nid) in by_id:
+            invalid.append(f"{nid}: insert block_id already exists")
+            continue
+        why = _role_problem(new)
+        if why:
+            invalid.append(f"{nid}: {why}")
+            continue
+        page, anchor = by_id[safe_key(after)]
+        pos = next(i for i, b in enumerate(page["blocks"]) if b is anchor) + (0 if ins.get("before_block_id") else 1)
+        page["blocks"].insert(pos, dict(new))
+        by_id[safe_key(nid)] = (page, page["blocks"][pos])
+        inserted.append(nid)
+    report: dict[str, Any] = {"applied": applied, "removed": removed, "missing": missing,
+                              "stale": stale, "invalid": invalid, "inserted": inserted}
+    if strict and not allow_partial and (missing or stale or invalid):
+        return {**report, "applied": [], "removed": [],
+                "not_applied": applied, "not_applied_removed": removed}
+    data["pages"] = work.get("pages", [])
+    return report
 
 
-# 命名人被误译成「沙蚕目」；(沙蚕目 Grube, 1878)→(Grube, 1878)
-_POLYCHAETA_AS_AUTHOR = re.compile(
-    r"([（(])\s*沙\s*蚕\s*目\s*[，,]?\s*"
-)
-_DUP_BINOM_AFTER_TITLE = re.compile(
-    r"^(?P<head>(?:图|図)\s*\d+\s+"
-    r"\*?[A-Z][a-z]{2,}\*?\s+\*?[a-z][a-z-]+\*?"
-    r"(?:\s*[（(][^）)]{0,40}[）)])?)"
-    r"(?P<dup>(?:\s+\*?[A-Z][a-z]{2,}\*?(?:\s+\*?[a-z][a-z-]+\*?)?"
-    r"(?:\s*[（(][^）)]{0,40}[）)])?)+)"
-    r"(?P<tail>.*)$"
-)
-_OCR_PANEL_PREFIX = re.compile(r"^[A-Z]?C?\d{4,}\s+(?=[a-zA-Zａ-ｚ][:：])")
-_LEGEND_TRAILING_SPECIES = re.compile(
-    r"\s+\*?[A-Z][a-z]{2,}\*?\s+\*?[a-z][a-z-]+\*?.*$"
-)
-# 种名行粘了空日名：「图43 日名「」 饭冢脆鳞虫 *Genus…」
-_EMPTY_WANAME_IN_TITLE = re.compile(r"日名\s*[「『]\s*[」』]\s*")
-# 描述被切成「……23」+「、26、29、32体节」
-_BODY_COMMA_CONTINUATION = re.compile(r"^[、，,]\d")
+def _split_reference_blocks(blocks: list[dict], changed: list[dict]) -> None:
+    """Issue #37: one ``ref`` block per bibliography entry (hanging indent)."""
+    from booklayout.paragraphs import split_reference_entries
 
-
-def _join_comma_body_continuations(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """把以「、26、29体节」开头的残段拼回上一段描述。"""
     out: list[dict] = []
     for block in blocks:
-        if block.get("_drop"):
+        parts = (split_reference_entries(block.get("translation") or "")
+                 if block.get("role") == "ref" else [])
+        if len(parts) < 2:
             out.append(block)
             continue
-        text = _norm(block.get("translation"))
-        if (
-            out
-            and block.get("role") == "body"
-            and out[-1].get("role") == "body"
-            and text
-            and _BODY_COMMA_CONTINUATION.match(text)
-            and not (out[-1].get("translation") or "").startswith(("日名", "和名", "◆", "分布"))
-        ):
-            prev = out[-1]
-            prev_t = _norm(prev.get("translation"))
-            prev["translation"] = f"{prev_t}{text}"
-            block["_drop"] = True
-            changed.append({
-                "rule": "join_comma_body_continuation",
-                "block_id": block.get("block_id"),
-                "page": page.get("page"),
-                "into": prev.get("block_id"),
-            })
-        out.append(block)
+        src_parts = split_reference_entries(block.get("text") or "")
+        if len(src_parts) != len(parts):
+            src_parts = [block.get("text") or ""] + [""] * (len(parts) - 1)
+        for i, (tr, src) in enumerate(zip(parts, src_parts)):
+            new = dict(block)
+            new["translation"] = tr
+            if "text" in block:
+                new["text"] = src
+            if i:
+                new["block_id"] = f"{block.get('block_id', 'ref')}-r{i + 1}"
+            out.append(new)
+        changed.append({"block_id": block.get("block_id"), "rule": "reference_entries_split",
+                        "entries": len(parts)})
     blocks[:] = out
 
 
-def _looks_like_taxon_authority_line(text: str) -> bool:
-    """属/亚科标题「Genus Author, year」勿当书目（否则会吃掉居中标题）。"""
-    t = _norm(text)
-    if not t:
-        return False
-    if _TAXON_NAME_LINE.match(t.replace("（", "(").replace("）", ")")):
-        return True
-    if re.match(
-        r"^(?:[\u4e00-\u9fff]{2,24}(?:属|亞属|亚属|屬|种)?\s+)?"
-        r"\*?[A-Z][A-Za-z-]{2,}\*?"
-        r"(?:\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]*)+(?:,\s*\d{4}[a-z]?)?\s*$",
-        t,
-    ):
-        return True
-    if re.match(
-        r"^(?:亚科|亞科|总科|科|族|属|屬)\s+\*?[A-Z][A-Za-z-]{3,}",
-        t,
-    ):
-        return True
-    return False
-
-
-def _prefer_source_for_bibliography(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """文献不翻译：书目行用源文（日/英），不保留简译标题。"""
-    in_refs = False
-    for block in blocks:
-        tr = _norm(block.get("translation"))
-        src = _norm(block.get("text"))
-        if tr.casefold() in _REF_HEADINGS or (src and src.casefold() in _REF_HEADINGS):
-            in_refs = True
-            continue
-        role = block.get("role")
-        if role == "heading" and tr and len(tr) < 80:
-            # 新章节结束文献区；属/种标题本身不是书目
-            if tr.casefold() not in _REF_HEADINGS:
-                in_refs = False
-            continue
-        # 属/亚科/种名权威行 ≠ 书目
-        if _looks_like_taxon_authority_line(tr) or _looks_like_taxon_authority_line(src):
-            continue
-        # 种记述引证「Genus species : Author, year, pp.」保持 citation/ref，不整段替换丢格式
-        if re.match(
-            # 冒号必须在开头 80 字内：长段正文里的 [TN: ...] 不是引证（2009 p249 误标 ref）
-            r"^\*?[A-Z][a-z].{0,80}?\s*:\s*[A-ZÀ-Ö].{0,300}\d{4}",
-            tr or "",
-        ):
-            if role not in ("ref", "citation"):
-                block["role"] = "ref"
-                changed.append({
-                    "rule": "species_citation_role_ref",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                })
-            continue
-        looks_biblio = bool(src and _BIBLIO_LINE.match(src)) or bool(
-            tr and _BIBLIO_LINE.match(tr)
-        )
-        # 真正的书目还常带刊名/页码；纯「Name Name, year」太像属名权威行
-        biblio_rich = bool(
-            re.search(
-                r"(?:pp?\.|pls?\.|figs?\.|Journal|Bull\.|Proc\.|Mem\.|"
-                r"报告|専報|研究|南紀|南纪|生物)",
-                (src or "") + " " + (tr or ""),
-                re.I,
-            )
-        )
-        # 文献区 / 已标 ref·citation / 富书目行（内田…等误标 body）
-        use = in_refs or role in ("ref", "citation") or (looks_biblio and biblio_rich)
-        if not use or not src:
-            continue
-        # 文献区之外的日文散文（描述段/科介绍）不是书目：保留译文，不回退源文
-        if not in_refs and looks_like_japanese_prose(src):
-            continue
-        if not (looks_biblio and biblio_rich) and role not in ("ref", "citation") and not in_refs:
-            continue
-        # 源文已是文献原文；译文被译成简体/中文题名时回退
-        if tr == src:
-            if role not in ("ref", "citation"):
-                block["role"] = "ref"
-                changed.append({
-                    "rule": "bibliography_role_ref",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                })
-            continue
-        # 仅当译文相对源文被「译」过（含汉字简写题名）才回退；英文书目保持
-        src_has_jp = bool(re.search(r"[\u3040-\u30ff\u4e00-\u9fff]", src))
-        tr_simplified = src_has_jp and tr != src
-        if not tr_simplified and role not in ("ref", "citation") and not in_refs:
-            # 英文书目误标 body：升 role，不改文
-            if looks_biblio and biblio_rich and role == "body":
-                block["role"] = "ref"
-                changed.append({
-                    "rule": "bibliography_role_ref",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                })
-            continue
-        block["translation"] = src
-        block["role"] = "ref"
-        changed.append({
-            "rule": "bibliography_prefer_source",
-            "block_id": block.get("block_id"),
-            "page": page.get("page"),
-            "sample": src[:100],
-        })
-
-
-def _scrub_truncated_author_year(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """删整段残缺命名人年份，如 (Pettibone, 199)。"""
-    for block in blocks:
-        text = _norm(block.get("translation"))
-        if not text or not _TRUNCATED_AUTHOR_YEAR.match(text):
-            continue
-        block["_drop"] = True
-        changed.append({
-            "rule": "drop_truncated_author_year",
-            "block_id": block.get("block_id"),
-            "page": page.get("page"),
-            "text": text,
-        })
-
-
-# 图注/正文末尾残缺引证：(Miura &  / (Pettibone, 199
-_TRUNCATED_CITE_TAIL = re.compile(
-    r"[（(]\s*"
-    r"(?P<head>[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]+"
-    r"(?:\s*(?:&|and|et)\s*[A-ZÀ-ÖØ-Ý]?[A-Za-zÀ-ÿ.']*)?)"
-    r"(?:\s*,\s*\d{1,3})?"
-    r"\s*$"
-)
-# 完整 Author[, Author][, year[a]]
-_FULL_AUTHOR_YEAR = re.compile(
-    r"\b(?P<full>"
-    r"[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]+"
-    r"(?:\s*(?:&|and|et)\s*[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]+)*"
-    r",\s*\d{4}[a-z]?"
-    r")\b"
-)
-
-
-def complete_truncated_citation(text: str, evidence: str) -> str | None:
-    """用同页/同块完整引证补全残尾。不明则返回 None（不瞎补）。"""
-    t = _norm(text)
-    ev = _norm(evidence)
-    if not t or not ev:
-        return None
-    m = _TRUNCATED_CITE_TAIL.search(t)
-    if m is None:
-        return None
-    head = re.sub(r"\s+", " ", m.group("head")).strip()
-    # 至少要有姓；「Author &」半截也收
-    head_key = re.split(r"\s*(?:&|and|et)\s*", head, maxsplit=1)[0].rstrip(" ,.")
-    if len(head_key) < 3:
-        return None
-    candidates: list[str] = []
-    for fm in _FULL_AUTHOR_YEAR.finditer(ev):
-        full = fm.group("full")
-        if full.casefold().startswith(head_key.casefold()):
-            # 「Author &」半截：完整式须含 &/and 第二作者
-            if "&" in head or re.search(r"\b(?:and|et)\b", head, re.I):
-                if not re.search(r"\s*(?:&|and|et)\s*[A-Z]", full, re.I):
-                    continue
-            candidates.append(full)
-    # 唯一候选才补；多个不同完整式 → 不猜
-    uniq = list(dict.fromkeys(candidates))
-    if len(uniq) != 1:
-        return None
-    full = uniq[0]
-    # 统一成半角括号形式，贴在原文截断位置
-    prefix = t[: m.start()].rstrip()
-    return f"{prefix} ({full})" if prefix else f"({full})"
-
-
-def _complete_truncated_citations(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """图注/legend 末尾 (Miura & → 用同页完整引证补全。"""
-    page_text = "\n".join(
-        _norm(b.get("translation")) or _norm(b.get("text"))
-        for b in blocks
-        if not b.get("_drop")
-    )
-    for block in blocks:
-        if block.get("_drop"):
-            continue
-        role = block.get("role")
-        if role not in ("legend", "caption", "body", "note"):
-            continue
-        text = _norm(block.get("translation"))
-        if not text or not _TRUNCATED_CITE_TAIL.search(text):
-            continue
-        # 证据：同页其他块优先，其次本块前缀
-        others = "\n".join(
-            _norm(b.get("translation"))
-            for b in blocks
-            if b is not block and not b.get("_drop")
-        )
-        fixed = complete_truncated_citation(text, others or page_text)
-        if fixed is None:
-            # 本块内若前半已有完整引证也可
-            fixed = complete_truncated_citation(text, text)
-        if fixed is None or fixed == text:
-            continue
-        block["translation"] = fixed
-        changed.append({
-            "rule": "complete_truncated_citation",
-            "block_id": block.get("block_id"),
-            "page": page.get("page"),
-            "before": text[-40:],
-            "after": fixed[-60:],
-        })
-
-
-# 中文译文图号：日文「図N」→简体「图N」。lookahead 数字，避免误伤「図鑑」「図版」。
-_ZU_AS_FIG_NUM = re.compile(r"図(?=\s*\d)")
-
-
-def scrub_zu_fig_to_tu(text: str) -> str:
-    """中文输出统一图号用字：図99 → 图99（源文字段 text 可保留日文図）。"""
-    return _ZU_AS_FIG_NUM.sub("图", text or "")
-
-
-def _scrub_imajima_title_and_ocr_junk(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """清图N种名行重复双名/「沙蚕目」假命名人、空日名、C00000 残片、图注尾粘种名。"""
-    for block in blocks:
-        role = block.get("role")
-        text = _norm(block.get("translation"))
-        if not text:
-            continue
-
-        # 中文稿：heading/caption/body/key/legend 内「図N」→「图N」
-        if role in ("heading", "caption", "body", "key", "legend"):
-            tu = scrub_zu_fig_to_tu(text)
-            if _TARGET_LANG == "en":   # 英文版：図N/图N → Fig. N，不得留汉字
-                tu = re.sub(r"[図图]\s*(\d+)", r"Fig. \1", text)
-            if tu != text:
-                block["translation"] = tu
-                changed.append({
-                    "rule": "scrub_zu_fig_to_tu",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                    "before": text[:80],
-                    "after": tu[:80],
-                })
-                text = tu
-
-        # OCR 页码残片「C00000 a：…」→ 当作 legend
-        if role == "body" and _OCR_PANEL_PREFIX.match(text):
-            cleaned = _OCR_PANEL_PREFIX.sub("", text).strip()
-            block["translation"] = cleaned
-            block["role"] = "legend"
-            changed.append({
-                "rule": "scrub_ocr_panel_prefix",
-                "block_id": block.get("block_id"),
-                "page": page.get("page"),
-            })
-            text = cleaned
-            role = "legend"
-
-        def _strip_polychaeta(s: str) -> str:
-            s2 = _POLYCHAETA_AS_AUTHOR.sub(r"\1", s)
-            s2 = re.sub(r"([（(])\s*[，,]\s*", r"\1", s2)
-            return s2
-
-        if role in ("heading", "caption", "legend", "body"):
-            new = _strip_polychaeta(text)
-            if new != text:
-                block["translation"] = new
-                changed.append({
-                    "rule": "scrub_polychaeta_as_author",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                    "sample": new[:100],
-                })
-                text = new
-
-        if role in ("heading", "caption") and re.match(r"^(?:图|図)\s*\d+", text):
-            cleaned = _EMPTY_WANAME_IN_TITLE.sub("", text)
-            cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
-            if cleaned != text:
-                block["translation"] = cleaned
-                changed.append({
-                    "rule": "scrub_empty_waname_in_title",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                    "after": cleaned[:100],
-                })
-                text = cleaned
-            m = _DUP_BINOM_AFTER_TITLE.match(text)
-            if m and m.group("dup"):
-                # 只留首个「图N *种名* (命名人)」；去掉重复粘连
-                kept = m.group("head").strip()
-                # 若 head 括号只剩年份，试从 dup 段取带命名人的括号
-                if re.search(r"[（(]\s*\d{4}\s*[）)]", kept):
-                    better = re.search(
-                        r"[（(]\s*[A-ZÀ-Ö][^）)]*\d{4}\s*[）)]",
-                        m.group("dup"),
-                    )
-                    if better:
-                        kept = re.sub(
-                            r"[（(][^）)]*[）)]\s*$",
-                            better.group(0),
-                            kept,
-                        )
-                kept = _strip_polychaeta(kept)
-                kept = _EMPTY_WANAME_IN_TITLE.sub("", kept)
-                kept = re.sub(r"\s{2,}", " ", kept).strip()
-                block["translation"] = kept
-                changed.append({
-                    "rule": "scrub_dup_species_title",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                    "before": text[:100],
-                    "after": kept[:100],
-                })
-                text = kept
-
-        if role == "legend":
-            # 图注末尾误粘种名行
-            stripped = _LEGEND_TRAILING_SPECIES.sub("", text).rstrip(" 。．;")
-            stripped = _strip_polychaeta(stripped)
-            if stripped != text and re.search(r"[a-zA-Zａ-ｚ][:：]", stripped):
-                block["translation"] = stripped
-                changed.append({
-                    "rule": "scrub_legend_trailing_species",
-                    "block_id": block.get("block_id"),
-                    "page": page.get("page"),
-                })
-
-
-def _split_distribution_lettering(blocks: list[dict], page: dict, changed: list[dict]) -> None:
-    """今岛式：分布段后的「a：体前部…」是图注，必须拆出（docs/monograph_layout_ja.md）。"""
-    i = 0
-    while i < len(blocks):
-        block = blocks[i]
-        if block.get("role") != "body":
-            i += 1
-            continue
-        text = _norm(block.get("translation"))
-        m = _PANEL_LEGEND.match(text) or _DIST_PANEL.match(text)
-        if not m:
-            i += 1
-            continue
-        head, tail = m.group("head").strip(), m.group("tail").strip()
-        letters = re.findall(r"[a-zA-Zａ-ｚ][:：]", tail)
-        if len(letters) < 2 and not re.search(
-            r"(背面|腹面|疣足|刚毛|足刺|咽|齿冠)", tail
-        ):
-            i += 1
-            continue
-        if not re.search(r"(分布|栖于|产于|模式)", head):
-            i += 1
-            continue
-        block["translation"] = head
-        new_block = {
-            **{k: v for k, v in block.items() if k != "translation"},
-            "block_id": f"{block.get('block_id', 'b')}_leg",
-            "role": "legend",
-            "translation": tail,
-            "level": block.get("level"),
-        }
-        blocks.insert(i + 1, new_block)
-        changed.append({
-            "rule": "split_distribution_lettering",
-            "block_id": block.get("block_id"),
-            "page": page.get("page"),
-            "tail": tail[:80],
-        })
-        i += 2
-
-
-def _mark_panel_legends(blocks: list[dict], changed: list[dict]) -> None:
-    """独立成段的 a：b：c：标成 legend，便于并入 Fig 图题。"""
-    for block in blocks:
-        if block.get("role") not in ("body", "legend"):
-            continue
-        text = _norm(block.get("translation"))
-        if not text or not _PANEL_ONLY.match(text):
-            continue
-        if block.get("role") != "legend":
-            block["role"] = "legend"
-            changed.append({
-                "rule": "mark_panel_legend",
-                "block_id": block.get("block_id"),
-                "sample": text[:60],
-            })
-
-
-_GLUED_GENUS_TAIL = re.compile(
-    r"\s+(\*?[A-Z][a-z]{2,}\*?\s+[A-ZÀ-Ö][A-Za-zÀ-ÿ.'-]+(?:,\s*\d{4})?)\s*$"
-)
-_WA_NAME_START = re.compile(r"^(?:日名|和名)|[ァ-ヶー]{3,}|（新称）\s*$")
-
-
-def _is_imajima_species_caption(text: str) -> bool:
-    """短行「图N *Genus species* Author」——种名标题，不是插图下长图注。"""
-    t = _norm(text)
-    if not t or not _FIG_CAPTION.match(t):
-        return False
-    if re.search(r"[a-zA-Zａ-ｚ][:：]", t):
-        return False
-    # 须含拉丁种名（属+种加词）或至少属名+命名人
-    return bool(
-        re.search(r"\*?[A-Z][a-z]{2,}\*?\s+\*?[a-z][a-z-]{2,}", t)
-        or re.search(r"\*?[A-Z][a-z]{2,}\*?\s+[A-ZÀ-Ö]", t)
-    )
-
-
-def _split_glued_genus_from_caption(cap: str) -> tuple[str, str | None]:
-    """图10 *G s* Author *Genus* Author → (种名行, 属名行)。"""
-    t = _norm(cap)
-    # 去掉已并入的 a：…
-    panel = re.search(r"\s+([a-zA-Zａ-ｚ][:：].+)$", t)
-    if panel and re.search(r"(背面|疣足|刚毛|足刺|吻)", panel.group(1)):
-        t = t[: panel.start()].strip()
-    m = _GLUED_GENUS_TAIL.search(t)
-    if not m:
-        return t, None
-    genus = m.group(1).strip()
-    head = t[: m.start()].strip()
-    # 尾部必须是「仅属名」（无种加词）
-    if re.search(r"\*?[A-Z][a-z]{2,}\*?\s+\*?[a-z][a-z-]{2,}", genus):
-        return t, None
-    if genus and genus not in head:
-        return head, genus
-    return head, None
-
-
-def _is_genus_only_heading(block: dict) -> bool:
-    if block.get("role") != "heading":
-        return False
-    pt = _norm(block.get("translation"))
-    if not pt:
-        return False
-    if not _TAXON_NAME_LINE.match(pt.replace("（", "(").replace("）", ")")):
-        return False
-    return not bool(re.search(r"\*?[A-Z][a-z]+\*?\s+\*?[a-z][a-z-]+", pt))
-
-
-def _is_wa_name_block(block: dict) -> bool:
-    role = block.get("role")
-    if role not in ("heading", "body"):
-        return False
-    nt = _norm(block.get("translation"))
-    if not nt:
-        return False
-    if nt.startswith(("日名", "和名")):
-        return True
-    return bool(
-        _WA_NAME_START.search(nt)
-        and len(nt) <= 48
-        and re.search(r"[ァ-ヶー]{3,}", nt)
-    )
-
-
-def _is_fig_species_heading_block(block: dict) -> bool:
-    """heading「图N *Genus species* …」种名行。"""
-    if block.get("role") != "heading":
-        return False
-    t = _norm(block.get("translation"))
-    if not t or not re.match(r"^(?:图|図)\s*\d+", t):
-        return False
-    if re.search(r"[a-zA-Zａ-ｚ][:：]", t):
-        return False
-    return bool(re.search(r"[A-Z][a-z]{2,}", t)) and len(t) <= 160
-
-
-def _is_legend_block(block: dict) -> bool:
-    role = block.get("role")
-    nt = _norm(block.get("translation"))
-    if role == "legend":
-        return True
-    return role == "body" and bool(_PANEL_ONLY.match(nt or ""))
-
-
-def _fig_num_of(text: str | None) -> str | None:
-    m = re.match(r"^(?:图|図)\s*(\d+)", _norm(text) or "")
-    return m.group(1) if m else None
-
-
-def _binom_from_species_title(text: str) -> str | None:
-    """从图N种名行抽出 Genus epithet。"""
-    t = _norm(text) or ""
-    m = re.search(
-        r"\*?([A-Z][a-z]{2,})\*?\s+\*?([a-z][a-z-]{2,})\*?",
-        t,
-    )
-    if not m:
-        return None
-    return f"{m.group(1)} {m.group(2)}"
-
-
-def _lookup_zh_vernacular(binom: str | None) -> str | None:
-    """yiku 种中文名；查不到不强编。与学名行阶元中文名不同层。"""
-    if not binom or _TARGET_LANG == "en":
-        return None
-    try:
-        from .taxonzh import load_higher_taxon_zh
-
-        table = load_higher_taxon_zh()
-    except Exception:
-        return None
-    zh = table.get(binom) or table.get(binom.replace(" ", " "))
-    if not zh:
-        # try without hybrid markers
-        zh = table.get(re.sub(r"\s+", " ", binom))
-    if not zh or not re.search(r"[\u4e00-\u9fff]", zh):
-        return None
-    # 属名「…属」不当作种俗名行
-    if zh.endswith("属") and " " not in binom:
-        return None
-    return zh
-
-
-def _is_zh_vernacular_block(block: dict) -> bool:
-    if block.get("_zh_vernacular"):
-        return True
-    if block.get("role") not in ("heading", "body"):
-        return False
-    t = _norm(block.get("translation"))
-    if not t or len(t) > 40:
-        return False
-    if t.startswith(("日名", "和名", "图", "図", "分布", "◆")):
-        return False
-    if re.search(r"[A-Za-z]", t):
-        return False
-    return bool(re.fullmatch(r"[\u4e00-\u9fff·、]{2,24}", t))
-
-
-def _emit_imajima_species_account(
-    out: list[dict],
-    *,
-    genus_block: dict | None,
-    species_heading: dict,
-    wa_names: list[dict],
-    zh_names: list[dict],
-    refs: list[dict],
-    bodies: list[dict],
-    others: list[dict],
-    figure_blocks: list[dict],
-    legends: list[dict],
-) -> None:
-    """物种逻辑块序（硬）：属?→图N+学名→日名→中文名?→文献→描述/分布→图版→图注。
-
-    页首上种图版/图注尾巴不得并入本种开头；本种图版在分布之后。
-    """
-    if genus_block is not None:
-        out.append(genus_block)
-    out.append(species_heading)
-    for b in wa_names:
-        out.append(b)
-    for b in zh_names:
-        out.append(b)
-    for b in refs:
-        out.append(b)
-    for b in bodies:
-        out.append(b)
-    for b in others:
-        out.append(b)
-    for b in figure_blocks:
-        out.append(b)
-    for lb in legends:
-        lb["role"] = "legend"
-        out.append(lb)
-
-
-_FIG_TITLE_ZH = re.compile(
-    r"^(?P<figure>(?:图|図)\s*\d+)\s+"
-    r"(?:(?P<zh>[\u4e00-\u9fff·、]{2,24})\s+)?"
-    r"(?P<rest>\*?[A-Z].*)$"
-)
-_RANK_ZH_TAIL = re.compile(r"(?:属|亚科|科|目|纲|门)$")
-
-
-def _split_zh_from_fig_species_title(text: str) -> tuple[str, str | None]:
-    """图N [中文] *Genus species* … → (图N *Genus…*, 种中文名或 None)。
-
-    标题行只留图号+拉丁（+命名人）；种中文名另作 `_zh_vernacular`。
-    属/科级「…属」从标题去掉，但不当作种俗名行。
-    """
-    t = _norm(text) or ""
-    m = _FIG_TITLE_ZH.match(t)
-    if not m:
-        return t, None
-    zh = m.group("zh")
-    cleaned = f"{m.group('figure')} {m.group('rest')}".strip()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    if not zh:
-        return cleaned, None
-    if _RANK_ZH_TAIL.search(zh):
-        return cleaned, None
-    return cleaned, zh
-
-
-def _maybe_zh_vernacular_block(
-    species_heading: dict,
-    existing: list[dict],
-    *,
-    extracted_zh: str | None = None,
-) -> list[dict]:
-    """日名下插入中文俗名行；标题拆出的优先，否则 yiku；已有则不重复。"""
-    if any(_is_zh_vernacular_block(b) for b in existing):
-        return list(existing)
-    zh = extracted_zh
-    if not zh:
-        binom = _binom_from_species_title(species_heading.get("translation") or "")
-        zh = _lookup_zh_vernacular(binom)
-    if not zh:
-        return list(existing)
-    block = {
-        "block_id": f"{species_heading.get('block_id')}_zhname",
-        "role": "heading",
-        "level": 4,
-        "translation": zh,
-        "_zh_vernacular": True,
-        "source_page": species_heading.get("source_page"),
-    }
-    return list(existing) + [block]
-
-
-_REF_BINOM = re.compile(
-    r"(?<!\*)\b([A-Z][a-z]{2,})\s+([a-z][a-z-]{2,})\b(?!\*)"
-)
-# 文献题名里常见的英文词对，不是属种双名（曾把 Bay and / Polychaetous annelids 包斜体）
-_REF_BINOM_STOP2 = frozenset({
-    "and", "from", "with", "during", "aus", "der", "des", "die", "und",
-    "the", "of", "by", "in", "on", "to", "for", "its", "or", "an", "a",
-    "collected", "annelids", "polychaetes", "commensal", "coastal",
-    "vicinity", "institute", "marine", "biology", "through", "worms", "expedition", "history",
-    "natural", "antarctic", "regions", "iate", "errantia", "sedentaria",
-})
-_REF_FAMILY_SUFFIX = re.compile(r"(?:idae|inae|oidea|acea)$")
-_REF_BINOM_STOP1 = frozenset({
-    "marine", "polychaetous", "polychaeta", "polychaetes", "japanese", "annelida",
-    "annelids", "the", "on", "report", "families", "errant", "sagami",
-    "suruga", "matsushima", "onagawa", "ryukyu", "challenger", "siboga",
-    "bay", "sea", "japan", "kamchatka", "bering", "antarctic",
-})
-
-
-def _italicize_ref_citation_binomia(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """文献/引证行：属种双名 Markdown 斜体；命名人年份保持正体。
-
-    只包真正的 Genus species；文献英文题名里的词对一律不包，避免 taxostyle 误报。
-    """
-    for block in blocks:
-        if block.get("role") not in ("ref", "citation"):
-            continue
-        text = _norm(block.get("translation"))
-        if not text:
-            continue
-
-        def _wrap(m: re.Match[str]) -> str:
-            genus, epithet = m.group(1), m.group(2)
-            if genus.lower() in _REF_BINOM_STOP1 or epithet.lower() in _REF_BINOM_STOP2:
-                return m.group(0)
-            # 科/亚科/总科名（-idae 等）不是属名：Aphroditidae through 不是双名
-            if _REF_FAMILY_SUFFIX.search(genus):
-                return m.group(0)
-            # 种加词几乎不以 -ous/-ing 等英文后缀出现
-            if epithet.endswith(("ous", "ing", "tion", "ted", "ies")):
-                return m.group(0)
-            return f"*{genus} {epithet}*"
-
-        # 已有 *...* 区间内不再包一层：先占位再还原
-        held: list[str] = []
-
-        def _hold(m: re.Match[str]) -> str:
-            held.append(m.group(0))
-            return f"\0ITAL{len(held) - 1}\0"
-
-        protected = re.sub(r"\*[^*]+\*", _hold, text)
-        new = _REF_BINOM.sub(_wrap, protected)
-        for i, chunk in enumerate(held):
-            new = new.replace(f"\0ITAL{i}\0", chunk)
-        if new != text:
-            block["translation"] = new
-            changed.append({
-                "rule": "italicize_ref_citation_binomia",
-                "page": page.get("page"),
-                "block_id": block.get("block_id"),
-                "sample": new[:100],
-            })
-
-
-def _demote_zh_from_fig_species_titles(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """种名标题去中文种名，并保证日名后有 `_zh_vernacular`（若有中文名）。"""
-    i = 0
-    while i < len(blocks):
-        block = blocks[i]
-        if not _is_fig_species_heading_block(block):
-            i += 1
-            continue
-        cleaned, extracted = _split_zh_from_fig_species_title(
-            block.get("translation") or ""
-        )
-        if cleaned != _norm(block.get("translation")):
-            block["translation"] = cleaned
-            changed.append({
-                "rule": "strip_zh_from_fig_species_title",
-                "page": page.get("page"),
-                "block_id": block.get("block_id"),
-                "zh": extracted,
-            })
-        zh = extracted
-        if not zh:
-            zh = _lookup_zh_vernacular(_binom_from_species_title(cleaned))
-        # 扫描本种块：已有 zhname 则跳过；否则插在 waname 后 / ref 前
-        j = i + 1
-        has_zh = False
-        insert_at = i + 1
-        waname_at = None
-        while j < len(blocks):
-            nb = blocks[j]
-            if _is_fig_species_heading_block(nb) or _is_genus_only_heading(nb):
-                break
-            if _is_zh_vernacular_block(nb):
-                has_zh = True
-                break
-            if _is_wa_name_block(nb):
-                waname_at = j
-                insert_at = j + 1
-            elif nb.get("role") in ("ref", "citation") and waname_at is None:
-                insert_at = j
-                break
-            j += 1
-        if zh and not has_zh:
-            blocks.insert(
-                insert_at,
-                {
-                    "block_id": f"{block.get('block_id')}_zhname",
-                    "role": "heading",
-                    "level": 4,
-                    "translation": zh,
-                    "_zh_vernacular": True,
-                    "source_page": block.get("source_page"),
-                },
-            )
-            changed.append({
-                "rule": "insert_zh_vernacular_after_waname",
-                "page": page.get("page"),
-                "zh": zh,
-            })
-            i = insert_at + 1
-            continue
-        i += 1
-
-
-def _attach_legend_to_caption(blocks: list[dict], page: dict, changed: list[dict]) -> None:
-    """今岛种记述硬顺序：图N+学名→日名→中文名?→文献→描述→图版→图注。"""
-    out: list[dict] = []
-    i = 0
-    n = len(blocks)
-    while i < n:
-        block = blocks[i]
-        cap = _norm(block.get("translation"))
-        if block.get("role") != "caption" or not _is_imajima_species_caption(cap):
-            out.append(block)
-            i += 1
-            continue
-
-        title_text, glued_genus = _split_glued_genus_from_caption(cap)
-        fig_m = _FIG_CAPTION.match(title_text)
-        fig_label = f"图{fig_m.group('num')}" if fig_m else "图"
-        fig_num = fig_m.group("num") if fig_m else None
-
-        genus_block = None
-        dup_species: list[dict] = []
-        own_figs: list[dict] = []
-        # 只回吞：本种 figure_only、属名、重复种名。figure 可能在属名之前，须越过属名继续取。
-        # 页首 legend / 上种尾巴不回吞。
-        while out:
-            prev = out[-1]
-            pt = _norm(prev.get("translation"))
-            role = prev.get("role")
-            if (
-                prev.get("_figure_only")
-                and role == "caption"
-                and fig_num
-                and _fig_num_of(prev.get("translation")) == fig_num
-            ):
-                own_figs.insert(0, out.pop())
-                continue
-            if _is_genus_only_heading(prev) and genus_block is None:
-                genus_block = out.pop()
-                continue
-            if role in ("heading", "body") and _SPECIES_LINE.match(pt or "") and re.search(
-                r"[a-z]{3,}", pt or ""
-            ):
-                if any(
-                    tok and tok in title_text
-                    for tok in re.findall(r"[A-Z][a-z]{2,}\s+[a-z][a-z-]+", pt or "")
-                ):
-                    dup_species.append(out.pop())
-                    continue
-            break
-
-        j = i + 1
-        legends: list[dict] = []
-        wa_names: list[dict] = []
-        zh_names: list[dict] = []
-        refs: list[dict] = []
-        bodies: list[dict] = []
-        others: list[dict] = []
-        while j < n:
-            nb = blocks[j]
-            role = nb.get("role")
-            nt = _norm(nb.get("translation"))
-            if role == "caption" and not nb.get("_figure_only"):
-                if _is_imajima_species_caption(nt or ""):
-                    break
-            if role == "heading" and (
-                _is_imajima_species_caption(nt or "") or _is_fig_species_heading_block(nb)
-            ):
-                break
-            if nb.get("_figure_only") and role == "caption":
-                own_figs.append(nb)
-                j += 1
-                continue
-            if _is_legend_block(nb):
-                legends.append(nb)
-                j += 1
-                continue
-            if _is_wa_name_block(nb):
-                wa_names.append(nb)
-                j += 1
-                continue
-            if _is_zh_vernacular_block(nb):
-                zh_names.append(nb)
-                j += 1
-                continue
-            if role in ("ref", "citation"):
-                refs.append(nb)
-                j += 1
-                continue
-            if role == "body":
-                bodies.append(nb)
-                j += 1
-                continue
-            if _is_genus_only_heading(nb):
-                break
-            others.append(nb)
-            j += 1
-
-        if genus_block is None and glued_genus:
-            genus_block = {
-                "block_id": f"{block.get('block_id')}_genus",
-                "role": "heading",
-                "level": 2,
-                "translation": glued_genus,
-                "text": block.get("text"),
-                "source_page": block.get("source_page"),
-            }
-            changed.append({
-                "rule": "split_genus_from_species_caption",
-                "page": page.get("page"),
-                "genus": glued_genus[:60],
-            })
-
-        species_heading = {
-            "block_id": block.get("block_id"),
-            "role": "heading",
-            "level": 3,
-            "translation": title_text,
-            "text": block.get("text"),
-            "source_page": block.get("source_page"),
-            "y0": block.get("y0"),
-        }
-        for d in dup_species:
-            d["_drop"] = True
-            changed.append({
-                "rule": "drop_duplicate_species_before_title",
-                "block_id": d.get("block_id"),
-            })
-
-        if not own_figs:
-            own_figs = [{
-                "block_id": f"{block.get('block_id')}_fig",
-                "role": "caption",
-                "translation": fig_label,
-                "_figure_only": True,
-                "source_page": block.get("source_page"),
-                "y0": block.get("y0"),
-            }]
-        cleaned_title, extracted_zh = _split_zh_from_fig_species_title(
-            species_heading.get("translation") or ""
-        )
-        if cleaned_title != _norm(species_heading.get("translation")):
-            species_heading["translation"] = cleaned_title
-        zh_names = _maybe_zh_vernacular_block(
-            species_heading, zh_names, extracted_zh=extracted_zh
-        )
-
-        _emit_imajima_species_account(
-            out,
-            genus_block=genus_block,
-            species_heading=species_heading,
-            wa_names=wa_names,
-            zh_names=zh_names,
-            refs=refs,
-            bodies=bodies,
-            others=others,
-            figure_blocks=own_figs,
-            legends=legends,
-        )
-        changed.append({
-            "rule": "reorder_imajima_species_account",
-            "page": page.get("page"),
-            "title": cleaned_title[:80],
-            "wa": len(wa_names),
-            "zh": len(zh_names),
-            "legends": len(legends),
-        })
-        i = j
-
-    blocks[:] = out
-
-
-def _reorder_imajima_species_blocks(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """已升 heading 的种块：硬序 图N→日名→中文?→文献→描述→图版→图注。
-
-    页首 legend/上种尾巴不回吞；仅把误插在种名前后的本种 `_figure_only` 挪到分布后。
-    """
-    if not any(_is_fig_species_heading_block(b) for b in blocks):
-        return
-
-    out: list[dict] = []
-    i = 0
-    n = len(blocks)
-    while i < n:
-        block = blocks[i]
-        if not _is_fig_species_heading_block(block):
-            out.append(block)
-            i += 1
-            continue
-
-        fig_num = _fig_num_of(block.get("translation"))
-        genus_block = None
-        own_figs: list[dict] = []
-        # figure→genus→title：须越过属名回吞本种 _figure_only，否则会留孤儿图并再造一张。
-        while out:
-            prev = out[-1]
-            if (
-                prev.get("_figure_only")
-                and prev.get("role") == "caption"
-                and fig_num
-                and _fig_num_of(prev.get("translation")) == fig_num
-            ):
-                own_figs.insert(0, out.pop())
-                continue
-            if _is_genus_only_heading(prev) and genus_block is None:
-                genus_block = out.pop()
-                continue
-            break  # 页首 legend 等上种尾巴留在原位
-
-        j = i + 1
-        legends: list[dict] = []
-        wa_names: list[dict] = []
-        zh_names: list[dict] = []
-        refs: list[dict] = []
-        bodies: list[dict] = []
-        others: list[dict] = []
-        while j < n:
-            nb = blocks[j]
-            if _is_fig_species_heading_block(nb):
-                break
-            if _is_genus_only_heading(nb) and (wa_names or refs or bodies):
-                break
-            if nb.get("_figure_only") and nb.get("role") == "caption":
-                own_figs.append(nb)
-                j += 1
-                continue
-            if _is_legend_block(nb):
-                legends.append(nb)
-                j += 1
-                continue
-            if _is_wa_name_block(nb):
-                wa_names.append(nb)
-                j += 1
-                continue
-            if _is_zh_vernacular_block(nb):
-                zh_names.append(nb)
-                j += 1
-                continue
-            if nb.get("role") in ("ref", "citation"):
-                refs.append(nb)
-                j += 1
-                continue
-            if nb.get("role") == "body":
-                bodies.append(nb)
-                j += 1
-                continue
-            if _is_genus_only_heading(nb):
-                if genus_block is None and not (wa_names or refs or bodies):
-                    genus_block = nb
-                    j += 1
-                    continue
-                break
-            others.append(nb)
-            j += 1
-
-        created_fig = False
-        if not own_figs and fig_num:
-            own_figs = [{
-                "block_id": f"{block.get('block_id')}_fig",
-                "role": "caption",
-                "translation": f"图{fig_num}",
-                "_figure_only": True,
-                "source_page": block.get("source_page"),
-                "y0": block.get("y0"),
-            }]
-            created_fig = True
-
-        cleaned_title, extracted_zh = _split_zh_from_fig_species_title(
-            block.get("translation") or ""
-        )
-        if cleaned_title != _norm(block.get("translation")):
-            block["translation"] = cleaned_title
-        zh_names = _maybe_zh_vernacular_block(
-            block, zh_names, extracted_zh=extracted_zh
-        )
-        _emit_imajima_species_account(
-            out,
-            genus_block=genus_block,
-            species_heading=block,
-            wa_names=wa_names,
-            zh_names=zh_names,
-            refs=refs,
-            bodies=bodies,
-            others=others,
-            figure_blocks=own_figs,
-            legends=legends,
-        )
-        changed.append({
-            "rule": "reorder_imajima_species_blocks",
-            "page": page.get("page"),
-            "title": cleaned_title[:80],
-            "figs": len(own_figs),
-            "legends": len(legends),
-            "wa": len(wa_names),
-            "zh": len(zh_names),
-            "created_fig": created_fig,
-        })
-        i = j
-
-    blocks[:] = out
-
-
-_BARE_FIG = re.compile(r"^(?:图|図)\s*(?P<num>\d+)\s*$")
-_SPECIES_BINOM_LINE = re.compile(
-    r"^(?:[\u4e00-\u9fff]{2,24}(?:属|种)?\s+)?"
-    r"\*?([A-Z][a-z]{2,})\*?\s+\*?([a-z][a-z-]{2,})\*?"
-    r".{0,60}$"
-)
-
-
-def _merge_bare_fig_with_species(
-    blocks: list[dict], page: dict, changed: list[dict]
-) -> None:
-    """裸「图7」+ 邻行种名 → 「图7 *Genus species* …」种名标题；插图另留 _figure_only。"""
-    out: list[dict] = []
-    i = 0
-    n = len(blocks)
-    while i < n:
-        block = blocks[i]
-        cap = _norm(block.get("translation"))
-        if block.get("role") == "caption" and _BARE_FIG.match(cap or ""):
-            fig_m = _BARE_FIG.match(cap)
-            fig_label = f"图{fig_m.group('num')}" if fig_m else cap
-            species = None
-            # 优先上一块种名（属标题后常见）
-            if out:
-                prev = out[-1]
-                pt = _norm(prev.get("translation"))
-                if prev.get("role") in ("body", "heading") and _SPECIES_BINOM_LINE.match(
-                    pt or ""
-                ):
-                    species = out.pop()
-            # 否则下一块
-            if species is None and i + 1 < n:
-                nxt = blocks[i + 1]
-                nt = _norm(nxt.get("translation"))
-                if nxt.get("role") in ("body", "heading") and _SPECIES_BINOM_LINE.match(
-                    nt or ""
-                ):
-                    species = nxt
-                    i += 1
-            if species is not None:
-                st = _norm(species.get("translation"))
-                title = f"{fig_label} {st}".strip()
-                # 种名在前；_figure_only 暂随其后，由 _reorder_imajima_species_blocks 挪到分布后
-                out.append({
-                    "block_id": species.get("block_id") or block.get("block_id"),
-                    "role": "heading",
-                    "level": 3,
-                    "translation": title,
-                    "text": species.get("text") or block.get("text"),
-                    "source_page": block.get("source_page"),
-                    "y0": block.get("y0"),
-                })
-                out.append({
-                    "block_id": f"{block.get('block_id')}_fig",
-                    "role": "caption",
-                    "translation": fig_label,
-                    "_figure_only": True,
-                    "source_page": block.get("source_page"),
-                    "y0": block.get("y0"),
-                })
-                changed.append({
-                    "rule": "merge_bare_fig_with_species",
-                    "page": page.get("page"),
-                    "title": title[:80],
-                })
-                i += 1
-                continue
-        out.append(block)
-        i += 1
-    blocks[:] = out
-
-
-def _promote_taxon_name_heading(blocks: list[dict], changed: list[dict]) -> None:
-    """属/种名独占一行时升为标题，避免与下一段挤在一起。"""
-    for block in blocks:
-        if block.get("role") not in ("body", "caption"):
-            continue
-        text = _norm(block.get("translation"))
-        if not text or len(text) > 120:
-            continue
-        if text.startswith(("分布", "◆", "形态", "体长")):
-            continue
-        # 図/图N 种名行 → heading（与插图 caption 区分）
-        if _is_imajima_species_caption(text) or (
-            re.match(r"^(?:图|図)\s*\d+", text)
-            and re.search(r"[A-Z][a-z]{2,}", text)
-            and not re.search(r"[a-zA-Zａ-ｚ][:：]", text)
-            and len(text) <= 120
-        ):
-            if block.get("role") != "heading":
-                block["role"] = "heading"
-                block["level"] = 3
-                changed.append({
-                    "rule": "promote_fig_species_heading",
-                    "block_id": block.get("block_id"),
-                    "text": text[:80],
-                })
-            continue
-        if text.startswith(("Fig.", "图", "図")):
-            continue
-        if not _TAXON_NAME_LINE.match(text.replace("（", "(").replace("）", ")")):
-            continue
-        # 有种加词 → 种级标题；仅属名 → 属级
-        has_species = bool(
-            re.search(r"\*?[A-Z][a-z]+\*?\s+\*?[a-z][a-z-]+", text)
-        )
-        block["role"] = "heading"
-        block["level"] = 3 if has_species else 2
-        changed.append({
-            "rule": "promote_taxon_name_heading",
-            "block_id": block.get("block_id"),
-            "level": block["level"],
-            "text": text[:80],
-        })
-
-
-def _promote_references_heading(blocks: list[dict], changed: list[dict]) -> None:
-    """「引用文献」单独成段时升为标题，上下留空。"""
-    for block in blocks:
-        if block.get("role") not in ("body", "key", "entry"):
-            continue
-        text = _norm(block.get("translation")).strip()
-        if text.casefold() not in _REF_HEADINGS:
-            continue
-        block["role"] = "heading"
-        block["level"] = 2
-        changed.append({
-            "rule": "promote_references_heading",
-            "block_id": block.get("block_id"),
-            "text": text[:40],
-        })
-
-
-def _apply_higher_taxon_zh_page(
-    blocks: list[dict], changed: list[dict], seen: set[str]
-) -> None:
-    from .taxonzh import apply_to_blocks
-
-    for item in apply_to_blocks(blocks, seen=seen):
-        changed.append(item)
-
-
-_TARGET_LANG = "zh"  # normalize_aligned(lang=...) 设置；en 版不得注入中文名
-
-
-def normalize_aligned(data: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
+def normalize_aligned(data: dict[str, Any], source_only: bool = False) -> dict[str, Any]:
     """Apply every deterministic repair in place; return a change report.
 
-    lang="en"：不注入科/亚科/种的中文名（英文版不得含中文）。
+    ``source_only``: the "translation" is the source text itself (OCR'd original
+    typeset untranslated, e.g. Fauna Iberica Vol. 21 in Spanish).  Only the
+    language-neutral repairs run (split/cross-page paragraph joins); the rules
+    that rewrite Spanish structure words into the target language
+    (``spanish_y``, ``structured_from_source``, ``heading_from_source``, ...) are skipped.
     """
-    global _TARGET_LANG
-    _TARGET_LANG = lang
     changed: list[dict] = []
-    higher_seen: set[str] = set()
+    if source_only:
+        for page in data.get("pages", []):
+            blocks = page.get("blocks", [])
+            _merge_split_paragraphs(blocks, changed)
+            page["blocks"] = [b for b in blocks if not b.get("_drop")]
+        _merge_cross_page_paragraphs(data.get("pages", []), changed)
+        return {"changes": changed, "changed_blocks": len(changed),
+                "changed_pages": len({c.get("page", (c.get("block_id") or "")[:5]) for c in changed})}
     for page in data.get("pages", []):
         blocks = page.get("blocks", [])
         _merge_split_paragraphs(blocks, changed)
@@ -3559,44 +2240,10 @@ def normalize_aligned(data: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
         _entry_prefix_duplicate(blocks, changed)
         _function_word_join(blocks, changed)
         _key_leading_target(blocks, changed)
-        _key_heading_from_body(blocks, changed)
-        _trim_key_dump_heading(blocks, changed)
-        _body_leaders_to_key(blocks, changed)
-        _body_couplet_number_to_key(blocks, changed)
-        # 种记述误升 key、文献误标等：与 repair-keys 同规则，normalize 时一并收掉
-        from .keyrepair import repair_key_blocks as _repair_keys_page
-
-        page_wrap = {"pages": [page]}
-        rep = _repair_keys_page(page_wrap)
-        for ch in rep.get("changes") or []:
-            changed.append({"rule": f"repair_keys:{ch.get('action')}", **ch})
-        _fix_partial_kana_glosses(blocks, changed)
-        _index_leaders_to_entry(page, blocks, changed)
         _leading_punctuation(blocks, changed)
-        _box_glyph_to_kou(blocks, changed)
         _caption_duplicate(blocks, page, changed)
         _caption_lettering_tail(blocks, page, changed)
         _caption_terms(blocks, changed)
-        _scrub_caption_ocr_junk(blocks, changed)
-        _split_distribution_lettering(blocks, page, changed)
-        _mark_panel_legends(blocks, changed)
-        _attach_legend_to_caption(blocks, page, changed)
-        _scrub_caption_ocr_junk(blocks, changed)  # 并入种名后再清一次假拉丁
-        _scrub_imajima_title_and_ocr_junk(blocks, page, changed)
-        _scrub_truncated_author_year(blocks, page, changed)
-        _complete_truncated_citations(blocks, page, changed)
-        _prefer_source_for_bibliography(blocks, page, changed)
-        _join_comma_body_continuations(blocks, page, changed)
-        _merge_bare_fig_with_species(blocks, page, changed)
-        _promote_taxon_name_heading(blocks, changed)
-        # 种名已升 heading：硬序 图N→日名→中文?→文献→描述→图版→图注
-        _reorder_imajima_species_blocks(blocks, page, changed)
-        _promote_references_heading(blocks, changed)
-        if _TARGET_LANG != "en":
-            _apply_higher_taxon_zh_page(blocks, changed, higher_seen)
-        # taxonzh 后仍可能残留：种名标题去中文；文献双名斜体
-        _demote_zh_from_fig_species_titles(blocks, page, changed)
-        _italicize_ref_citation_binomia(blocks, page, changed)
         _abbreviation_note(blocks, page, changed)
         _remove_figure_junk(blocks, page, changed)
         _heading_citation_bleed(blocks, changed)
@@ -3609,100 +2256,32 @@ def normalize_aligned(data: dict[str, Any], lang: str = "zh") -> dict[str, Any]:
         _spanish_y(blocks, changed)
         _trim_embedded_duplicate_list(blocks, page, changed)
         _leading_punctuation(blocks, changed)
+        _split_reference_blocks(blocks, changed)
         page["blocks"] = [b for b in blocks if not b.get("_drop")]
     # Trim overfilled blocks first: once a page-break continuation is joined
     # into the previous page, the duplicated tail can no longer be matched.
     _overflow_duplicate_tail(data, changed)
     _merge_cross_page_paragraphs(data.get("pages", []), changed)
-    _attach_legend_across_pages(data.get("pages", []), changed)
-    _clean_page_chapters(data.get("pages", []), changed)
     return {
         "changes": changed,
         "changed_blocks": len(changed),
-        "changed_pages": len({c.get("page", c.get("block_id", "")[:5]) for c in changed}),
+        "changed_pages": len({c.get("page", (c.get("block_id") or "")[:5]) for c in changed}),
     }
 
 
-def _clean_page_chapters(pages: list[dict], changed: list[dict]) -> None:
-    """Wash dirty page.chapter (key couplet / TOC junk) down to chapter titles.
-
-    build_aligned may promote a key-shaped「亚科 …种名（图N）」line to chapter;
-    clean_toc_title already exists for CONTENTS display — apply the same wash
-    to the stored field so headers/qa/page_map stop carrying the junk.
-    """
-    from .builder import clean_toc_title
-
-    for page in pages:
-        raw = page.get("chapter")
-        if not isinstance(raw, str) or not raw.strip():
-            continue
-        source = ""
-        for b in page.get("blocks") or []:
-            if (
-                b.get("role") == "heading"
-                and b.get("level") == 1
-                and (b.get("text") or b.get("translation"))
-            ):
-                source = b.get("text") or ""
-                break
-        cleaned = clean_toc_title(raw, source=source)
-        if cleaned == raw:
-            continue
-        page["chapter"] = cleaned
-        changed.append(
-            {
-                "rule": "clean_page_chapter",
-                "page": page.get("page"),
-                "before": raw,
-                "after": cleaned,
-            }
-        )
+_PAGE_PATCH_TOP = {"pages", "old_page_digests", "version"}
+_PAGE_ENTRY_KEYS = {"block_id", "role", "translation", "level", "text", "rows", "items", "figures",
+                    "col_widths_mm", "couplet", "caption"}
+_PAGE_EXISTING_KEYS = ("role", "translation", "level")
 
 
-def _attach_legend_across_pages(pages: list[dict], changed: list[dict]) -> None:
-    """上页末的 a：… 挪到下页 caption 之后（插图常跨页；不并进图题短行）。"""
-    for prev, nxt in zip(pages, pages[1:]):
-        a_blocks = prev.get("blocks") or []
-        b_blocks = nxt.get("blocks") or []
-        if not a_blocks or not b_blocks:
-            continue
-        trailing: list[dict] = []
-        for block in reversed(a_blocks):
-            if block.get("_drop"):
-                continue
-            role = block.get("role")
-            text = _norm(block.get("translation"))
-            if role == "legend" or (role == "body" and _PANEL_ONLY.match(text or "")):
-                trailing.append(block)
-                continue
-            break
-        if not trailing:
-            continue
-        trailing.reverse()
-        # 本页已是「图N占位 + a/b/c」成套，勿把图注挪到下页
-        kept = [b for b in a_blocks if b not in trailing and not b.get("_drop")]
-        if kept and kept[-1].get("role") == "caption" and kept[-1].get("_figure_only"):
-            continue
-        cap_i = next(
-            (i for i, b in enumerate(b_blocks) if b.get("role") == "caption"),
-            None,
-        )
-        if cap_i is None:
-            continue
-        for b in trailing:
-            b["role"] = "legend"
-            b.pop("_drop", None)
-        # 从上页移除，插入下页 caption 后
-        prev["blocks"] = [b for b in a_blocks if b not in trailing]
-        insert_at = cap_i + 1
-        nxt["blocks"] = b_blocks[:insert_at] + trailing + b_blocks[insert_at:]
-        changed.append({
-            "rule": "attach_legend_across_pages",
-            "from_page": prev.get("page"),
-            "to_page": nxt.get("page"),
-            "caption": b_blocks[cap_i].get("block_id"),
-            "n": len(trailing),
-        })
+def page_digest(page: dict[str, Any]) -> str:
+    """Digest of a page's ordered block list; binds a whole-page patch to the page it was made from."""
+    import hashlib
+    import json
+
+    payload = json.dumps([block_struct_digest(b) for b in page.get("blocks", [])], ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
 def apply_page_patch(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
@@ -3711,28 +2290,113 @@ def apply_page_patch(data: dict[str, Any], patch: dict[str, Any]) -> dict[str, A
     Patch format::
 
         {"pages": {"352": [{"block_id": "p352_b07", "role": "body",
-                            "level": 2, "translation": "..."}, ...]}}
+                            "level": 2, "translation": "..."}, ...]},
+         "old_page_digests": {"352": "<page_digest of the page the patch was made from>"}}
 
-    Existing blocks are looked up by ``block_id`` so their geometry survives;
-    blocks whose id is new are appended with only the fields given.
+    Existing blocks are looked up by ``block_id`` so their geometry survives
+    (only role/translation/level may change).  A new block must carry a valid
+    ``role`` and may carry text/rows/items/figures/col_widths_mm/couplet/caption.
+    ``old_page_digests`` is optional: when given for a page, the page must still
+    be exactly what the patch was made from, otherwise the whole batch is
+    rejected.  Everything is validated on a candidate before any page is replaced.
     """
-    applied = []
+    from booklayout.profile import validate_aligned
+
+    if not isinstance(patch, dict) or "pages" not in patch:
+        raise ValueError("page patch must be an object with an explicit `pages` key ({\"pages\": {}} is a no-op)")
+    unknown = set(patch) - _PAGE_PATCH_TOP
+    if unknown:
+        raise ValueError(f"unknown top-level fields in page patch: {sorted(unknown)}")
+    pages_patch = patch["pages"]
+    if not isinstance(pages_patch, dict):
+        raise ValueError("`pages` must be an object mapping page number -> list of blocks")
+    digests = patch.get("old_page_digests", {})
+    if not isinstance(digests, dict):
+        raise ValueError("`old_page_digests` must be an object mapping page number -> digest")
+    page_nums = [page.get("page") for page in data.get("pages", [])]
+    dups = sorted({n for n in page_nums if page_nums.count(n) > 1}, key=repr)
+    if dups:
+        raise ValueError(f"aligned file has duplicate page numbers {dups}: refusing page repair")
     by_page = {page["page"]: page for page in data.get("pages", [])}
-    for number, entries in patch.get("pages", {}).items():
-        page = by_page[int(number)]
+    owner: dict[Any, int] = {}
+    for page in data.get("pages", []):
+        for b in page.get("blocks", []):
+            owner.setdefault(b.get("block_id"), page["page"])
+
+    def canon(number: Any) -> int:
+        try:
+            n = int(number)
+        except (TypeError, ValueError):
+            raise ValueError(f"page key {number!r} is not an integer") from None
+        if n not in by_page:
+            raise ValueError(f"page {number} not in the aligned file")
+        return n
+
+    todo: dict[int, list[dict[str, Any]]] = {}
+    for number, entries in pages_patch.items():  # validate everything before mutating
+        n = canon(number)
+        if n in todo:
+            raise ValueError(f"page {n} appears twice in the patch (key {number!r})")
+        if not isinstance(entries, list):
+            raise ValueError(f"page {number}: value must be a list of blocks ([] clears the page)")
+        for e in entries:
+            if not isinstance(e, dict) or not isinstance(e.get("block_id"), str) or not e["block_id"]:
+                raise ValueError(f"page {number}: every entry needs a non-empty string block_id")
+            bad = set(e) - _PAGE_ENTRY_KEYS
+            if bad:
+                raise ValueError(f"page {number} block {e['block_id']}: unsupported fields {sorted(bad)}")
+        todo[n] = entries
+    seen_dig: set[int] = set()
+    for number, dig in digests.items():
+        n = canon(number)
+        if n in seen_dig or n not in todo:
+            raise ValueError(f"old_page_digests key {number!r} duplicates another or has no page in `pages`")
+        seen_dig.add(n)
+        if dig != page_digest(by_page[n]):
+            raise ValueError(f"page {n} changed since the patch was made (old_page_digests mismatch)")
+
+    candidate: dict[int, list[dict[str, Any]]] = {}
+    for n, entries in todo.items():
+        page = by_page[n]
+        ids_here = [b.get("block_id") for b in page["blocks"]]
+        if len(ids_here) != len(set(map(repr, ids_here))):
+            raise ValueError(f"page {n} has duplicate block_ids; fix the aligned file before repair")
         existing = {b.get("block_id"): b for b in page["blocks"]}
         new_blocks = []
         for entry in entries:
+            is_new = entry["block_id"] not in existing
+            if is_new and owner.get(entry["block_id"], n) != n:
+                raise ValueError(f"page {n} block {entry['block_id']}: id belongs to page "
+                                 f"{owner[entry['block_id']]}; moving a block across pages is not supported")
             block = dict(existing.get(entry["block_id"], {}))
             block.setdefault("block_id", entry["block_id"])
-            block.setdefault("source_page", str(number))
+            if is_new:
+                block.setdefault("source_page", n)
             block.setdefault("chapter", page.get("chapter", ""))
             block.setdefault("kind", page.get("kind", ""))
             block.setdefault("level", 1)
-            for field in ("role", "translation", "level"):
+            if not is_new:  # structural fields of an existing block are not editable here: never accept-and-ignore
+                ignored = [f for f in entry if f not in _PAGE_EXISTING_KEYS and f != "block_id"
+                           and entry[f] != existing[entry["block_id"]].get(f)]
+                if ignored:
+                    raise ValueError(f"page {n} block {entry['block_id']}: fields {sorted(ignored)} of an existing "
+                                     "block cannot be changed by repair (use patch-blocks or omit them)")
+            for field in (_PAGE_EXISTING_KEYS if not is_new else tuple(_PAGE_ENTRY_KEYS - {"block_id"})):
                 if field in entry:
                     block[field] = entry[field]
             new_blocks.append(block)
-        page["blocks"] = new_blocks
-        applied.append(int(number))
-    return {"patched_pages": applied}
+        candidate[n] = new_blocks
+    ids: dict[str, int] = {}
+    for p in data.get("pages", []):
+        for b in candidate.get(p["page"], p.get("blocks", [])):
+            bid = b.get("block_id")
+            if isinstance(bid, str) and bid in ids:
+                raise ValueError(f"duplicate block_id {bid!r} on pages {ids[bid]} and {p['page']}")
+            if isinstance(bid, str):
+                ids[bid] = p["page"]
+    errors = validate_aligned({"pages": [{"page": n, "blocks": bl} for n, bl in candidate.items()]})
+    if errors:
+        raise ValueError("candidate pages fail validation: " + "; ".join(errors[:5]))
+    for n, blocks in candidate.items():
+        by_page[n]["blocks"] = blocks
+    return {"patched_pages": list(candidate)}

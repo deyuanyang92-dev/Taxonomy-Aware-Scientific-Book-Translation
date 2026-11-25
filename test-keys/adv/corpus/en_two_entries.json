@@ -1,0 +1,37 @@
+{
+  "id": "en_two_entries",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to specimens (flowering material: start at 1; fruiting material: start at 4)\n1a. Petals free ........ p. 12\n1b. Petals fused ........ p. 14\n4a. Fruit winged ........ p. 18\n4b. Fruit unwinged ........ p. 19",
+  "declared_entries": [
+    "1",
+    "4"
+  ],
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "page",
+        "14"
+      ],
+      [
+        "4a",
+        "page",
+        "18"
+      ],
+      [
+        "4b",
+        "page",
+        "19"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "开花与结果标本各有一个声明入口。两组可独立检索。"
+}

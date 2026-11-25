@@ -1,0 +1,23 @@
+{
+  "id": "r2_wrap_count",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Posterior parapodia with\n2 aciculae per ramus ...... Nereis\n1b. Aciculae solitary ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:507–514 遇上一号加一就接受弱编号；2 修饰 aciculae，是折行性状。"
+}

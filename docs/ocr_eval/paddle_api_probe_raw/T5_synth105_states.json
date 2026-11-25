@@ -1,0 +1,15 @@
+[
+ {
+  "t": 4,
+  "full": {
+   "traceId": "14c6d92b-0bdd-43dc-ab4a-bf3cfe208aa5",
+   "code": 0,
+   "msg": "Success",
+   "data": {
+    "jobId": "118355732635123712",
+    "state": "failed",
+    "errorMsg": "OCR服务请求失败，状态码 500"
+   }
+  }
+ }
+]

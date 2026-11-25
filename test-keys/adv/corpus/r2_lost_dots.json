@@ -1,0 +1,23 @@
+{
+  "id": "r2_lost_dots",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Pharynx with jaws N. pelagica\n1b. Pharynx unarmed ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "N. pelagica"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:193–199 点线消失只剩一空格，缩写双名紧跟性状。LIMITS 第724行已知。"
+}

@@ -1,0 +1,26 @@
+{
+  "id": "pair_chinese_only",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to the two pines\n1a. Needles two per bundle ........ Pinus sylvestris (p. 12)\n1b. Needles five per bundle ........ Pinus strobus (p. 18)",
+  "translation": "两种松树的检索表\n1a. 针叶二针一束…………Pinus sylvestris（第 12 页）\n1b. 针叶五针一束…………北美乔松（第 18 页）",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus sylvestris"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Pinus strobus"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "第二支把拉丁双名全部替换为中文，即使读者能理解其所指，也丢失原书的学名地址。"
+}

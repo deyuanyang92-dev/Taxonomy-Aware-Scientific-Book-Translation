@@ -1,0 +1,23 @@
+{
+  "id": "r2_botanical_author",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Leaves in fascicles ...... Pinus sylvestris L.\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus sylvestris"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:149–150、177 仅剥外围标点，植物作者缩写 L. 会进入学名字段。"
+}

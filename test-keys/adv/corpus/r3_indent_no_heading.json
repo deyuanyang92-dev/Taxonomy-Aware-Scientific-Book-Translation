@@ -1,0 +1,17 @@
+{
+ "id": "r3_indent_no_heading",
+ "format": "indented",
+ "lang": "en",
+ "source": "Leaves opposite\n    Blades lobed ........ p. 12\n    Blades unlobed ........ p. 13\nLeaves alternate\n    Blades toothed ........ p. 14\n    Blades entire ........ p. 15",
+ "expect": {
+  "keys": 0,
+  "branches": [],
+  "findings": [
+   "no_keys"
+  ]
+ },
+ "why": "booklayout/keygraph.py:400。同 en_indent_siblings 去标题；两个子树均有两个带点线的页码终点。 ｜主会话裁定 r3：无标题纯缩进不可与普通列表区分，声明有表时报 no_keys 阻断为正确行为。",
+ "declared_entries": [
+  "1"
+ ]
+}

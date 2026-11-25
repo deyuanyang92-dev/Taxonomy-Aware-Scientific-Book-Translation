@@ -10,16 +10,20 @@
 
 流程（依据 docs/model_bench.md「保加利亚文→英文：Google 稿改写的性价比比测」，2026-11-14）：
 1 draft   Google gtx 免费初稿（逐段、4 路并发、sqlite 缓存）。页标记、无源语言字母的段（学名列表、引文）不送。
-2 revise  3 页一段，对照原文改写 Google 稿。加 --lean：只改写 narrative,remarks（省 token）。引擎自动选择：北京时间夜间（22–8 点）deepseek-flash 关思考
-          （比测重大错误 0，全书约 $0.25）；白天 codex-luna（流畅但会编造，之后必须走第 3 步）。
+2 revise  3 页一段，对照原文改写 Google 稿。加 --lean：只改写 narrative,remarks（省 token）。引擎自动选择：DeepSeek 折扣时段（北京时间 18:00–次日 09:00 等，见 deepseek_offpeak）用 deepseek-flash 关思考
+          （比测重大错误 0，全书约 $0.25）；高峰时段 codex-luna（流畅但会编造，之后必须走第 3 步）。
           只把本段用到的术语表、转写表条目送进提示词（省 token）；固定的规则放 system 前部，便于 DeepSeek 前缀缓存。
           护栏：页标记数、数字、斜体学名、检索表编号、异常文字（天城文等）、禁用词。不过护栏的段把问题清单发回重做一次，
           仍不过则取护栏问题更少的一份并在报告里标出。
-3 check   意义核对：默认 --verify-engine none（Cursor 优化：质控至多 1 次 LLM；其余靠脚本护栏）。
-          若显式开第二模型，则找错后由 --verify-engine 逐条 ACCEPT/REJECT，只落实两者都认可的
-          （历史：Marinov 实测 flash 报 76、sol 认 12）。落实护栏：old 唯一、不丢数字/学名、new 不可暴涨。
-          DeepSeek 夜间 wait_offpeak；白天可用 --day-engine。critical 一律进 human_review_queue.csv。
-          Lean 默认开（只改写 narrative,remarks）；--engine none 为零模型档。
+3 check   意义核对：默认 --verify-engine none（省 token：质控至多 1 次 LLM，其余靠脚本护栏）；
+          显式开第二模型（--verify-engine）则找错后逐条 ACCEPT/REJECT，只落实两者都认可的。
+          Lean 默认开；跨书 book_memory 默认加载；贵模型需 --force-engine。
+          依据：2026-11-14 Marinov 全书实测，flash 报 76 处，sol 只认可 12 处（flash 把 цифта「对」当成单个等系统性误判）。
+          落实护栏：old 在该页唯一出现；改动不得丢数字、学名；new 不得比 old 长出 2 倍+80 字符（防止整段重写）。
+          DeepSeek 只在夜间调用（llm_engines 内 wait_offpeak 自动等待）；白天加 --day-engine codex-luna 才用 Codex。
+          check 的严重度：critical（学名、数字、编号、有/无反转、检索表跳转）两模型都认可也不自动落实，写入
+          human_review_queue.csv 由人对照扫描件定；major/minor 认可后落实。否定词计数少于原文的页作为高风险页提示核对模型。
+          护栏另查检索表结构（编号与跳转目标）和残留未译原文。参照 Japanese_Taxonomy_OCR_to_English_ClaudeCode_Guide §7。
 3b taxo   英文定稿按分类学排版补斜体（taxoformat.py，0 token）：属名/种加词/亚种/缩写/检索表/图注斜体，
           科名、命名人、sp./cf./aff. 正体；原文 OCR 不带斜体时也能补。规则见 docs/taxonomic_typography.md。
 4 report  每步用量（token、秒、美元估算）、护栏问题、被拒改动，写 WORK/report.md；另抽 8 页生成 audit_sample.md，
@@ -43,13 +47,20 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 仓库根：transqa
 
+from apply_issues import already_applied  # noqa: E402  # 幂等判据与核译闸口共用一份
 import entities  # noqa: E402
+import keysplit
+import protect  # noqa: E402
+import term_presub  # noqa: E402
 import taxoformat  # noqa: E402
 import transqa  # noqa: E402
-from transqa import taxoblocks  # noqa: E402
+from transqa import taxoblocks, zh_typo  # noqa: E402
 from transqa import terms as transqa_terms  # noqa: E402
+from transqa.languages import wants_chinese_names  # noqa: E402
 from transqa.blocks import PROTECTED, classify, deterministic, residue_left  # noqa: E402
 from transqa.segments import render, segments_from_pages, split_template  # noqa: E402
+from token_economy import BudgetExceeded  # noqa: E402
+from transqa import guardrails  # noqa: E402
 
 PAGE_RE = re.compile(r'^\s*<!-- PDF p\.(\d+)\b')
 FOREIGN_RE = re.compile(r'[ऀ-ॿ؀-ۿ฀-๿가-힯֐-׿一-鿿]')
@@ -84,7 +95,7 @@ def neg_count(text: str, lang: str) -> int:
     return len(re.findall(r, text, re.I)) if r else 0
 
 
-DS_PRICE = {'in': 0.15, 'cache': 0.003, 'out': 0.6}  # deepseek-flash 闲时 USD/1M（官方定价页 2026-11-14）
+from token_economy import DS_PRICE  # noqa: E402  单一来源：预算闸与报告共用同一份单价
 BJ = dt.timezone(dt.timedelta(hours=8))
 CHUNK_PAGES = 3
 
@@ -133,21 +144,41 @@ class Google:
         self._gt = gtrans
         self.g = gtrans.Google(gtrans.Cache(cache), sl=sl, tl=tl, pause=(0.0, 0.0))
         self.failed: list[str] = []
+        self.sl = sl
+        self.tl = tl
 
     @property
     def requests(self) -> int:
         return int(self.g.requests)
 
+    def prefetch(self, texts: list[str], workers: int = 8) -> None:
+        self.g.prefetch([protect.mask(t, self.sl)[0] for t in texts], workers)
+
     def one(self, s: str) -> str:
+        masked, saved = protect.mask(s, self.sl)   # 学名/n. sp./日期不送机翻，回来原样还原
         try:
-            out = str(self.g.translate(s))
+            out = str(self.g.translate(masked))
         except self._gt.GoogleError:
             self.failed.append(s[:80])
             return s
         if not out.strip():          # 空译文会让 render 少一段、段 ID 错位；退回原文并记失败
             self.failed.append(s[:80])
             return s
-        return out
+        if protect.lost(out, saved):
+            # 占位符被吞：先按句拆开各自保护重译（只让出问题的句子失去保护），单句仍丢才送未保护原文
+            if self.sl == 'ja':   # 日文句号少：退到分句（，、）逐句保护重译
+                clauses = [x for x in re.split(r'(?<=[，、；。])', s) if x]
+                if len(clauses) > 1:
+                    return ''.join(self.one(x) for x in clauses)
+            sents = re.split(r'(?<=[.;!?。；]) +', s)
+            if len(sents) > 1:
+                return ' '.join(self.one(x) for x in sents)
+            try:
+                return str(self.g.translate(s))
+            except self._gt.GoogleError:
+                self.failed.append(s[:80])
+                return s
+        return protect.restore(out, saved, self.tl)
 
     def body(self, p: str) -> str:
         return '\n'.join(ln for ln in p.split('\n') if not ln.lstrip().startswith('<!--')).strip()
@@ -162,7 +193,7 @@ class Google:
 
     def text(self, t: str, src_re: str, workers: int = 8) -> str:
         paras = [p.strip() for p in t.split('\n\n')]
-        self.g.prefetch([self.body(p) for p in paras if re.search(src_re, self.body(p))], workers)
+        self.prefetch([self.body(p) for p in paras if re.search(src_re, self.body(p))], workers)
         return '\n\n'.join(self.para(p, src_re) for p in paras) + '\n'
 
 
@@ -389,15 +420,45 @@ def parse_segments(text: str) -> tuple[dict[str, str], list[str]]:
 
 
 # ---------------------------------------------------------------- 核对改动的落实
+def _scan_json(text: str) -> tuple[list[list[Any]], list[dict[str, Any]]]:
+    """从夹杂说理文字的输出里逐个取出完整 JSON 值：返回（各数组, 各对象），按出现顺序；解出后跳过其内部。"""
+    dec = json.JSONDecoder()
+    lists: list[list[Any]] = []
+    objs: list[dict[str, Any]] = []
+    i = 0
+    while i < len(text):
+        if text[i] in '[{':
+            try:
+                v, end = dec.raw_decode(text, i)
+            except json.JSONDecodeError:
+                i += 1
+                continue
+            if isinstance(v, list):
+                lists.append(v)
+            elif isinstance(v, dict):
+                objs.append(v)
+            i = end
+        else:
+            i += 1
+    return lists, objs
+
+
 def parse_json_array(text: str) -> list[dict[str, Any]] | None:
-    """JSON 数组 → 列表；合法空数组返回 []；找不到或解析失败返回 None（调用方须重试或记失败，不能当成「无错」）。"""
+    """JSON 数组 → 列表；合法空数组返回 []；找不到或解析失败返回 None（调用方须重试或记失败，不能当成「无错」）。
+
+    整段贪婪匹配失败时（实测：flash 在数组后另起一行放回执对象，或在说理文字里带方括号），退而逐个取出完整的
+    JSON 值：把所有「非空、元素全是对象」的数组按顺序拼起来，再接上数组之外单独成行的回执对象。
+    这条退路不接受空数组（说理里夹的 [] 不能当「无错」），也不接受含非对象的数组。"""
     m = re.search(r'\[.*\]', text, re.S)
     if not m:
         return [] if re.fullmatch(r'\s*(```\w*\s*)?\[\s*\](\s*```)?\s*', text) else None
     try:
         v = json.loads(m.group(0))
     except json.JSONDecodeError:
-        return None
+        lists, objs = _scan_json(text)
+        got = [x for lst in lists if lst and all(isinstance(e, dict) for e in lst) for x in lst]
+        got += [o for o in objs if o.get('receipt')]
+        return got or None
     if not isinstance(v, list) or not all(isinstance(x, dict) for x in v):
         return None  # 混入非对象（如 [1, "unexpected"]）= 格式错，不能当成「无错」
     return v
@@ -409,6 +470,12 @@ def _page_no(p: Any) -> int | None:
     if isinstance(p, str) and p.strip().isdigit():
         return int(p)
     return None
+
+
+_EDIT_NOISE = re.compile(r"\[\?\]|\(\?\)|\[sic\]")
+_EDIT_NO_FIX = re.compile(
+    r"no (?:real )?(?:error|fix|change|problem) needed|do not (?:report|change)|"
+    r"same meaning|term usage only", re.I)
 
 
 def apply_edits(src: str, tgt: str, edits: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
@@ -426,8 +493,14 @@ def apply_edits(src: str, tgt: str, edits: list[dict[str, Any]]) -> tuple[str, l
         why = None
         if not old or old == new:
             why = 'old 为空或无变化'
+        elif _EDIT_NOISE.search(new):
+            why = 'new 含不确定标记（[?]/(?)/[sic]）'
+        elif _EDIT_NO_FIX.search(str(e.get('reason', ''))):
+            why = 'reason 自述无需修改'
         elif seg is None:
             why = f'无此页 {e.get("pdf_page")}'
+        elif already_applied(seg, old, new):
+            why = '已应用（new 已在 old 的位置上，不再叠加）'     # 对已改好的译文重跑：加性改动（old 是 new 的子串）不得叠加
         elif seg.count(old) != 1:
             why = f'old 在该页出现 {seg.count(old)} 次'
         elif len(new) > 2 * len(old) + 80:
@@ -515,18 +588,30 @@ def risky_filter(src_pg: dict[int, str], tgt_pg: dict[int, str], sl: str, tl: st
     return src_out, tgt_out, stats
 
 
-def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[int, str]:
+def cache_path(cache: str | Path | None = None) -> Path:
+    """缓存路径：--cache > 环境变量 GTRANS_CACHE > ~/.cache/yzz-translate/gtrans_cache.sqlite。
+    不同书/并行作业可各用各的文件，避免争用同一个 sqlite（issue #4）。"""
+    if cache:
+        return Path(cache).expanduser()
+    env = os.environ.get('GTRANS_CACHE')
+    return Path(env).expanduser() if env else Path.home() / '.cache/yzz-translate/gtrans_cache.sqlite'
+
+
+def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str,
+                cache: str | Path | None = None, presub: dict[str, str] | None = None) -> dict[int, str]:
     """Google 初稿。按 transqa 模板逐段处理，保证初稿与原文段 ID 一一对应；
-    异名录/文献/索引块不送 Google（改写阶段走确定性处理）。全书先并发预取，再顺序拼回。"""
-    g = Google(sl, tl, Path.home() / '.cache/yzz-translate/gtrans_cache.sqlite')
+    异名录/文献/索引块不送 Google（改写阶段走确定性处理）。全书先并发预取，再顺序拼回。
+    presub：源术语→英文词映射（term_presub.py 从已译书学得），送 Google 前先替换；原文与段 ID 不变。"""
+    g = Google(sl, tl, cache_path(cache))
+    pre = (lambda t: term_presub.presub(t, presub)[0]) if presub else (lambda t: t)
     src_re = SCRIPT_RE.get(sl, r'\w')
     split = {p: split_template(src_pg[p]) for p in sorted(src_pg)}
     send = [s.text for segs, _ in split.values() for s in segs
             if classify(s.text, sl) not in PROTECTED and re.search(src_re, s.text)]
-    g.g.prefetch(send, 8)
+    g.prefetch([pre(t) for t in send], 8)
     out = {}
     for p, (segs, tpl) in split.items():
-        texts = {s.id: (g.one(s.text) if s.text in send else s.text) for s in segs}
+        texts = {s.id: (g.one(pre(s.text)) if s.text in send else s.text) for s in segs}
         out[p] = render(tpl, texts).rstrip('\n') + '\n'
     _write(work / 'draft_stats.json', json.dumps({'requests': g.requests, 'failed': g.failed,
                                                   'segments': sum(len(x[0]) for x in split.values()),
@@ -538,11 +623,10 @@ def stage_draft(src_pg: dict[int, str], work: Path, sl: str, tl: str) -> dict[in
 
 
 def chunk_entities(src: str, cid: str, work: Path, a: argparse.Namespace) -> list[dict[str, Any]]:
-    """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。
-    --no-entities 关闭；--engine none（零模型档）也跳过，避免暗中烧 token / 依赖 anthropic。"""
-    if not getattr(a, 'entities', True):
+    """本段专名：便宜模型抽取 + yiku/Wikidata 解析（entities.py），按原文摘要缓存。--no-entities 关闭。"""
+    if not getattr(a, 'entities', True) or not wants_chinese_names(a.tl):
         return []
-    if getattr(a, 'engine', '') == 'none':
+    if getattr(a, 'engine', '') == 'none':   # 零模型档不得暗调专名抽取
         return []
     f = work / f'entities/{cid}.json'
     dg = _digest(src, a.tl, entities.EXTRACT_SYS)
@@ -568,7 +652,7 @@ def repair_draft_pages(src_pg: dict[int, str], draft_pg: dict[int, str], ps: lis
            if len(segments_from_pages(draft_pg.get(p, ''))) != len(split_template(src_pg[p])[0])]
     if not bad:
         return []
-    g = Google(a.sl, a.tl, Path.home() / '.cache/yzz-translate/gtrans_cache.sqlite')
+    g = Google(a.sl, a.tl, cache_path(getattr(a, 'cache', None)))
     for p in bad:
         segs, tpl = split_template(src_pg[p])
         texts = {s.id: g.one(s.text) for s in segs}
@@ -666,7 +750,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
             if kinds:
                 tk = taxoblocks.kind(s.text, a.sl)
                 stats[f'kind_{tk}'] += 1
-                if tk == 'junk':
+                if tk == 'junk' and classify(s.text, a.sl) not in PROTECTED:
                     texts[s.id] = s.text
                     stats['junk_kept'] += 1
                     continue
@@ -683,7 +767,7 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
                 stats['fallback_to_model'] += 1
             todo.append(s)
         stats['segments'] += len(segs)
-        # lean 候选段数；engine=none 时不会真调模型（见 llm_calls）
+        # lean 候选段数；engine=none 时不会真调模型
         stats['sent_to_model'] += len(todo) if engine != 'none' else 0
         stats['lean_candidates'] += len(todo)
         dg = _digest(src, '\n'.join(dmap.values()), sysmsg, PROMPT_VERSION, engine, ','.join(bad),
@@ -721,19 +805,33 @@ def stage_revise(src_pg: dict[int, str], draft_pg: dict[int, str], work: Path, a
     return revised
 
 
-def _ask_json(engine: str, system: str, user: str, tag: str, work: Path) -> list[dict[str, Any]] | None:
-    """调用并解析 JSON 数组；格式错或引擎连接失败都重试，最终失败返回 None（该段记为失败，不中断全书）。"""
+def _ask_json_ex(engine: str, system: str, user: str, tag: str,
+                 work: Path) -> tuple[list[dict[str, Any]] | None, str]:
+    """调用并解析 JSON 数组；格式错或引擎连接失败都重试，最终失败返回 (None, 原因)（该段记为失败，不中断全书）。
+
+    成功返回 (数组, '')：空数组 [] 是「无问题」，None 才是「失败」，两者不得混同。
+    预算超限（BudgetExceeded）不是可重试的错误，原样向上抛。"""
+    reason = 'parse_failed'
     for attempt in range(3):
         try:
             text, _ = llm(engine, system, user, f'{tag}/{attempt}', work / 'usage.tsv', profile='json')
+        except BudgetExceeded:
+            raise
         except Exception as exc:  # noqa: BLE001 - 引擎网络/额度错误：等一会重试
-            print(f'[auto] {engine} 调用失败（{type(exc).__name__}: {str(exc)[-120:]}），第 {attempt + 1}/3 次', flush=True)
+            reason = f'{type(exc).__name__}: {str(exc)[-120:]}'
+            print(f'[auto] {engine} 调用失败（{reason}），第 {attempt + 1}/3 次', flush=True)
             time.sleep(30 * (attempt + 1))
             continue
         v = parse_json_array(text)
         if v is not None:
-            return v
-    return None
+            return v, ''
+        reason = 'parse_failed'
+    return None, reason
+
+
+def _ask_json(engine: str, system: str, user: str, tag: str, work: Path) -> list[dict[str, Any]] | None:
+    """同 _ask_json_ex，只返回解析结果（失败为 None）。"""
+    return _ask_json_ex(engine, system, user, tag, work)[0]
 
 
 def load_pitfalls(sl: str, tl: str, path: str | None = None) -> str:
@@ -802,15 +900,42 @@ def _prefilter(tgt: str, edits: list[dict[str, Any]]) -> tuple[list[dict[str, An
     return good, bad
 
 
+def merge_edits(lists: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """合并多遍找错的改动：按 (页码, 规范化 old) 去重，保留先出现的；同键而 new 不同者，
+    把它的 new 记入保留条目的 alt_new（只记第一个不同的，不单独成条）。回执条原样保留。输入顺序即输出顺序。"""
+    out: list[dict[str, Any]] = []
+    seen: dict[tuple[int | None, str], dict[str, Any]] = {}
+    for lst in lists:
+        for e in lst:
+            if e.get('receipt'):
+                out.append(e)
+                continue
+            key = (_page_no(e.get('pdf_page')), _norm_ws(str(e.get('old', ''))))
+            first = seen.get(key)
+            if first is None:
+                first = dict(e)
+                seen[key] = first
+                out.append(first)
+            elif str(e.get('new', '')) != str(first.get('new', '')) and 'alt_new' not in first:
+                first['alt_new'] = str(e.get('new', ''))
+    return out
+
+
 def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path,
                  a: argparse.Namespace, csys: str, vsys: str, gl: list[tuple[str, str]],
-                 gl_in_prefix: bool, full_src: dict[int, str], full_tgt: dict[int, str]) -> dict[str, Any]:
+                 gl_in_prefix: bool, full_src: dict[int, str], full_tgt: dict[int, str],
+                 polarity: list[tuple[str, str]] | None = None) -> dict[str, Any]:
     cid = f'c{k:03d}'
     src, tgt = join(src_pg, ps), join(tgt_pg, ps)
     _same_pages(src, tgt, f'{cid} 核对')
     gtab = '' if gl_in_prefix else table_md(relevant(gl, src))
-    failed: list[str] = []
+    failed: list[dict[str, Any]] = []
     human: list[dict[str, Any]] = []
+    unconfirmed: list[dict[str, Any]] = []
+
+    def fail(reason: str, pass_no: int = 1) -> None:
+        failed.append({'chunk': cid, 'pages': list(ps), 'pass': pass_no, 'reason': reason})
+
     # 1 找错
     risk = negation_risk(src, tgt, a.sl, a.tl)
     engine = a.engine if a.engine != 'auto' else pick_engine('check', day_engine=a.day_engine)
@@ -819,31 +944,41 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
         print(f'check {cid} engine=none skipped_llm risk_pages={risk}', flush=True)
         return {'new': join(full_tgt, ps), 'log': [{'chunk': cid, 'result': 'skipped: engine=none'}],
                 'failed': failed, 'human': human}
-    dg = _digest(src, tgt, gtab, csys, engine, PROMPT_VERSION, str(getattr(a, 'risky_only', False)))   # 换模型必须重跑，不得复用别的模型的结果
-    rec = _cached(work / f'check/{cid}.json', dg)
-    if rec is None:
-        if (a.verify_engine not in ('none', '') and engine == a.verify_engine
-                and not getattr(a, 'allow_same_verify', False)):
-            raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine'
-                             f'（同模型复核须加 --allow-same-verify；默认 verify=none 不做第二轮）')
-        user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
-            f'## Original\n{src}\n\n## Translation\n{tgt}'
-        if risk:
-            user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence words '
-                     'than the translation (possible present/absent reversal or omitted "without").')
-        edits = _ask_json(engine, csys, user, f'auto/check/{cid}', work)
-        rec = {'digest': dg, 'engine': engine, 'prompt_version': PROMPT_VERSION, 'risk_pages': risk,
-               'status': 'ok' if edits is not None else 'parse_failed',
-               'edits': edits or []}
-        _write(work / f'check/{cid}.json', json.dumps(rec, ensure_ascii=False, indent=1))
-    if rec['status'] != 'ok':
-        failed.append(f'{cid} 找错输出无法解析')
-    raw = [e for e in rec['edits'] if isinstance(e, dict)]
+    passes = max(1, int(getattr(a, 'passes', 1) or 1))
+    # 换模型、改遍数、改提示词版本都必须重跑，不得复用旧结果
+    dg = _digest(src, tgt, gtab, csys, engine, PROMPT_VERSION, str(getattr(a, 'risky_only', False)), f'passes={passes}')
+    recs: list[dict[str, Any]] = []
+    for n in range(1, passes + 1):
+        cpath = work / (f'check/{cid}.json' if n == 1 else f'check/{cid}.p{n}.json')
+        rec = _cached(cpath, dg)
+        if rec is None:
+            if (a.verify_engine not in ('none', '') and engine == a.verify_engine
+                    and not getattr(a, 'allow_same_verify', False)):
+                raise ValueError(f'找错模型与复核模型相同（{engine}）：异模型原则不允许，改 --verify-engine'
+                                 f'（同模型复核须加 --allow-same-verify；默认 verify=none 不做第二轮）')
+            user = (f'## Glossary entries for this chunk\n{gtab}\n\n' if gtab else '') + \
+                f'## Original\n{src}\n\n## Translation\n{tgt}'
+            if risk:
+                user += (f'\n\n## Check with special care\nPages {risk}: the original has more negation/absence '
+                         'words than the translation (possible present/absent reversal or omitted "without").')
+            found, why = _ask_json_ex(engine, csys, user, f'auto/check/{cid}' + ('' if n == 1 else f'/p{n}'), work)
+            rec = {'digest': dg, 'engine': engine, 'prompt_version': PROMPT_VERSION, 'risk_pages': risk, 'pass': n,
+                   'status': 'ok' if found is not None else 'parse_failed', 'reason': why,
+                   'edits': found or []}
+            _write(cpath, json.dumps(rec, ensure_ascii=False, indent=1))
+        if rec['status'] != 'ok':
+            fail(f"找错输出无法解析（{rec.get('reason') or 'parse_failed'}）", n)
+        recs.append(rec)
+    raw = merge_edits([[e for e in r['edits'] if isinstance(e, dict)] for r in recs])
     f_receipt = {int(p) for r in raw if r.get('receipt') for p in r.get('pages', []) if _page_no(p) is not None}
     edits, pre_bad = _prefilter(tgt, [dict(e, id=i) for i, e in enumerate(x for x in raw if not x.get('receipt'))])
     judge = getattr(a, 'verify_mode', 'review') == 'judge'
-    if judge and rec['status'] == 'ok' and not set(ps) <= f_receipt:
-        failed.append(f'{cid} 找错模型回执缺页 {sorted(set(ps) - f_receipt)}（judge 模式下视为未核对）')
+    if judge and any(r['status'] == 'ok' for r in recs) and not set(ps) <= f_receipt:
+        if getattr(a, 'receipt_required', True):
+            fail(f'找错模型回执缺页 {sorted(set(ps) - f_receipt)}（judge 模式下视为未核对）')
+        else:   # 廉价模型常忘回执（实测遵从率约三成）：不判整块失败，但如实记「回执未确认」，报告里单列
+            unconfirmed.append({'chunk': cid, 'pages': sorted(set(ps) - f_receipt),
+                                'reason': '找错模型未给回执，覆盖未经确认'})
     # 2 第二模型裁定
     verdicts: dict[int, dict[str, Any]] = {}
     log: list[dict[str, Any]] = list(pre_bad)
@@ -857,13 +992,13 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
             user = f'## Original\n{src}\n\n## Translation\n{tgt}\n\n## Proposed fixes\n' + ('\n'.join(
                 json.dumps({k2: e[k2] for k2 in ('id', 'pdf_page', 'old', 'new', 'reason') if k2 in e},
                            ensure_ascii=False) for e in edits) or '(none)')
-            v = _ask_json(a.verify_engine, vsys_, user, f'auto/verify/{cid}', work)
+            v, vwhy = _ask_json_ex(a.verify_engine, vsys_, user, f'auto/verify/{cid}', work)
             vrec = {'digest': vd, 'engine': a.verify_engine, 'prompt_version': PROMPT_VERSION,
-                    'status': 'ok' if v is not None else 'parse_failed',
+                    'status': 'ok' if v is not None else 'parse_failed', 'reason': vwhy,
                     'verdicts': v or []}
             _write(work / f'verify/{cid}.json', json.dumps(vrec, ensure_ascii=False, indent=1))
         if vrec['status'] != 'ok':
-            failed.append(f'{cid} 裁定输出无法解析（本段改动全部不落实）')
+            fail(f"裁定输出无法解析（{vrec.get('reason') or 'parse_failed'}；本段改动全部不落实）")
         verdicts = {int(x['id']): x for x in vrec['verdicts'] if _page_no(x.get('id')) is not None}
         extra = [x for x in vrec['verdicts'] if x.get('new_fix')]
         receipt = [x for x in vrec['verdicts'] if x.get('receipt')]
@@ -871,7 +1006,7 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
         # 同一模型的两遍（--allow-same-verify，用户 2026-11-17 的 DeepSeek-only 政策）不再要求
         # 「另一模型已通读全书」的回执：两遍共用同一上下文，回执不能再证明独立覆盖。
         if vrec['status'] == 'ok' and not judge and a.verify_engine != engine and not set(ps) <= seen:
-            failed.append(f'{cid} 第二模型复核回执缺页 {sorted(set(ps) - seen)}（视为未复核）')
+            fail(f'第二模型复核回执缺页 {sorted(set(ps) - seen)}（视为未复核）')
         for x in extra:   # 第二模型独有的发现：单模型意见，不自动落实，进人工队列
             human.append(dict(x, chunk=cid, verdict='SECOND_MODEL_ONLY', why=x.get('reason', '')))
             log.append(dict(x, result='queued: 仅第二模型发现，须人工裁定'))
@@ -887,14 +1022,23 @@ def _check_chunk(k: int, ps: list[int], src_pg: dict[int, str], tgt_pg: dict[int
             human.append(dict(e, chunk=cid, verdict='ACCEPT', why=(vd_ or {}).get('why', '')))
             log.append(dict(e, result='queued: critical，须人工对照扫描件'))
         elif ok:
-            keep.append(e)
+            bad = guardrails.check_edit(str(e.get('old', '')), str(e.get('new', '')),
+                                        src_pg.get(_page_no(e.get('pdf_page')) or 0, src), sl=a.sl, tl=a.tl,
+                                        polarity=polarity or [], quote=str((vd_ or {}).get('quote', '')),
+                                        tgt_text=full_tgt.get(_page_no(e.get('pdf_page')) or 0, tgt))
+            if bad:   # 落实前护栏：命中的改动不落实，进人工队列
+                human.append(dict(e, chunk=cid, verdict='GUARDRAIL', why=f'GUARDRAIL: {bad}'))
+                log.append(dict(e, result=f'queued: GUARDRAIL: {bad}'))
+            else:
+                keep.append(e)
         else:
             log.append(dict(e, result='rejected: 第二模型未认可' + (f"（{vd_.get('why', '')}）" if vd_ else '（无裁定）')))
     new, alog = apply_edits(join(full_src, ps), join(full_tgt, ps), keep)
     n_ok = sum(x['result'] == 'applied' for x in alog)
     print(f'check {cid} proposed={len(edits) + len(pre_bad)} prefiltered_out={len(pre_bad)} '
           f'accepted={len(keep)} applied={n_ok}', flush=True)
-    return {'new': new, 'log': [dict(x, chunk=cid) for x in log + alog], 'failed': failed, 'human': human}
+    return {'new': new, 'log': [dict(x, chunk=cid) for x in log + alog], 'failed': failed, 'human': human,
+            'unconfirmed': unconfirmed}
 
 
 def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: argparse.Namespace) -> str:
@@ -919,15 +1063,18 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
         pct = 100 * stats['chars_kept'] / max(1, stats['chars_in'])
         print(f"risky-only kept {stats['paras_kept']}/{stats['paras_in']} paragraphs ({pct:.0f}% chars)", flush=True)
     jobs = list(enumerate(chunks_of(src_pg)))
+    polarity = guardrails.load_polarity(a.sl, a.tl)   # 极性词表：每次运行载入一次
     with ThreadPoolExecutor(max_workers=max(1, getattr(a, 'workers', 1))) as ex:
         res = list(ex.map(lambda kp: _check_chunk(kp[0], kp[1], src_pg, tgt_pg, work, a, csys, vsys, gl,
-                                                  gl_in_prefix, full_src, full_tgt), jobs))
+                                                  gl_in_prefix, full_src, full_tgt, polarity), jobs))
     parts = [r['new'] for r in res]
     logs = [x for r in res for x in r['log']]
     failed = [x for r in res for x in r['failed']]
     human = [x for r in res for x in r['human']]
     _write(work / 'check_log.jsonl', ''.join(json.dumps(x, ensure_ascii=False) + '\n' for x in logs))
     _write(work / 'check_failed.json', json.dumps(failed, ensure_ascii=False, indent=1))
+    unconfirmed = [x for r in res for x in r.get('unconfirmed', [])]
+    _write(work / 'check_unconfirmed.json', json.dumps(unconfirmed, ensure_ascii=False, indent=1))
     import csv
     import io
     buf = io.StringIO()
@@ -942,16 +1089,33 @@ def stage_check(src_pg: dict[int, str], tgt_pg: dict[int, str], work: Path, a: a
         final_pg.update(pages(part))
     final = whole(final_pg)
     _same_pages(whole(full_src), final, '核对合并')
-    if a.tl.lower().startswith('en'):
+    if a.tl.lower().startswith('en') and not getattr(a, 'no_taxoformat', False):
         # OCR/机翻都不保留斜体；英文定稿按分类学排版规则确定性补斜体（科名/命名人保持正体）。
         lex = taxoformat.build_lexicon([final])
         final, n_taxo = taxoformat.format_text(final, lex)
         _write(work / 'taxoformat.tsv',
                f'changes\tgenera\tbinomials\n{n_taxo}\t{len(lex.genera)}\t{len(lex.binomials)}\n')
+    if a.tl.lower().startswith('zh'):
+        # 只应用 zh_typo 的机械层（全角括号等）；review/decision 不动，学名与术语在受保护区间外才改。
+        final_pg = pages(final)
+        n_fix = 0
+        for pg_no, txt in list(final_pg.items()):
+            final_pg[pg_no], applied = zh_typo.fix_mechanical(txt)
+            n_fix += len(applied)
+        final = whole(final_pg)
+        _write(work / 'zh_typo_fixed.txt', f'{n_fix}\n')
     _write(work / 'checked.md', final)
     issues = transqa.check_all(whole(full_src), final, a.sl, a.tl)
     _write(work / 'qa_issues.json', json.dumps([vars(x) for x in issues], ensure_ascii=False, indent=1))
     return final
+
+
+def _fmt_failed(x: Any) -> str:
+    """check_failed.json 的一条：新格式为字典；旧文件里是字符串，原样输出。"""
+    if not isinstance(x, dict):
+        return str(x)
+    pg = ','.join(str(p) for p in x.get('pages', []))
+    return f"{x.get('chunk', '?')} p.{pg} 第{x.get('pass', 1)}遍 {x.get('reason', '')}"
 
 
 def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = None) -> str:
@@ -1019,7 +1183,7 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
                     f'info {c2["info"]}（qa_issues.json）')
     cf = work / 'check_failed.json'
     if cf.exists() and json.loads(cf.read_text(encoding='utf-8')):
-        rows.append('\n**失败段（须重跑）**：' + '；'.join(json.loads(cf.read_text(encoding='utf-8'))))
+        rows.append('\n**失败段（须重跑）**：' + '；'.join(_fmt_failed(x) for x in json.loads(cf.read_text(encoding='utf-8'))))
     if src_pg and tgt:
         tp = pages(tgt)
         cand = [p for p in src_pg if p in tp and len(src_pg[p]) > 1200]
@@ -1032,49 +1196,111 @@ def report(work: Path, src_pg: dict[int, str] | None = None, tgt: str | None = N
     return text
 
 
+def needs_pivot(sl: str, tl: str, direct: bool = False) -> bool:
+    """非英文、非中文源 → 中文，且未要求 --direct：走 源→en→zh 两跳。"""
+    s, t = sl.lower(), tl.lower()
+    return not direct and t.startswith('zh') and not s.startswith(('en', 'zh'))
+
+
+_PIVOT_DROP = {'-o': 1, '--work': 1, '--sl': 1, '--tl': 1, '--presub': 1, '--glossary': 1}
+
+
+def _strip_opts(argv: list[str], drop: dict[str, int]) -> list[str]:
+    """去掉 argv 里的指定选项（含 --opt=value 形式与其值）。"""
+    out: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        key = tok.split('=', 1)[0]
+        if key in drop:
+            i += 1 if '=' in tok else 1 + drop[key]
+            continue
+        out.append(tok)
+        i += 1
+    return out
+
+
+def run_pivot(a: argparse.Namespace, argv: list[str]) -> None:
+    """两跳：hop1 源→en（落盘 work/hop1_{sl}-en），hop2 en→中（work/hop2_en-zh）。
+    术语表/presub 只给 hop1（它们是源语言→英文的映射）；两跳都过完整护栏（学名、数字、检索表）。"""
+    work = Path(a.work or 'auto_work')
+    h1, h2 = work / f'hop1_{a.sl}-en', work / 'hop2_en-zh'
+    rest = _strip_opts(argv, {**_PIVOT_DROP, '--direct': 0})
+    rest = [t for t in rest if t != 'run']           # 子命令与源文件位置固定，下面重建
+    src_arg = a.src
+    rest = [t for t in rest if t != src_arg]
+    pass_h1 = ['--presub', a.presub] if getattr(a, 'presub', None) else []
+    pass_h1 += ['--glossary', a.glossary] if a.glossary else []
+    print(f'[pivot] hop1 {a.sl}→en → {h1}', flush=True)
+    main(['run', src_arg, '-o', str(h1), '--sl', a.sl, '--tl', 'en', *pass_h1, *rest])
+    if a.stop_after:
+        print('[pivot] --stop-after 已生效，不进入 hop2', flush=True)
+        return
+    mid = h1 / 'checked.md' if (h1 / 'checked.md').exists() else h1 / 'final.md'
+    if not mid.exists():
+        raise SystemExit(f'[pivot] hop1 无最终稿（{mid}），不进入 hop2')
+    print(f'[pivot] hop2 en→zh，输入 {mid} → {h2}', flush=True)
+    main(['run', str(mid), '-o', str(h2), '--sl', 'en', '--tl', a.tl, *rest])
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('cmd', choices=['run', 'check', 'report'])
     ap.add_argument('src')
     ap.add_argument('tgt', nargs='?')
     ap.add_argument('-o', '--work', required=False)
+    ap.add_argument('--cache', help='Google 译文缓存 sqlite 路径（默认 $GTRANS_CACHE 或 ~/.cache/yzz-translate/gtrans_cache.sqlite）；'
+                    '并行翻译多本书时各给一个，避免争用同一文件')
     ap.add_argument('--sl', default='bg')
     ap.add_argument('--tl', default='en')
     ap.add_argument('--glossary')
+    ap.add_argument('--presub', help='源术语→英文映射 TSV（term_presub.py learn 产出，须先审）；送 Google 前前置替换，描述段术语命中率实测 27%%→95%%（Imajima）')
     ap.add_argument('--names')
     ap.add_argument('--bad-terms', default='')
     ap.add_argument('--abbr', help='引文缩写表（两列：原文缩写、译文），补充 transqa.blocks.ABBR')
     ap.add_argument('--no-entities', dest='entities', action='store_false',
                     help='不做专名解析（默认：每段抽取专名，查 yiku/Wikidata 通行中文名，注入提示词并核对）')
     ap.add_argument('--domain', default='进化生物学', help='yiku 领域（专名与术语查询）')
-    ap.add_argument('--engine', default='auto',
-                    help='改写与找错：auto（最省合适）/ none（零模型）/ llm_engines 名；贵模型需 --force-engine')
+    ap.add_argument('--engine', default='none',
+                    help='改写与找错：none（默认，零模型：Google 初稿 + 术语表 + 确定性脚本）/ auto（最省合适）/ '
+                         'llm_engines 名。模型只在显式给出时才用，且一本书受 ¥2 预算闸（YZZ_BUDGET_CNY）约束；'
+                         '贵模型需 --force-engine')
     ap.add_argument('--day-engine', default=None, help='白天用的引擎（默认 revise=codex-luna；找错等到夜间）')
     ap.add_argument('--verify-engine', default='none',
-                    help='第二模型裁定（默认 none：质控至多 1 次 LLM；脚本护栏收尾。显式开启才费第二轮）')
-    ap.add_argument('--allow-same-verify', action='store_true',
-                    help='允许找错与复核用同一模型（仅在显式开启 verify 时有意义）')
+                    help='第二模型裁定（默认 none：质控至多 1 次 LLM，脚本护栏收尾；显式开启才费第二轮）')
+    ap.add_argument('--passes', type=int, default=1,
+                    help='check 阶段找错遍数（默认 1；2 遍取并集，每遍失败单独记录；改遍数使缓存失效）')
     ap.add_argument('--force-engine', action='store_true',
                     help='允许 claude-opus / deepseek-v4-pro / codex-astra（默认禁用，省 token）')
+    ap.add_argument('--allow-same-verify', action='store_true',
+                    help='允许找错与复核用同一模型（用户 2026-11-17 起第二模型也用 deepseek-flash 时用）')
     ap.add_argument('--risky-only', action='store_true', help='check 只送风险段和叙述/讨论段，段数不齐则保留整页')
     ap.add_argument('--verify-mode', choices=['review', 'judge'], default='review',
-                    help='review：第二模型全文复核+裁定；judge：只逐条裁定（仅 --verify-engine 非 none 时）')
+                    help='review：第二模型全文复核+裁定（第二模型须强于或等于找错模型）；judge：第二模型只逐条裁定'
+                         '（窄任务，适合廉价模型；覆盖由找错模型回执保证）')
     ap.add_argument('--workers', type=int, default=4,
                     help='revise/check 并行块数（各块写自己的缓存文件；DeepSeek 建议 4–8，Codex 4–6）')
     ap.add_argument('--pitfalls', help='项目陷阱表（追加在 skill/pitfalls/{sl}-{tl}.md 之后）')
     ap.add_argument('--rewrite-kinds', default='',
-                    help='分类文献：只把这些块类型交模型改写（如 narrative,remarks）；空且 --lean 时用默认 kinds')
+                    help='分类文献：只把这些块类型交模型改写（如 narrative,remarks），其余用术语规范化后的 Google 稿；'
+                         '意义核对仍覆盖全文。类型见 transqa/taxoblocks.py；空 = 全部改写（旧行为）')
     ap.add_argument('--lean', action=argparse.BooleanOptionalAction, default=True,
-                    help='省 token（默认开）：只改写 narrative,remarks；check 风险段。--no-lean=全文改写（费）')
+                    help='省 token（默认开）：只改写 narrative,remarks,caption；check 风险段；术语表逐段相关条目。'
+                         '--no-lean=全文改写（费，见 skill/TOKEN_ECONOMY.md）')
     ap.add_argument('--no-memory', action='store_true',
                     help='不加载跨书共享异写库（默认加载 ~/.cache/yzz-translate/memory/）')
     ap.add_argument('--tier', choices=['draft', 'release'], default='draft',
-                    help='draft=试译省 token；release=交付（须异模型 verify + --chaptered）')
+                    help='draft=试译省 token；release=交付（须异模型 --verify-engine + --chaptered）')
     ap.add_argument('--chaptered', action='store_true',
-                    help='声明本 run 属于分章流水线（release 档必需；fast_book chapters 会自动加）')
+                    help='声明本 run 属于分章流水线（release 档必需；translate_corpus --chapters 自动加）')
+    ap.add_argument('--direct', action='store_true',
+                    help='源语言→中文直译，不经英文枢纽（默认：非英文源译中文时 源→en→zh，中间英文稿落盘 hop1_*/）')
     ap.add_argument('--stop-after', choices=['draft', 'revise'], default=None,
-                    help='只做到这一步')
+                    help='只做到这一步（例：白天用 Codex 改写，夜间再 check 让 DeepSeek 找错、Codex 复核）')
     a = ap.parse_args(argv)
+    if a.cmd == 'run' and needs_pivot(a.sl, a.tl, a.direct):
+        run_pivot(a, list(sys.argv[1:] if argv is None else argv))
+        return
     from token_economy import apply_lean, guard_engine, guard_tier
     apply_lean(a)
     guard_engine(a.engine, force=a.force_engine)
@@ -1099,13 +1325,17 @@ def main(argv: list[str] | None = None) -> None:
             work / '_merged_glossary.tsv')
         a.glossary = str(merged)
         print(f'[auto] 跨书 memory 已合并 → {merged}', flush=True)
-    src_pg = pages(Path(a.src).read_text(encoding='utf-8'))
+    src_txt = protect.clean_ocr(Path(a.src).read_text(encoding='utf-8'))   # 已知 OCR 误识（词内 @→e）
+    if a.sl == 'ja':
+        src_txt = keysplit.split_keys(src_txt)   # 检索表条目一条一段，免得机翻重排
+    src_pg = pages(src_txt)
     if getattr(a, 'lean', False):
         print(f'[auto] Lean：rewrite_kinds={a.rewrite_kinds!r} risky_only={a.risky_only} '
               f'verify={a.verify_engine!r}', flush=True)
     if a.cmd == 'run':
         dfile = work / 'draft.md'
-        draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl)
+        draft_pg = pages(dfile.read_text(encoding='utf-8')) if dfile.exists() else stage_draft(src_pg, work, a.sl, a.tl, a.cache,
+                                                                                         term_presub.load_map(a.presub) if getattr(a, 'presub', None) else None)
         if a.stop_after == 'draft':
             return
         revised = stage_revise(src_pg, draft_pg, work, a)
@@ -1122,11 +1352,13 @@ def main(argv: list[str] | None = None) -> None:
     final_p = work / 'checked.md' if (work / 'checked.md').exists() else work / 'final.md'
     if draft_p.exists() and final_p.exists():
         try:
+            import csv
+
             import mine_corrections as mc
             rows = mc.mine(draft_p.read_text(encoding='utf-8'), final_p.read_text(encoding='utf-8'))
             cand = work / 'memory_candidates.tsv'
             with open(cand, 'w', encoding='utf-8', newline='') as fp:
-                w = __import__('csv').DictWriter(
+                w = csv.DictWriter(
                     fp, fieldnames=['old', 'new', 'count', 'segments_with_old', 'consistency', 'approve'],
                     delimiter='\t')
                 w.writeheader()

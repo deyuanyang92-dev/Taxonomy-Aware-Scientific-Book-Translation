@@ -2,6 +2,7 @@
 
 import random
 import time
+from pathlib import Path
 
 import pytest
 
@@ -69,6 +70,12 @@ def test_fixer_applies_known_corrections(tmp_path):
     out, ch = fx.apply("，环带沙虫，Lopadorhynthus brevis，单钩鳃裂虫。")
     assert "环带沙蚕" in out and "Lopadorhynchus brevis" in out and "单钩鳃裂虫" in out
     assert {c["rule"] for c in ch} == {"chinese_edit_distance", "latin_edit_distance"}
+
+
+def test_fixer_at_sign_is_e():
+    fx = Fixer(Path(__file__).resolve().parents[1] / "docstore" / "rules" / "ocr_fix.toml")
+    out, ch = fx.apply("Eurytho@ complanata (PALLAS 1766), mail a@b.", english=True)
+    assert out.startswith("Eurythoe complanata") and any(c["rule"] == "at_sign_for_e" for c in ch)
 
 
 def test_fixer_scales_to_large_vocab(tmp_path):

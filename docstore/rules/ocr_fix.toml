@@ -20,6 +20,18 @@ name = "digit_range_dash"
 pattern = "(?<=\\d)一(?=\\d)"
 replace = "—"
 
+# 拉丁字母词内或词尾的 @ 是 e 的 OCR 误识（Eurytho@ → Eurythoe；Hartmann-Schröder 1962 p.15）
+[[regex_rules]]
+name = "at_sign_for_e"
+pattern = "(?<=[A-Za-z])@(?=[\\s,.;)]|[a-z]|$)"
+replace = "e"
+
+# 已知作者名 OCR 误识（Eurythoe KINBERG 1857）
+[[regex_rules]]
+name = "author_kinberg"
+pattern = "\\bKinsErc\\b"
+replace = "KINBERG"
+
 [[replace_rules]]
 name = "rare_char_27352"
 before = "虫甸"
@@ -35,3 +47,31 @@ name = "rare_char_palea"
 before = "孚片刚毛"
 after = "稃片刚毛"
 
+# ---- 日文资料专用（lang = ["ja"]；语种未知时不生效）----
+# 实测 Imajima2001/2007/2009（_资料库 pages）：日文用旧字体「鰓」「嚢」（558/840/787 处），
+# OCR 偶尔吐出简体「鳃」「囊」（17/34/13 处），日文书里这两个简体字不会出现。
+[[replace_rules]]
+name = "ja_gill_simplified"
+before = "鳃"
+after = "鰓"
+lang = ["ja"]
+
+[[replace_rules]]
+name = "ja_sac_simplified"
+before = "囊"
+after = "嚢"
+lang = ["ja"]
+
+# 括号里紧跟图号的「区」是「図」（Imajima2001 p268「(区154)」）
+[[regex_rules]]
+name = "ja_fig_ku"
+pattern = "(?<=[(（])区(?=\\s?\\d)"
+replace = "図"
+lang = ["ja"]
+
+# 偶句序号 N'. 的撇号被识成右双引号（Imajima2009 p66「11”.疣足」）：数字+”+句点+日文
+[[regex_rules]]
+name = "ja_key_prime_quote"
+pattern = "(?<=\\d)[”\"](?=\\.[぀-ヿ一-鿿])"
+replace = "'"
+lang = ["ja"]

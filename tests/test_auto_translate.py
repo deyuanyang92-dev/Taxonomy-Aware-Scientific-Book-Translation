@@ -1,11 +1,16 @@
-import datetime as dt
+import argparse
 import json
+import datetime as dt
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import auto_translate as at  # noqa: E402
+import pytest  # noqa: E402
+import token_economy as te  # noqa: E402
 
 SRC = """<!-- PDF p.1 | x -->
 
@@ -85,17 +90,6 @@ def test_apply_edits_rules():
     assert "过长" in res[2] and "无此页" in res[3] and "引入" in res[4]
 
 
-def test_apply_edits_rejects_uncertain_and_no_fix_edits():
-    tgt = "<!-- PDF p.1 -->\nNo ventral cirri.\nIt is absent.\n"
-    _, log = at.apply_edits("<!-- PDF p.1 -->\nKeine Ventralcirren.\n", tgt, [
-        {"pdf_page": 1, "old": "No ventral cirri.", "new": "No ventral cirri mentioned.",
-         "reason": "no fix needed"}])
-    assert "无需修改" in log[0]["result"]
-    _, log = at.apply_edits("<!-- PDF p.1 -->\nEs fehlt.\n", tgt, [
-        {"pdf_page": 1, "old": "It is absent.", "new": "It is absent [?].", "reason": "uncertain"}])
-    assert "不确定" in log[0]["result"]
-
-
 def test_parse_json_array_tolerates_wrapping():
     assert at.parse_json_array('Here:\n```json\n[{"pdf_page": 1, "old": "a", "new": "b"}]\n```') == [
         {"pdf_page": 1, "old": "a", "new": "b"}]
@@ -105,7 +99,7 @@ def test_parse_json_array_tolerates_wrapping():
 
 
 def test_engine_router_by_beijing_time():
-    night = dt.datetime(2026, 11, 16, 17, 0, tzinfo=dt.timezone.utc)  # 周二 01:00 北京（折扣时段）
+    night = dt.datetime(2026, 11, 16, 17, 0, tzinfo=dt.timezone.utc)  # 周二 01:00 北京（18:00–次日 09:00 折扣时段内）
     day = dt.datetime(2026, 11, 16, 3, 0, tzinfo=dt.timezone.utc)  # 周一 11:00 北京（官方忙时）
     assert at.is_night(night) and not at.is_night(day)
     assert at.pick_engine("revise", night) == "deepseek-flash"
@@ -134,7 +128,6 @@ def test_guard_decimals():
 
 
 def test_stage_check_applies_only_verified_and_caches(tmp_path, monkeypatch):
-    import argparse
     calls = []
 
     def fake(engine, system, user, tag, usage_file, **kwargs):
@@ -157,7 +150,6 @@ def test_stage_check_applies_only_verified_and_caches(tmp_path, monkeypatch):
 
 
 def test_stage_check_parse_failure_is_not_success(tmp_path, monkeypatch):
-    import argparse
     monkeypatch.setattr(at, "llm", lambda *a_, **k: ("I could not do it", {}))
     a = argparse.Namespace(sl="bg", tl="en", glossary=None, engine="deepseek-flash", day_engine=None,
                            verify_engine="codex-sol")
@@ -173,7 +165,6 @@ def test_report_sample_with_short_pages(tmp_path):
 
 
 def test_engine_error_marks_chunk_failed_without_crash(tmp_path, monkeypatch):
-    import argparse
     import json
 
     def boom(*a_, **k):
@@ -213,7 +204,6 @@ def test_negation_risk_generic_languages():
 
 
 def test_critical_fix_goes_to_human_queue(tmp_path, monkeypatch):
-    import argparse
 
     def fake(engine, system, user, tag, usage_file, **kwargs):
         if "/check/" in tag:
@@ -256,7 +246,6 @@ def test_stage_draft_keeps_order_and_skips_markers(tmp_path, monkeypatch):
 
 
 def _ns(**kw):
-    import argparse
     base = dict(sl="bg", tl="en", glossary=None, engine="deepseek-flash", day_engine=None, verify_engine="codex-sol")
     base.update(kw)
     return argparse.Namespace(**base)
@@ -276,7 +265,7 @@ def test_second_model_reviews_full_text_receipt_and_extras(tmp_path, monkeypatch
     assert "Body short and thin." not in out                        # 单模型发现不自动落实
     assert "Body short and thin." in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
     failed = json.loads((tmp_path / "check_failed.json").read_text(encoding="utf-8"))
-    assert any("回执缺页 [2]" in f for f in failed)                  # 回执只覆盖 p.1
+    assert any("回执缺页 [2]" in f["reason"] for f in failed)                # 回执只覆盖 p.1
 
 
 def test_same_model_for_check_and_verify_is_refused(tmp_path, monkeypatch):
@@ -315,7 +304,6 @@ SRC2 = """<!-- PDF p.1 -->
 
 
 def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, monkeypatch):
-    import argparse
     import re as _re
     g = tmp_path / "g.tsv"
     g.write_text("хриле\tgills\nчетинка\tchaeta\n", encoding="utf-8")
@@ -348,7 +336,6 @@ def test_stage_revise_ids_protected_blocks_stable_prefix_and_resume(tmp_path, mo
 
 
 def test_repair_draft_pages_rebuilds_only_mismatched_pages(tmp_path, monkeypatch):
-    import argparse
 
     class FakeGoogle:
         def __init__(self, *args, **kwargs):
@@ -397,7 +384,6 @@ def test_parse_segments_reports_duplicates():
 
 
 def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
-    import argparse
     g = tmp_path / "g.tsv"
     g.write_text("очи\teyes\tpeepers=eyes\n", encoding="utf-8")
     monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM in tier 0")))
@@ -407,52 +393,6 @@ def test_tier0_engine_none_uses_draft_plus_local_terms(tmp_path, monkeypatch):
     draft = at.pages("<!-- PDF p.1 -->\n\nBody short. 4 peepers.\n")
     out = at.stage_revise(src, draft, tmp_path, a)
     assert "4 eyes." in out
-
-
-def test_engine_none_skips_entity_llm_even_if_entities_on(tmp_path, monkeypatch):
-    """零模型档不得因专名抽取暗调 deepseek（曾导致 anthropic 缺失时卡 3 次×30s）。"""
-    import argparse
-    monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM")))
-    a = argparse.Namespace(sl="de", tl="en", engine="none", entities=True, domain="分类学")
-    assert at.chunk_entities("Prostomium mit 4 Augen.", "c000", tmp_path, a) == []
-
-
-def test_engine_none_full_pipeline_never_calls_llm(tmp_path, monkeypatch):
-    """draft→revise→check 全程 --engine none 时 llm() 一次都不得调用。"""
-    import argparse
-    calls = []
-
-    def boom(*a_, **k):
-        calls.append((a_, k))
-        raise AssertionError(f"unexpected LLM: {a_[:1]}")
-
-    monkeypatch.setattr(at, "llm", boom)
-    g = tmp_path / "g.tsv"
-    g.write_text("source\ttarget\tvariants\tnote\nAugen\teyes\t\t\n", encoding="utf-8")
-    a = argparse.Namespace(
-        sl="de", tl="en", glossary=str(g), names=None, bad_terms="", engine="none",
-        day_engine=None, abbr=None, entities=True, lean=True, rewrite_kinds="narrative,remarks,caption",
-        risky_only=True, verify_engine="none", verify_mode="review", workers=1, pitfalls=None,
-        domain="分类学", allow_same_verify=False,
-    )
-    from token_economy import apply_lean
-    apply_lean(a)
-    src = at.pages(
-        "<!-- PDF p.1 -->\nProstomium mit 4 Augen.\n\n"
-        "Bemerkung. Die Art ist neu.\n"
-    )
-    draft = at.pages(
-        "<!-- PDF p.1 -->\nProstomium with 4 peepers.\n\n"
-        "Remark. The species is new.\n"
-    )
-    revised = at.stage_revise(src, draft, tmp_path, a)
-    assert "eyes" in revised.lower() or "peepers" in revised  # 术语表或保留稿
-    checked = at.stage_check(src, at.pages(revised), tmp_path, a)
-    assert "<!-- PDF p.1 -->" in checked
-    assert calls == []
-    stats = json.loads((tmp_path / "revise_stats.json").read_text(encoding="utf-8"))
-    assert stats.get("llm_calls", 0) == 0
-    assert stats.get("sent_to_model", 0) == 0
 
 
 def test_prefilter_drops_edits_whose_old_is_not_on_page_before_verify(tmp_path, monkeypatch):
@@ -533,7 +473,7 @@ def test_judge_mode_narrow_verdicts_unsure_to_human(tmp_path, monkeypatch):
         systems[tag.split("/")[1]] = system
         if "/check/" in tag:
             return ('[{"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."},'
-                    ' {"pdf_page": 1, "old": "4 eyes", "new": "four eyes"},'
+                    ' {"pdf_page": 1, "old": "4 eyes", "new": "4 large eyes"},'
                     ' {"receipt": true, "pages": [1, 2]}]'), {}
         return ('[{"id": 0, "quote": "Тялото късо", "key": "късо = short", "old_faithful": false,'
                 ' "new_faithful": true}, {"id": 1, "quote": "4 очи", "old_faithful": null, "new_faithful": null}]'), {}
@@ -541,8 +481,8 @@ def test_judge_mode_narrow_verdicts_unsure_to_human(tmp_path, monkeypatch):
     monkeypatch.setattr(at, "llm", fake)
     out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_mode="judge", engine="codex-sol",
                                                                     verify_engine="codex-luna"))
-    assert "Body short and thin." in out and "four eyes" not in out
-    assert "four eyes" in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+    assert "Body short and thin." in out and "4 large eyes" not in out
+    assert "4 large eyes" in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
     assert "do NOT search for new" in systems["verify"]
     assert (tmp_path / "check_failed.json").read_text(encoding="utf-8").strip() == "[]"
 
@@ -627,3 +567,351 @@ def test_risky_check_empty_selection_skips_models(tmp_path, monkeypatch):
     src = {1: '<!-- PDF p.1 -->\n\nProstomium mit Palpen.'}
     tgt = {1: '<!-- PDF p.1 -->\n\nProstomium with palps.'}
     assert at.pages(at.stage_check(src, tgt, tmp_path, _ns(sl='de', risky_only=True)))[1].strip() == tgt[1]
+
+
+# ---------------------------------------------------------------- issue #4：--cache 与并发缓存
+
+def test_cache_path_resolution(tmp_path, monkeypatch):
+    monkeypatch.delenv("GTRANS_CACHE", raising=False)
+    monkeypatch.setattr(at.Path, "home", staticmethod(lambda: tmp_path))
+    assert at.cache_path(None) == tmp_path / ".cache/yzz-translate/gtrans_cache.sqlite"
+    monkeypatch.setenv("GTRANS_CACHE", str(tmp_path / "env.sqlite"))
+    assert at.cache_path(None) == tmp_path / "env.sqlite"
+    assert at.cache_path(str(tmp_path / "x.sqlite")) == tmp_path / "x.sqlite"
+
+
+def test_stage_draft_uses_explicit_cache(tmp_path, monkeypatch):
+    import json as _json
+
+    import gtrans
+    monkeypatch.setattr(gtrans, "http_get", lambda url, timeout=30: _json.dumps([[["EN", "x"]]]))
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    monkeypatch.setattr(at.Path, "home", staticmethod(lambda: tmp_path / "home"))
+    mine = tmp_path / "book" / "my.sqlite"
+    at.stage_draft(at.pages(SRC), tmp_path, "bg", "en", cache=mine)
+    assert mine.exists() and not (tmp_path / "home").exists()
+
+
+def test_cli_has_cache_option():
+    import io
+    from contextlib import redirect_stdout
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            at.main(["run", "--help"])
+    except SystemExit:
+        pass
+    assert "--cache" in buf.getvalue()
+
+
+def _hammer(args):
+    import sys
+    sys.path.insert(0, args[0])
+    import gtrans
+    c = gtrans.Cache(args[1])
+    for i in range(40):
+        c.put(f"job{args[2]}-{i}", "z")
+    return True
+
+
+def test_two_processes_share_one_cache_without_blocking(tmp_path):
+    import multiprocessing as mp
+    db = str(tmp_path / "shared.sqlite")
+    scripts = str(Path(at.__file__).parent)
+    with mp.get_context("spawn").Pool(2) as pool:
+        assert pool.map(_hammer, [(scripts, db, 1), (scripts, db, 2)]) == [True, True]
+    import gtrans
+    c = gtrans.Cache(db)
+    assert c.get("job1-39") == "z" and c.get("job2-39") == "z"
+
+
+def test_separate_caches_are_independent(tmp_path):
+    import gtrans
+    a, b = gtrans.Cache(tmp_path / "a.sqlite"), gtrans.Cache(tmp_path / "b.sqlite")
+    a.put("x", "1")
+    assert a.get("x") == "1" and b.get("x") is None
+
+
+def test_issue5_entities_skipped_for_non_chinese_target(tmp_path):
+    import argparse
+    import auto_translate as at
+    a = argparse.Namespace(entities=True, tl='en', domain='x')
+    assert at.chunk_entities('Onuphis eremita', 'c1', tmp_path, a) == []
+
+
+def test_apply_edits_rejects_uncertain_and_no_fix_edits():
+    tgt = "<!-- PDF p.1 -->\nNo ventral cirri.\nIt is absent.\n"
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nKeine Ventralcirren.\n", tgt, [
+        {"pdf_page": 1, "old": "No ventral cirri.", "new": "No ventral cirri mentioned.",
+         "reason": "no fix needed"}])
+    assert "无需修改" in log[0]["result"]
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nEs fehlt.\n", tgt, [
+        {"pdf_page": 1, "old": "It is absent.", "new": "It is absent [?].", "reason": "uncertain"}])
+    assert "不确定" in log[0]["result"]
+
+
+def test_engine_none_skips_entity_llm_even_if_entities_on(tmp_path, monkeypatch):
+    """零模型档不得因专名抽取暗调 deepseek（曾导致 anthropic 缺失时卡 3 次×30s）。"""
+    import argparse
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: (_ for _ in ()).throw(AssertionError("no LLM")))
+    a = argparse.Namespace(sl="de", tl="en", engine="none", entities=True, domain="分类学")
+    assert at.chunk_entities("Prostomium mit 4 Augen.", "c000", tmp_path, a) == []
+
+
+def test_engine_none_full_pipeline_never_calls_llm(tmp_path, monkeypatch):
+    """draft→revise→check 全程 --engine none 时 llm() 一次都不得调用。"""
+    import argparse
+    calls = []
+
+    def boom(*a_, **k):
+        calls.append((a_, k))
+        raise AssertionError(f"unexpected LLM: {a_[:1]}")
+
+    monkeypatch.setattr(at, "llm", boom)
+    g = tmp_path / "g.tsv"
+    g.write_text("source\ttarget\tvariants\tnote\nAugen\teyes\t\t\n", encoding="utf-8")
+    a = argparse.Namespace(
+        sl="de", tl="en", glossary=str(g), names=None, bad_terms="", engine="none",
+        day_engine=None, abbr=None, entities=True, lean=True, rewrite_kinds="narrative,remarks,caption",
+        risky_only=True, verify_engine="none", verify_mode="review", workers=1, pitfalls=None,
+        domain="分类学", allow_same_verify=False,
+    )
+    from token_economy import apply_lean
+    apply_lean(a)
+    src = at.pages(
+        "<!-- PDF p.1 -->\nProstomium mit 4 Augen.\n\n"
+        "Bemerkung. Die Art ist neu.\n"
+    )
+    draft = at.pages(
+        "<!-- PDF p.1 -->\nProstomium with 4 peepers.\n\n"
+        "Remark. The species is new.\n"
+    )
+    revised = at.stage_revise(src, draft, tmp_path, a)
+    assert "eyes" in revised.lower() or "peepers" in revised  # 术语表或保留稿
+    checked = at.stage_check(src, at.pages(revised), tmp_path, a)
+    assert "<!-- PDF p.1 -->" in checked
+    assert calls == []
+    stats = json.loads((tmp_path / "revise_stats.json").read_text(encoding="utf-8"))
+    assert stats.get("llm_calls", 0) == 0
+    assert stats.get("sent_to_model", 0) == 0
+
+
+def test_main_defaults_lean_verify_none_and_force_engine(tmp_path, monkeypatch):
+    seen = {}
+    src = tmp_path / "s.md"
+    src.write_text("<!-- PDF p.1 -->\nHallo.\n", encoding="utf-8")
+    monkeypatch.setattr(at, "stage_draft", lambda *a_, **k: at.pages(src.read_text(encoding="utf-8")))
+
+    def fake_revise(sp, dp, work, a):
+        seen["a"] = a
+        raise RuntimeError("stop")
+
+    monkeypatch.setattr(at, "stage_revise", fake_revise)
+    with pytest.raises(RuntimeError):
+        at.main(["run", str(src), "-o", str(tmp_path / "w"), "--sl", "de", "--tl", "en", "--no-memory"])
+    a = seen["a"]
+    assert a.lean is True and a.verify_engine == "none"
+    assert a.rewrite_kinds == "narrative,remarks,caption"
+    with pytest.raises(SystemExit, match="force-engine"):
+        at.main(["run", str(src), "-o", str(tmp_path / "w2"), "--sl", "de", "--tl", "en",
+                 "--engine", "claude-opus", "--no-memory"])
+
+def test_budget_exceeded_is_not_swallowed(tmp_path, monkeypatch):
+    def boom(*a_, **k):
+        raise te.BudgetExceeded("over")
+
+    monkeypatch.setattr(at, "llm", boom)
+    monkeypatch.setattr(at.time, "sleep", lambda s: None)
+    with pytest.raises(te.BudgetExceeded):
+        at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns())
+
+
+def test_failed_entries_carry_pages_pass_and_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: ("I could not do it", {}))
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns())
+    f = json.loads((tmp_path / "check_failed.json").read_text(encoding="utf-8"))
+    assert f and f[0]["pages"] == [1, 2] and f[0]["pass"] == 1 and f[0]["reason"]
+    assert f[0]["chunk"] == "c000"
+
+
+def test_empty_array_is_success_not_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_engine="none"))
+    assert json.loads((tmp_path / "check_failed.json").read_text(encoding="utf-8")) == []
+    assert json.loads((tmp_path / "check/c000.json").read_text(encoding="utf-8"))["status"] == "ok"
+
+
+def test_report_renders_structured_failed_entries(tmp_path):
+    (tmp_path / "check_failed.json").write_text(json.dumps(
+        [{"chunk": "c001", "pages": [4, 5], "pass": 2, "reason": "parse_failed"}]), encoding="utf-8")
+    txt = at.report(tmp_path)
+    assert "c001" in txt and "4" in txt and "parse_failed" in txt
+
+
+def test_merge_edits_dedupes_by_page_and_normalized_old():
+    a = [{"pdf_page": 1, "old": "Body short.", "new": "A"}]
+    b = [{"pdf_page": "1", "old": "Body  short.", "new": "B"}, {"pdf_page": 2, "old": "x", "new": "y"}]
+    m = at.merge_edits([a, b])
+    assert len(m) == 2 and m[0]["new"] == "A" and m[0]["alt_new"] == "B" and m[1]["old"] == "x"
+
+
+def test_merge_edits_same_new_adds_no_alt_and_keeps_receipts():
+    a = [{"pdf_page": 1, "old": "x", "new": "y"}, {"receipt": True, "pages": [1]}]
+    b = [{"pdf_page": 1, "old": "x", "new": "y"}, {"receipt": True, "pages": [2]}]
+    m = at.merge_edits([a, b])
+    assert [e for e in m if not e.get("receipt")] == [{"pdf_page": 1, "old": "x", "new": "y"}]
+    assert sum(1 for e in m if e.get("receipt")) == 2
+
+
+def test_two_passes_call_check_twice_per_chunk_and_cache(tmp_path, monkeypatch):
+    calls = []
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        calls.append(tag)
+        return "[]", {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    a = _ns(passes=2, verify_engine="none")
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, a)
+    n = len([t for t in calls if "/check/" in t])
+    assert n == 2 and len(calls) == 2                          # 本夹具只有 1 个块 × 2 遍
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, a)
+    assert len(calls) == n                                      # 续跑命中缓存
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(passes=1, verify_engine="none"))
+    assert len(calls) > n                                       # passes 变了：缓存失效
+
+
+def test_second_pass_failure_is_recorded_first_pass_kept(tmp_path, monkeypatch):
+    def fake(engine, system, user, tag, usage_file, **kw):
+        return ("garbage", {}) if "/p2" in tag else ('[{"pdf_page": 1, "old": "4 eyes", "new": "4 large eyes"}]', {})
+
+    monkeypatch.setattr(at, "llm", fake)
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(passes=2, verify_engine="none"))
+    f = json.loads((tmp_path / "check_failed.json").read_text(encoding="utf-8"))
+    assert [x["pass"] for x in f] == [2]
+    assert "4 large eyes" in (tmp_path / "checked.md").read_text(encoding="utf-8")   # 第 1 遍的改动照常落实
+
+
+def test_union_of_two_passes_is_applied_once(tmp_path, monkeypatch):
+    outs = {"": '[{"pdf_page": 1, "old": "4 eyes", "new": "4 large eyes"}]',
+            "/p2": '[{"pdf_page": 1, "old": "4 eyes", "new": "4 large eyes"},'
+                   ' {"pdf_page": 1, "old": "Body short.", "new": "Body short and thin."}]'}
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        return outs["/p2" if "/p2" in tag else ""], {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(passes=2, verify_engine="none"))
+    assert "4 large eyes" in out and "Body short and thin." in out
+    log = [json.loads(x) for x in (tmp_path / "check_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert sum(1 for x in log if x.get("result") == "applied") == 2     # 重复项合并，不会落实两次
+
+
+def test_stage_check_judge_accept_with_source_script_goes_to_human(tmp_path, monkeypatch):
+    def fake(engine, system, user, tag, usage_file, **kw):
+        if "/check/" in tag:
+            return ('[{"pdf_page": 1, "old": "Body short.", "new": "Тялото short."},'
+                    ' {"receipt": true, "pages": [1, 2]}]'), {}
+        return '[{"id": 0, "quote": "Тялото", "old_faithful": false, "new_faithful": true}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_mode="judge", verify_engine="codex-luna"))
+    assert "Body short." in out and "Тялото short." not in out
+    assert "GUARDRAIL" in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+
+
+def test_stage_check_review_accept_polarity_swap_without_quote_goes_to_human(tmp_path, monkeypatch):
+    monkeypatch.setattr(at.guardrails, "load_polarity", lambda sl, tl, root=None: [("short", "long")])
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        if "/check/" in tag:
+            return '[{"pdf_page": 1, "old": "Body short.", "new": "Body long."}]', {}
+        return '[{"id": 0, "verdict": "ACCEPT", "why": "ok"}, {"receipt": true, "pages": [1, 2]}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns())
+    assert "Body short." in out and "Body long." not in out
+    q = (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+    assert "GUARDRAIL" in q and "Body long." in q
+
+
+def test_stage_check_judge_accept_polarity_swap_with_source_quote_is_applied(tmp_path, monkeypatch):
+    monkeypatch.setattr(at.guardrails, "load_polarity", lambda sl, tl, root=None: [("short", "long")])
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        if "/check/" in tag:
+            return '[{"pdf_page": 1, "old": "Body short.", "new": "Body long."}, {"receipt": true, "pages": [1, 2]}]', {}
+        return '[{"id": 0, "quote": "Тялото късо", "old_faithful": false, "new_faithful": true}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path, _ns(verify_mode="judge", verify_engine="codex-luna"))
+    assert "Body long." in out
+    assert "GUARDRAIL" not in (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+
+
+def test_stage_check_accepted_insertion_that_duplicates_the_page_goes_to_human(tmp_path, monkeypatch):
+    """真实数据（p.14）：模型把没漏的句子又补一遍；护栏要看该页译文，已有的内容不再落实。"""
+    monkeypatch.setattr(at.guardrails, "load_polarity", lambda sl, tl, root=None: [])
+    tgt = TGT.replace("Body short.", "Body short and thin overall.")
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        if "/check/" in tag:
+            return ('[{"pdf_page": 1, "old": "4 eyes.", "new": "4 eyes, body short and thin overall."}]'), {}
+        return '[{"id": 0, "verdict": "ACCEPT", "why": "ok"}, {"receipt": true, "pages": [1, 2]}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    out = at.stage_check(at.pages(SRC), at.pages(tgt), tmp_path, _ns())
+    assert out.count("body short and thin overall") == 0 and "4 eyes." in out
+    q = (tmp_path / "human_review_queue.csv").read_text(encoding="utf-8")
+    assert "GUARDRAIL" in q and "已有" in q
+
+
+def test_no_taxoformat_leaves_unitalicised_binomial_untouched(tmp_path, monkeypatch):
+    """qa_run 要求最终译文与输入只差已列出的改动：英文目标语言下 taxoformat 的静默补斜体必须可关。"""
+    src = "<!-- PDF p.1 | x -->\n\nТялото късо. *Exogone gemmifera* Pagenstecher, 1863.\n"
+    tgt = "<!-- PDF p.1 | x -->\n\nBody short. Exogone gemmifera Pagenstecher, 1863.\n"
+    monkeypatch.setattr(at, "llm", lambda *a_, **k: ("[]", {}))
+    on = at.stage_check(at.pages(src), at.pages(tgt), tmp_path / "on", _ns(verify_engine="none"))
+    assert "*Exogone gemmifera*" in on                              # 默认行为不变
+    off = at.stage_check(at.pages(src), at.pages(tgt), tmp_path / "off", _ns(verify_engine="none", no_taxoformat=True))
+    assert off == tgt
+    assert not (tmp_path / "off" / "taxoformat.tsv").exists()
+
+
+def test_parse_json_array_recovers_array_followed_by_receipt_line():
+    """实测（2026-11-19，flash）：数组后另起一行放回执对象，贪婪匹配 `[...]` 横跨两处 → 解析失败 → 整块重试白付一次费。"""
+    text = ('[{"pdf_page": 1, "old": "a", "new": "b"}]\n{"receipt": true, "pages": [1, 2]}\n```')
+    assert at.parse_json_array(text) == [{"pdf_page": 1, "old": "a", "new": "b"},
+                                         {"receipt": True, "pages": [1, 2]}]
+
+
+def test_parse_json_array_ignores_bracketed_reasoning_and_still_fails_closed():
+    text = 'p.56 numbers [31, 43] look fine.\n[{"receipt": true, "pages": [31, 43, 56]}]'
+    assert at.parse_json_array(text) == [{"receipt": True, "pages": [31, 43, 56]}]
+    assert at.parse_json_array("only numbers [1, 2] here, [3] too") is None      # 无对象数组 = 格式错，不是「无错」
+    assert at.parse_json_array("draft [] then more text [1, 2]") is None          # 空数组夹在说理里不能当「无错」
+
+
+def test_stage_check_judge_receipt_not_required_marks_pages_unconfirmed_not_failed(tmp_path, monkeypatch):
+    """flash 对回执的遵从率约三成：qa_run 不能因此把整块判失败，但必须如实记「回执未确认」。"""
+    import json
+
+    def fake(engine, system, user, tag, usage_file, **kw):
+        if "/check/" in tag:
+            return '[{"pdf_page": 1, "old": "Body short.", "new": "Body long."}]', {}
+        return '[{"id": 0, "quote": "Тялото късо", "old_faithful": false, "new_faithful": true}]', {}
+
+    monkeypatch.setattr(at, "llm", fake)
+    monkeypatch.setattr(at.guardrails, "load_polarity", lambda sl, tl, root=None: [])
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path / "off",
+                   _ns(verify_mode="judge", verify_engine="codex-luna", receipt_required=False))
+    assert json.loads((tmp_path / "off" / "check_failed.json").read_text(encoding="utf-8")) == []
+    unc = json.loads((tmp_path / "off" / "check_unconfirmed.json").read_text(encoding="utf-8"))
+    assert [(u["chunk"], u["pages"]) for u in unc] == [("c000", [1, 2])]
+    log = [json.loads(x) for x in (tmp_path / "off" / "check_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert any(x.get("result") == "applied" for x in log)                # 改动照常走复核与落实
+    at.stage_check(at.pages(SRC), at.pages(TGT), tmp_path / "on",         # 默认行为不变：缺回执仍判失败
+                   _ns(verify_mode="judge", verify_engine="codex-luna"))
+    failed = json.loads((tmp_path / "on" / "check_failed.json").read_text(encoding="utf-8"))
+    assert any("找错模型回执缺页" in f["reason"] for f in failed)
+    assert json.loads((tmp_path / "on" / "check_unconfirmed.json").read_text(encoding="utf-8")) == []

@@ -1,0 +1,26 @@
+{
+  "id": "r2_subspecies_rank",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Stems ascending ...... Plantago major subsp. major\n1b. Character absent ...... Nephtys",
+  "translation": "Key to terminals\n1a. Stems ascending ...... Plantago major subsp. intermedia\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Plantago major subsp. major"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:57、649–652 学名指纹忽略 subsp. 后的亚种加词，替换后分类终点改变。"
+}

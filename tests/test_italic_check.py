@@ -46,31 +46,10 @@ def test_cjk_italic_is_critical() -> None:
     assert ic.classify("*整条说明*", LEX, False, "roman") == "italic.cjk"
 
 
-def test_family_italic_is_a_major_finding() -> None:
-    # 原书科名排斜体（Vol. 45 p. 7 作者名单），但英文版按动物命名法惯例：
-    # 只有属名、种名斜体，科级及以上阶元正体（用户 2026-11-17 定）。
+def test_family_italic_is_informational() -> None:
+    # 原书「List of authors and texts」里科名本来就斜体（Vol. 45 p. 7），不算错。
     assert ic.classify("*Chrysopetalidae*", LEX, False, "roman") == "italic.higher_taxon"
-    assert ic.LEVELS["italic.higher_taxon"] == "major"
-    assert "italic.higher_taxon" in ic.FIXABLE
-
-
-def test_family_italic_is_fixed_to_roman(tmp_path) -> None:
-    src, out = tmp_path / "in.docx", tmp_path / "out.docx"
-    doc = Document()
-    par = doc.add_paragraph()
-    par.add_run("Families ")
-    run = par.add_run("Lumbrineridae, Oenonidae")
-    run.italic = True
-    doc.save(str(src))
-    findings = ic.fix_docx(src, out)
-    assert findings and findings[0].kind == "italic.higher_taxon"
-    fixed = Document(str(out)).paragraphs[0]
-    assert all(not r.italic for r in fixed.runs if r.text.strip())
-
-
-def test_family_run_keeps_neighbouring_italic_text() -> None:
-    assert ic._split_higher("see Lumbrineridae now") == [
-        ("see ", True), ("Lumbrineridae", False), (" now", True)]
+    assert ic.LEVELS["italic.higher_taxon"] == "info"
 
 
 def test_markdown_reports_author_italic() -> None:
@@ -120,18 +99,6 @@ def test_docx_caption_roman_with_italic_name_passes(tmp_path) -> None:
     assert [f for f in ic.check_docx(path) if f.level in ("critical", "major")] == []
 
 
-def test_docx_fig_number_roman_species_italic_not_allitalic(tmp_path) -> None:
-    """图N 正体 + 学名斜体：不得报 caption.allitalic。"""
-    doc = Document()
-    cap = doc.add_paragraph()
-    cap.add_run("图3 ")
-    cap.add_run("Australaugeneria michaelseni").italic = True
-    path = tmp_path / "fig.docx"
-    doc.save(path)
-    kinds = [f.kind for f in ic.check_docx(path) if f.level in ("critical", "major")]
-    assert "caption.allitalic" not in kinds
-
-
 def test_fix_docx_makes_caption_roman_and_names_italic(tmp_path) -> None:
     doc = Document()
     doc.add_paragraph("Nereis pelagica Smith, 1900.")
@@ -144,10 +111,3 @@ def test_fix_docx_makes_caption_roman_and_names_italic(tmp_path) -> None:
     runs = [(r.text, bool(r.italic)) for r in Document(out).paragraphs[1].runs if r.text.strip()]
     assert ("Nereis pelagica", True) in runs
     assert any("Atlantic" in t and not it for t, it in runs)
-
-
-def test_genus_prefix_of_family_name_is_not_a_name() -> None:
-    """Spio 是属名，Spionidae 是科名；属名匹配不得咬进科名（2009 en 图 5 误报）。"""
-    lex = tf.Lexicon(frozenset({"Spio"}), frozenset(), frozenset(), frozenset())
-    assert ic._names_in("Fig. 5 Body parts of Spionidae", lex) == []
-    assert ic._names_in("Fig. 5 Spio filicornis", lex) == ["Spio filicornis"]

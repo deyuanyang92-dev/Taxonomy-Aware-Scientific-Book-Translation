@@ -1,0 +1,23 @@
+{
+  "id": "zh_page_detached",
+  "format": "dash",
+  "lang": "zh",
+  "source": "属检索表\n1. 针叶成束…………\n第 12 页\n— 针叶单生…………\n第 18 页",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "page",
+        "18"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "中文译排中两个地址各占下一行，均归入紧邻的上一支。"
+}

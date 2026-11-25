@@ -1,0 +1,23 @@
+{
+  "id": "r2_ru_cyrillic",
+  "format": "ab",
+  "lang": "ru",
+  "source": "1а. Надкрылья гладкие ...... Nebria\n1б. Надкрылья бороздчатые ...... Carabus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nebria"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Carabus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:60–64 分支字母只允许 ASCII；西里尔 а、б 对应第一、二支。"
+}

@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import csv
 import re
-import sys
 from pathlib import Path
 
 ROOT_DEFAULT = Path.home() / ".cache/yzz-translate/memory"

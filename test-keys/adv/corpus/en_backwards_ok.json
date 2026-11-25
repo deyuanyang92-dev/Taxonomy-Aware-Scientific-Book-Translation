@@ -1,0 +1,43 @@
+{
+  "id": "en_backwards_ok",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to leaves\n1a. Leaves simple ........ 3\n1b. Leaves compound ........ p. 8\n2a. Margins entire ........ p. 9\n2b. Margins toothed ........ p. 10\n3a. Blades lobed ........ 2\n3b. Blades unlobed ........ p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "3"
+      ],
+      [
+        "1b",
+        "page",
+        "8"
+      ],
+      [
+        "2a",
+        "page",
+        "9"
+      ],
+      [
+        "2b",
+        "page",
+        "10"
+      ],
+      [
+        "3a",
+        "jump",
+        "2"
+      ],
+      [
+        "3b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "路径 1→3→2 终止于页地址，3→2 合法且无环。"
+}

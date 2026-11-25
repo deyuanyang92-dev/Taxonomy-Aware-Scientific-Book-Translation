@@ -1,0 +1,35 @@
+{
+  "id": "en_backref_wrong",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to leaves\n1. Leaves simple ........ 2\n— Leaves compound ........ p. 8\n2(4). Margins entire ........ p. 10\n— Margins toothed ........ p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "8"
+      ],
+      [
+        "2a",
+        "page",
+        "10"
+      ],
+      [
+        "2b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "backref_mismatch"
+    ]
+  },
+  "why": "实际由 1 进入 2，括号却写 4。4 是回指，不另报悬空去向。"
+}

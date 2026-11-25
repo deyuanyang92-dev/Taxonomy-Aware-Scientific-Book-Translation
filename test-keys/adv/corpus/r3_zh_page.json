@@ -1,0 +1,26 @@
+{
+  "id": "r3_zh_page",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Eyes present ...... Harmothoe (p. 76)\n1b. Eyes absent ...... Antinoe",
+  "translation": "1a. 有眼 ...... Harmothoe（第67页）\n1b. 无眼 ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "booklayout/keygraph.py:803。仅将 76 页改为 67 页。"
+}

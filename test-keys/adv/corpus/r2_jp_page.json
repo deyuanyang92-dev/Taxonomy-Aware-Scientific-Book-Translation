@@ -1,0 +1,23 @@
+{
+  "id": "r2_jp_page",
+  "format": "ab",
+  "lang": "ja",
+  "source": "1a. 翅が短い ...... １２ページ\n1b. 翅が長い ...... Carabus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Carabus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:47–48 把数字加「ページ」归入跳转，日文原意是书页。"
+}

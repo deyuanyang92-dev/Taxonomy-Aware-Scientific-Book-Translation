@@ -1,0 +1,24 @@
+{
+  "id": "r2_authority",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Notopodial lobes elongate ...... Nereis pelagica Linnaeus, 1758\n1b. Character absent ...... Nephtys",
+  "translation": "Key to terminals\n1a. Notopodial lobes elongate ...... Nereis pelagica\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Nereis pelagica"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:177 将作者与年份一并返回；57、645–652 对照时还把作者姓和数字当作地址。译文仅略去命名人。"
+}

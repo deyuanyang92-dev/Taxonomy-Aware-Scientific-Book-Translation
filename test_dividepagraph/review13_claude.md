@@ -1,0 +1,1 @@
+无实质问题。已读 cli.py _with_locks/_overlap/cmd_patch_blocks/cmd_repair 与 normalize.py apply_page_patch/apply_block_edits，并实跑探针（同页复用 ID、同块先删后改），均被拒绝或报告 missing，无数据丢失。ABA（inode 复用）经推演：写者替换完成后才会出现同键，读到的是已写完版本，不丢更新。次要：_with_locks 中第 N 个 _lock_file 抛错会泄漏前面已开 fd（仅 fd 泄漏，非数据丢失）。

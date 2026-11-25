@@ -1,0 +1,33 @@
+{
+  "id": "en_prime_jump",
+  "format": "bullet",
+  "lang": "en",
+  "source": "Key to specimens\n1. Leaves opposite ........ 2'\n• Leaves alternate ........ p. 19\n2. Blades divided ........ p. 20\n• Blades undivided ........ p. 21",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "19"
+      ],
+      [
+        "2a",
+        "page",
+        "20"
+      ],
+      [
+        "2b",
+        "page",
+        "21"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "依 SPEC，带撇号的数字去向归到偶句 2。此处只检验规范化，不假定所有书如此编码。"
+}

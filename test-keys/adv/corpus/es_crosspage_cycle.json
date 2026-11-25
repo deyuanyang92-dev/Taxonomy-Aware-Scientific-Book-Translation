@@ -1,0 +1,35 @@
+{
+  "id": "es_crosspage_cycle",
+  "format": "dash",
+  "lang": "es",
+  "source": "Clave de ejemplares\n1. Hojas simples ........ 2\n— Hojas compuestas ........ pág. 5\n<!-- PDF p.51 -->\n2. Margen entero ........ 1\n— Margen dentado ........ pág. 6",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "page",
+        "5"
+      ],
+      [
+        "2a",
+        "jump",
+        "1"
+      ],
+      [
+        "2b",
+        "page",
+        "6"
+      ]
+    ],
+    "findings": [
+      "cycle"
+    ]
+  },
+  "why": "分页前后的两条实际跳转组成 1→2→1；每个偶句只有一个入边。"
+}

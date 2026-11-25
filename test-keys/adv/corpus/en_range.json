@@ -1,0 +1,43 @@
+{
+  "id": "en_range",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to specimens\n1a. Leaves opposite ........ 5-6\n1b. Leaves alternate ........ p. 18\n5a. Blades lobed ........ 6\n5b. Blades unlobed ........ p. 22\n6a. Margins toothed ........ p. 23\n6b. Margins entire ........ p. 24",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "5"
+      ],
+      [
+        "1b",
+        "page",
+        "18"
+      ],
+      [
+        "5a",
+        "jump",
+        "6"
+      ],
+      [
+        "5b",
+        "page",
+        "22"
+      ],
+      [
+        "6a",
+        "page",
+        "23"
+      ],
+      [
+        "6b",
+        "page",
+        "24"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "依 SPEC 去向范围取左端 5，6 另由 5a 到达；未连续使用的号不在问题词表内。"
+}

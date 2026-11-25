@@ -1,0 +1,23 @@
+{
+  "id": "es_bullet_page",
+  "format": "bullet",
+  "lang": "es",
+  "source": "Clave de géneros\n1. Acículas en fascículos ........ pág. 3\n• Acículas solitarias ........ pág. 8",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "3"
+      ],
+      [
+        "1b",
+        "page",
+        "8"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "项目点承接上一号。带重音的页码缩写给出页地址。"
+}

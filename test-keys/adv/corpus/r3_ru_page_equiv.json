@@ -1,0 +1,24 @@
+{
+  "id": "r3_ru_page_equiv",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Eyes present ...... Harmothoe (p. 76)\n1b. Eyes absent ...... Antinoe",
+  "translation": "1а. Глаза есть ...... Harmothoe (с. 76)\n1б. Глаз нет ...... Antinoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:803。俄文 с. 76 对应原页，无去向变化。"
+}

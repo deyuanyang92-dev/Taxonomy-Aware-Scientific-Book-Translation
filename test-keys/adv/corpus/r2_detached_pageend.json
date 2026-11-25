@@ -1,0 +1,34 @@
+{
+  "id": "r2_detached_pageend",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Branchiae present\n2\n<!-- PDF p.9 -->\n1b. Branchiae absent ...... Nephtys\n2a. Hooks present ...... Glycera\n2b. Hooks absent ...... Goniada",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Glycera"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Goniada"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:458–463 按页尾位置丢弃单列跳号。下一页有其偶句，平行底稿内联相同地址。",
+  "translation": "1a. Branchiae present ...... 2\n<!-- PDF p.9 -->\n1b. Branchiae absent ...... Nephtys\n2a. Hooks present ...... Glycera\n2b. Hooks absent ...... Goniada"
+}

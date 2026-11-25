@@ -1,0 +1,26 @@
+{
+  "id": "r3_ja_taxon",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Eyes present ...... Harmothoe (p. 76)\n1b. Eyes absent ...... Antinoe",
+  "translation": "1a. 眼あり ...... Harmothoe（76ページ）\n1b. 眼なし ...... Polynoe",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "booklayout/keygraph.py:823。仅替换第二支的学名。"
+}

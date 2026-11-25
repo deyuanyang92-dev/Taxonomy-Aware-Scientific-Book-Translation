@@ -1,0 +1,46 @@
+{
+  "id": "en_island_cycle",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to leaves\n1a. Leaves opposite ........ p. 8\n1b. Leaves alternate ........ p. 9\n2a. Blades lobed ........ 3\n2b. Blades unlobed ........ p. 10\n3a. Margins toothed ........ 2\n3b. Margins entire ........ p. 11",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "8"
+      ],
+      [
+        "1b",
+        "page",
+        "9"
+      ],
+      [
+        "2a",
+        "jump",
+        "3"
+      ],
+      [
+        "2b",
+        "page",
+        "10"
+      ],
+      [
+        "3a",
+        "jump",
+        "2"
+      ],
+      [
+        "3b",
+        "page",
+        "11"
+      ]
+    ],
+    "findings": [
+      "unreachable",
+      "cycle"
+    ]
+  },
+  "why": "2→3→2 构成独立子环。从入口 1 无法到达其中任一偶句。"
+}

@@ -63,26 +63,10 @@ Both outcomes prevent repeat processing. `_audit/proofread_KEY.jsonl` records de
 and up to 200 word-diff spans; rejections also go to `_audit/proofread_rejects_KEY.jsonl`.
 Failures remain retryable, and each completed attempt prints a flushed progress line.
 
-## Latin-script (Spanish) benchmark, FAUNA IBERICA scans (2026-11-21)
+## 2026-11-21 PaddleOCR、Tesseract、kraken 与 PaddleOCR-VL 的实测与设计入口
 
-20 random pages from 4 volumes (300 dpi), gold = Sonnet transcription (120 half-page files, may contain errors).
-Metric: bag-of-words recall/precision, order-independent, hyphen-joined (`work/ocr_bench2/score.py`).
-
-| Engine | Recall | Precision | Verdict |
-|---|---|---|---|
-| Datalab accurate + keep_pageheader, synthetic image captions stripped | 98.98 | 99.40 | best; external API |
-| Datalab accurate / balanced (no header) | 98.00 / 97.80 | 99.4 | |
-| Tesseract spa+eng psm3 | 97.19 | 97.01 | best local, free |
-| PP-OCRv5 server det + latin mobile rec | 97.07 | 97.24 | |
-| pp_latin variants (det thresh/unclip/side) and PP-OCRv6 medium | 96.75-97.22 | 97.19-97.34 | no gain, within noise |
-| OvisOCR2 half-page + dedup | 98.07 | 88.63 | loops, invents text |
-| OvisOCR2 + RepStop | 91.49 | 97.73 | truncates, v21/v25 ~82 |
-| PaddleOCR-VL-1.6 (transformers, half page) | 48.4 (2 pages) | 94.9 | 355-1696 s/page, degenerates |
-
-Caveats: Datalab emits English synthetic image descriptions that inflate raw recall (99.47 raw); `--disable_image_captions`
-did not remove them, so they were stripped by an English/Spanish function-word heuristic. Gold includes running headers,
-so the keep_pageheader gain is partly header text. PaddleOCR-VL remote code fails on transformers 5.23
-(`rope_parameters`); use the native class. Paddle CPU needs `enable_mkldnn=False` (oneDNN PIR bug, 3.3.1).
-
-## 日文横评（2026-11-21，Imajima 14 页）
-PP-OCRv6_medium@200 最佳（页均 CER 0.057，1.68 s/页）；PP-OCRv5 server/mobile 0.065；YomiToku 0.085；Tesseract jpn 0.27+；RapidOCR/EasyOCR >0.33。300dpi 不优于 200dpi。详见 日本-imajima/AGENTS.md 与 yanjie/work/jp_bench/jp_result.md。金标为 Sonnet 转录，未人工校。
+- PaddleOCR 3.7（paddlepaddle-gpu 3.3.1）使用手册：`docs/paddleocr_manual.md`。
+- 多引擎统一适配器设计（兼容 kraken、PaddleOCR、Tesseract 等）及 Tesseract 参数网格记录：`docs/ocr_multi_engine_plan.md`。
+- 评测进度与规则：`test-ocr/PROGRESS.md`；全部数值行：`docs/ocr_eval/LEDGER.tsv`。
+- 日文 Imajima 结果（cer_norm，G0 n=14 / G2 n=12）：PP-OCRv6 medium 0.0482 / 0.0483；v5 server 0.0602 / 0.026；Tesseract 最佳变体 0.1559 / 0.1896；PaddleOCR-VL-1.6 0.1666 / 2.1307（有幻觉页，不用于全书）。
+- kraken（https://github.com/mittagessen/kraken，Apache-2.0，7.2）：已装在 `/root/ocr_eval/venv_kraken`，`kraken list` 含 Fraktur、德文 antiqua/Fraktur、拉丁摇篮本、CATMuS-Print 与日文模型；已测（2026-11-21）：PP-OCRv6 与 CATMuS-Print 模型卡无日文/汉字，G0 单页试点输出无假名汉字；旧英文页 n=4（旧金标仅一致率）与 Tesseract 无可区分差异。德文 Fraktur/拉丁摇篮本模型尚未测，尚无老分类文献金标，需用户提供。

@@ -342,3 +342,39 @@ def test_fresh_library_without_registry_is_empty_and_fast(tmp_path):
     assert st._load_registry() == {}
     assert st._load_registry() == {}
     assert time.time() - t < 2
+
+
+# ---------------------------------------------------------------- issue #3：导出缺页要明确报告
+
+def test_export_reports_missing_pages_not_silent(lib, capsys):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)   # 第 3 页（图片页）仍待 OCR
+    assert st.missing_pages(key) == [3]
+    assert st.missing_pages(key, [1, 2]) == []
+    assert cli.main(["--root", str(st.root), "export", key, "--translate"]) == 0
+    cap = capsys.readouterr()
+    assert "<!-- PDF p.2" in cap.out and "PDF p.3" not in cap.out
+    assert "缺页" in cap.err and "3" in cap.err and key in cap.err
+
+
+def test_export_strict_fails_on_missing_pages(lib, capsys):
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--root", str(st.root), "export", key, "--translate", "--strict"])
+    assert e.value.code != 0
+    assert "缺页" in capsys.readouterr().err
+
+
+def test_export_after_ocr_pending_pages_has_no_missing(lib, capsys):
+    """text（文本层）→ 待 OCR 页补做 → export：全部页标记齐全，无缺页警告。"""
+    st, pdf, _ = lib
+    key, _ = st.register(pdf)
+    textify.textify(st, key, workers=1, layer_only=True, log=lambda m: None)
+    textify.textify(st, key, workers=1, engines=["rapidocr"], log=lambda m: None)
+    assert st.missing_pages(key) == []
+    assert cli.main(["--root", str(st.root), "export", key, "--translate", "--strict"]) == 0
+    cap = capsys.readouterr()
+    assert cap.out.count("<!-- PDF p.") == 3 and "缺页" not in cap.err

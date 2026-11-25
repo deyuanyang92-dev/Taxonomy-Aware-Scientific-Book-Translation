@@ -1,0 +1,6 @@
+Clavis	https://github.com/Artsdatabanken/Clavis.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/Clavis	成功	LICENSE	md(1) json(1)	3
+clavis-pipeline	https://github.com/Artsdatabanken/clavis-pipeline.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/clavis-pipeline	成功	LICENSE	py(58) md(28) json(3) txt(1)	92
+open-delta	https://github.com/AtlasOfLivingAustralia/open-delta.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/open-delta	成功	NONE	java(1267) png(210) html(55) properties(34)	2281
+sdd-sdk	https://github.com/identification-resources/sdd-sdk.git	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/sdd-sdk	成功	NONE	json(2) ts(1) js(1) gitignore(1)	5
+freedelta	https://git.code.sf.net/p/freedelta/code; https://git.code.sf.net/p/freedelta/git; svn://svn.code.sf.net/p/freedelta/code/trunk (svn 未安装)	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/freedelta	失败；git 两个镜像 exit128（仓库不可达或路径不对）；svn 未装；sourceforge 页面 HTTP 200/200（未下到包）			0
+Xper2	https://github.com/Xper2/Xper2	/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/survey/repos/Xper2	成功；注意：owner 同名仓库，待确认是否为 Xper2 原版软件，未读代码	NONE	md(1)	1

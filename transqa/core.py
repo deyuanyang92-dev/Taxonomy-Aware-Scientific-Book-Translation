@@ -26,7 +26,15 @@ def numbers(t: str) -> collections.Counter[str]:
     """数字。千分位（136 000、136,000、136.000、136 000）先并成 136000；小数逗号与小数点视为同一（33,6 = 33.6）。"""
     t = re.sub(r'(?<![\d.,])(\d{1,3})((?:[ \u00a0\u202f,.]\d{3})+)(?![\d.,]\d)',
                lambda m: m.group(1) + re.sub(r'\D', '', m.group(2)), clean(t))
-    return collections.Counter(x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t))
+    dates: list[str] = []
+
+    def _date(m: re.Match[str]) -> str:   # 日.月.年 与 月/日/年 只是写法不同：按排序后的三元组计一个记号
+        dates.append('date:' + '-'.join(sorted(m.groups())))
+        return ' '
+    t = re.sub(r'(?<![\d.,/])(\d{1,2})[.,/] ?(\d{1,2})[./] ?(\d{2})(?![\d.,/]?\d)', _date, t)
+    # 无空格逗号串（2,4,5,7,9…）是并列编号不是小数：≥3 项时拆开
+    t = re.sub(r'(?<![\d.,])\d{1,2}(?:,\d{1,2}){2,}(?![\d.,]?\d)', lambda m: m.group(0).replace(',', ' '), t)
+    return collections.Counter([x.replace(',', '.') for x in re.findall(r'\d+(?:[.,]\d+)?', t)] + dates)
 
 
 def _page_text(segs: list[Segment]) -> str:
@@ -63,30 +71,130 @@ def coverage(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> lis
             else:
                 out.append(Issue('coverage.segment_missing', 'major', f'p.{p} 段数少于原文（{nt}/{ns}），疑似漏段', p,
                                  evidence={'src': ns, 'tgt': nt, 'tgt_lines': lines}))
-        empty = [s.id for s in tp[p] if not re.search(r'\w', clean(s.text))]
+        src_blank = {s.id for s in sp[p] if not re.search(r'\w', clean(s.text))}   # 原文本身只有标点（OCR 残符「,」「'」）
+        empty = [s.id for s in tp[p] if not re.search(r'\w', clean(s.text)) and s.id not in src_blank]
         if empty:
             out.append(Issue('coverage.segment_empty', 'major', f'p.{p} 空译段 {empty}', p))
     return out
 
 
+_FOLIO_RE = re.compile(r'^\s*\d{1,4}\s*$')
+_HDR_NUM_RE = re.compile(r'^\s*(?:\d{1,4}\s+\D+|\D+\s+\d{1,4})\s*$')
+
+
+def _is_header_like(line: str) -> bool:
+    """页眉/页脚：单独页码，或带页码的全大写短行（`16 FAUNA IBÉRICA`、`FAUNA IBÉRICA 17`）。"""
+    if _FOLIO_RE.match(line):
+        return True
+    if len(line.strip()) > 80 or not _HDR_NUM_RE.match(line):
+        return False
+    word = ''.join(re.findall(r'[^\W\d_]', line))
+    return len(word) >= 3 and word == word.upper()
+
+
+def strip_furniture(pages: dict[int, str]) -> dict[int, str]:
+    """去掉每页首/末行的页眉页脚（running header / folio）：仅用于数字检查，不改动文本本身。
+    规则：单独页码行；带页码的全大写短行；数字归一后在 ≥3 页的首/末行重复出现的短行。"""
+    edges: dict[str, int] = {}
+    lines: dict[int, list[str]] = {p: t.split('\n') for p, t in pages.items()}
+    for ls in lines.values():
+        nb = [x for x in ls if x.strip()]
+        for x in {nb[0], nb[-1]} if nb else set():
+            if len(x.strip()) <= 80 and re.search(r'\d', x):
+                k = re.sub(r'\d+', '#', x.strip().lower())
+                edges[k] = edges.get(k, 0) + 1
+    recurring = {k for k, c in edges.items() if c >= 3}
+
+    def furniture(x: str) -> bool:
+        return _is_header_like(x) or re.sub(r'\d+', '#', x.strip().lower()) in recurring
+
+    out: dict[int, str] = {}
+    for p, ls in lines.items():
+        ls = list(ls)
+        for end in (0, -1):
+            while True:
+                idx = [i for i, x in enumerate(ls) if x.strip()]
+                if not idx:
+                    break
+                i = idx[0] if end == 0 else idx[-1]
+                if furniture(ls[i]):
+                    ls[i] = ''
+                else:
+                    break
+        out[p] = '\n'.join(ls)
+    return out
+
+
+_STRICT_PATTERNS = (
+    r'\b(?:1[5-9]\d\d|20\d\d)\b',                                                   # 引证年份
+    r'\d+(?:[.,]\d+)?\s*(?:mm|cm|µm|μm|um|km|mg|ml|%|°|m\b|g\b)',                      # 测量值
+    r'(?:\b(?:Fig|Figs|Figure|Figures|Figura|Figuras|Pl|Plate|Lám|Tab|Table|Tabla)\.?\s*)\d+',  # 图表引用
+    r'(?m)^\s*\**\d+\s*\(\d+\)[^\n]*',                                               # 检索表条目
+)
+
+
+def _strict_numbers(text: str) -> set[str]:
+    """必须在同页对齐的数字（年份、测量值、图表引用、检索表条目）：不允许借相邻页抵消。"""
+    out: set[str] = set()
+    for pat in _STRICT_PATTERNS:
+        for m in re.finditer(pat, clean(text)):
+            out |= set(numbers(m.group(0)))
+    return out
+
+
+def _context(text: str, n: str, width: int = 40) -> str:
+    m = re.search(rf'(?<![\d.,]){re.escape(n)}(?![\d])', clean(text))
+    if not m:
+        return ''
+    return re.sub(r'\s+', ' ', clean(text)[max(0, m.start() - width): m.end() + width]).strip()
+
+
 def number_check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> list[Issue]:
+    """逐页比较数字；OCR 重排、段落跨页造成的「缺/多」若恰好出现在相邻页（±1），改报 number.page_shift（minor，
+    对齐提示）而非译文错误。年份、测量值、图表引用、检索表条目仍严格同页比较。页眉页脚先剔除。"""
     out: list[Issue] = []
     sl = cfg.get('sl', '')
     sp, tp = by_page(src), by_page(tgt)
     words_ok = bool(L.numerals(sl))
-    for p in sorted(set(sp) & set(tp)):
-        s, t = _page_text(sp[p]), _page_text(tp[p])
-        ns, nt = numbers(s), numbers(t)
-        miss = ns - nt
-        if miss:
-            out.append(Issue('number.missing', 'critical', f'p.{p} 缺数字 {dict(miss)}', p, evidence=dict(miss)))
-        extra = nt - ns
-        allow = collections.Counter(str(v) for v in L.numeral_values(clean(s), sl))
-        extra = extra - allow
-        if extra:
+    common = sorted(set(sp) & set(tp))
+    stext = strip_furniture({p: _page_text(sp[p]) for p in common})
+    ttext = strip_furniture({p: _page_text(tp[p]) for p in common})
+    miss: dict[int, collections.Counter[str]] = {}
+    extra: dict[int, collections.Counter[str]] = {}
+    strict_s = {p: _strict_numbers(stext[p]) for p in common}
+    strict_t = {p: _strict_numbers(ttext[p]) for p in common}
+    for p in common:
+        ns, nt = numbers(stext[p]), numbers(ttext[p])
+        # 译文用数词写数字（10 Paar→十对）不算缺；只在目标语言有数词表（zh/ja 等）时放行
+        tw = collections.Counter(str(v) for v in L.numeral_values(clean(ttext[p]), cfg.get('tl', '')))
+        miss[p] = (ns - nt) - tw
+        allow = collections.Counter(str(v) for v in L.numeral_values(clean(stext[p]), sl))
+        extra[p] = (nt - ns) - allow
+    shifts: dict[tuple[int, int], list[str]] = {}
+    for p in common:
+        for n in list(miss[p]):
+            if n in strict_s[p]:
+                continue
+            for q in (p - 1, p + 1):
+                while q in extra and miss[p][n] > 0 and extra[q][n] > 0 and n not in strict_t[q]:
+                    miss[p][n] -= 1
+                    extra[q][n] -= 1
+                    shifts.setdefault((p, q), []).append(n)
+    for (p, q), ns_ in sorted(shifts.items()):
+        ev = {'numbers': sorted(set(ns_)), 'src_page': p, 'tgt_page': q,
+              'src_context': {n: _context(stext[p], n) for n in sorted(set(ns_))},
+              'tgt_context': {n: _context(ttext[q], n) for n in sorted(set(ns_))}}
+        out.append(Issue('number.page_shift', 'minor',
+                         f'p.{p} 的数字 {ev["numbers"]} 在译文 p.{q} 出现（跨页对齐差异，非译文错误；请核对分页）', p, evidence=ev))
+    for p in common:
+        m = +miss[p]
+        if m:
+            out.append(Issue('number.missing', 'critical', f'p.{p} 缺数字 {dict(m)}', p, evidence=dict(m)))
+        e = +extra[p]
+        if e:
             sev: Severity = 'major' if words_ok else 'info'
-            msg = f'p.{p} 多出原文没有的数字 {dict(extra)}' + ('' if words_ok else f'（{sl} 无数词表，未能排除数词→数字）')
-            out.append(Issue('number.added', sev, msg, p, evidence=dict(extra)))
+            msg = f'p.{p} 多出原文没有的数字 {dict(e)}' + ('' if words_ok else f'（{sl} 无数词表，未能排除数词→数字）')
+            out.append(Issue('number.added', sev, msg, p, evidence=dict(e)))
     return out
 
 

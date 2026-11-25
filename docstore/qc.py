@@ -152,7 +152,9 @@ def score_page(
         "verify_level": level,
     }
 
-    if level in ("text_layer", "ocr_verified", "blank"):
+    # text_layer 不再整页跳过：德文内嵌层词袋错 53%（Codex 评审 qc.py:155）；
+    # 它仍走乱码/少字/未知名信号，只是没有 OCR 置信、dpi、共识这些 OCR 专属项。
+    if level in ("ocr_verified", "blank"):
         return PageRisk(key, n, 0.0, "skip", [f"等级 {level} 跳过"], signals, level, _sha1(text))
 
     conf = q.get("ocr_conf")
@@ -177,7 +179,7 @@ def score_page(
         score += float(w.get("low_dpi", 2.5))
         reasons.append(f"dpi {dpi}<{prefer}")
 
-    if has_multi_ocr is False:
+    if has_multi_ocr is False and level != "text_layer":
         score += float(w.get("no_consensus", 1.0))
         reasons.append("单引擎无共识")
 
@@ -306,7 +308,7 @@ def redo_page(
 
     text, conf, disagreements, unresolved = vote(readings)
     fixer = Fixer(Path(__file__).resolve().parent / "rules" / "ocr_fix.toml")
-    fixed, changes = fixer.apply(text)
+    fixed, changes = fixer.apply(text, lang=store.doc(key).get("lang"))
     lv = "ocr_sampled" if unresolved == 0 else "ocr_raw"
     store.put_version(
         key,

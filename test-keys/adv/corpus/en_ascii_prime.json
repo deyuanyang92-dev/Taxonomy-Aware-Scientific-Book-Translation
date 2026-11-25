@@ -1,0 +1,23 @@
+{
+  "id": "en_ascii_prime",
+  "format": "prime",
+  "lang": "en",
+  "source": "Key to conifers\n1. Needles in sheathed bundles ........ Pinus\n1'. Needles borne singly ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "直撇号标同号第二支。只取这两个属作比较，点线后的属名即终点。"
+}

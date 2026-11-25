@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""低成本翻译流水线：Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考。
+"""低成本翻译流水线：Google 免费初译 → 脚本修正（默认零模型）；加 --llm 才做 DeepSeek flash 核对润色（用户 2026-11-25：分类文献核译收益小，默认不调）。
 
-  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--no-llm] [--dry]
+  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--llm] [--dry]
+  （--llm-mode/--rewrite-engine/--think-escalate 只在 --llm 时生效；--no-llm 是兼容旧调用的无操作选项，已是默认）
 
 输入：英文文本，空行分段；`<!-- p.N -->` 页码标记和标题（# 行、全大写短行、Title Case 单行）各自成单元，原样保留、不送 Google；
   「Fig.」开头的图注单独成单元；前一段没写完句子、页码标记之后接着写的，合并成一段，标记移到合并段之后（同 join_page_breaks）。
@@ -13,7 +14,7 @@
   c 一致性检查：同一英文术语在单元内出现 ≥2 次，译文里同时出现多种译法（yiku 定名、Google 默认译法、修正表里的错译、
     SOFT 的备选译名）→ 警告；
   d fidelity_check --fix（拉丁名、人名、数字、术语首现括注）；标题全文处理完后跑 heading_bilingual；cite_diff 只报告。
-3 LLM（除非 --no-llm）。--llm-mode rewrite（默认）：每单元（正文段合并到 ≤1500 英文词）让名家译者整段改写（system 含 skill/STYLE.md §6），
+3 LLM（默认不调用；仅 --llm 时执行）。--llm-mode rewrite（默认）：每单元（正文段合并到 ≤1500 英文词）让名家译者整段改写（system 含 skill/STYLE.md §6），
   引擎缺省 deepseek-flash、关思考，--rewrite-engine 可换（如 claude-sonnet）。改写稿须通过护栏（引证、年份、数字单位、拉丁名、页码标记、
   HARD 术语不变，段数不变），否则保留初稿并记录；通过后再做一次意义核对（deepseek-flash 关思考，只报意思不一致的句子并给最小修正），
   修正须 zh_old 恰好出现一次并过同一护栏；核对返回格式错误则保留改写稿，在 report.md 标注该单元。--think-escalate：仍有未修复意义警告的单元，开思考再核对一次。
@@ -75,6 +76,46 @@ _sleep = time.sleep           # 测试里替换，免得真等
 
 class GoogleError(RuntimeError):
     pass
+
+
+class GoogleBadRequest(GoogleError):
+    """HTTP 4xx（非 429）：请求本身被拒，原样重试没用；上层按句拆分后再试（issue #6）。"""
+
+    def __init__(self, msg: str, code: int):
+        super().__init__(msg)
+        self.code = code
+
+
+MIN_SPLIT = 40          # 短于此长度的段不再拆
+
+
+def char_classes(q: str) -> dict[str, int]:
+    """诊断用的字符类别计数（不含原文本身，避免日志里出现受版权保护的文字）。"""
+    c = {"ascii": 0, "latin_ext": 0, "cyrillic": 0, "cjk": 0, "digit": 0, "space": 0, "punct": 0, "control": 0,
+         "percent": 0, "other": 0}
+    for ch in q:
+        o = ord(ch)
+        if ch.isspace():
+            c["space"] += 1
+        elif o < 32 or 0x7F <= o < 0xA0 or o == 0xFFFD:
+            c["control"] += 1
+        elif ch.isdigit():
+            c["digit"] += 1
+        elif ch == "%":
+            c["percent"] += 1
+        elif o < 128 and ch.isalpha():
+            c["ascii"] += 1
+        elif o < 128:
+            c["punct"] += 1
+        elif 0x80 <= o < 0x250:
+            c["latin_ext"] += 1
+        elif 0x400 <= o < 0x530:
+            c["cyrillic"] += 1
+        elif 0x4E00 <= o < 0xA000:
+            c["cjk"] += 1
+        else:
+            c["other"] += 1
+    return {k: v for k, v in c.items() if v}
 
 
 # ---------------------------------------------------------------- Google：切块、缓存、限速、重试
@@ -190,8 +231,11 @@ class Google:
     把多段拼进一个请求反而频繁 429（21 段/分钟），故不拼段。用 urllib：同机 `requests` 库请求被 429、urllib 正常。
     prefetch() 先并发填缓存，主流程再顺序取用；遇 429/5xx 所有线程一起冷却，避免越打越封。"""
 
-    def __init__(self, cache: Cache, sl: str = "en", tl: str = "zh-CN", pause: tuple[float, float] = (1.0, 2.0)):
+    def __init__(self, cache: Cache, sl: str = "en", tl: str = "zh-CN", pause: tuple[float, float] = (1.0, 2.0),
+                 diag_path: str | Path | None = None):
         self.cache = cache
+        self.diag_path = Path(diag_path) if diag_path else None
+        self.diagnostics: list[dict[str, Any]] = []
         self.sl, self.tl, self.pause = sl, tl, pause
         self.requests = 0
         self.hits = 0
@@ -247,7 +291,7 @@ class Google:
                         IndexError, TypeError, KeyError) as exc:
                     last = exc
             if fatal is not None:
-                raise GoogleError(f"Google HTTP {fatal.code}：{fatal.reason}") from fatal
+                raise GoogleBadRequest(f"Google HTTP {fatal.code}：{fatal.reason}", fatal.code) from fatal
             if k < MAX_RETRIES:
                 wait = 5 * 2 ** k + random.uniform(0, 2)
                 if isinstance(last, urllib.error.HTTPError):  # 429/5xx：全体冷却
@@ -258,6 +302,37 @@ class Google:
                 _sleep(wait)
         raise GoogleError(f"Google 重试 {MAX_RETRIES} 次仍失败：{last}")
 
+    def _diag(self, q: str, code: int, depth: int) -> None:
+        rec = {"code": code, "length": len(q), "depth": depth, "sha1": hashlib.sha1(q.encode("utf8")).hexdigest()[:12],
+               "classes": char_classes(q), "sl": self.sl, "tl": self.tl}
+        with self._lock:
+            self.diagnostics.append(rec)
+            if self.diag_path:
+                self.diag_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.diag_path.open("a", encoding="utf8") as f:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        print(f"[gtrans] HTTP {code}：长 {len(q)} 字符，按句拆分重试（诊断 {rec['sha1']} {rec['classes']}）", file=sys.stderr)
+
+    def _split_for_retry(self, q: str) -> list[str]:
+        parts = split_sentences(q)
+        if len(parts) < 2:        # 单句：在空格处对半切
+            half = max(MIN_SPLIT // 2, len(q) // 2)
+            parts = split_chunks(q, half) if len(q) > MIN_SPLIT else [q]
+        return parts
+
+    def _fetch_split(self, q: str, depth: int = 0) -> str:
+        """_fetch；遇 HTTP 400 不再原样重试，而是按句拆小块逐块请求，按原顺序拼回（保持段落对齐）。"""
+        try:
+            return self._fetch(q)
+        except GoogleBadRequest as exc:
+            if exc.code != 400 or len(q) <= MIN_SPLIT or depth >= 6:
+                raise
+            self._diag(q, exc.code, depth)
+            parts = self._split_for_retry(q)
+            if len(parts) < 2:
+                raise
+            return " ".join(self._fetch_split(x, depth + 1) for x in parts)
+
     def translate(self, text: str) -> str:
         text = text.strip()
         if not text:
@@ -266,7 +341,7 @@ class Google:
         for c in split_chunks(text):
             zh = self.cache.get(self._ck(c))
             if zh is None:
-                zh = self._fetch(c)
+                zh = self._fetch_split(c)
                 self.cache.put(self._ck(c), zh)
             else:
                 self.hits += 1
@@ -286,7 +361,7 @@ class Google:
 
         def one(c: str) -> None:
             try:
-                self.cache.put(self._ck(c), self._fetch(c))
+                self.cache.put(self._ck(c), self._fetch_split(c))
             except GoogleError as exc:
                 print(f"[gtrans] 预取失败（稍后顺序重试）：{exc}", file=sys.stderr)
 
@@ -698,7 +773,7 @@ def parse_meaning(text: str) -> list[dict[str, Any]] | None:
 class Opts:
     domain: str = "进化生物学"
     think_escalate: bool = False
-    no_llm: bool = False
+    no_llm: bool = True                  # 默认零模型（用户 2026-11-25）；要 LLM 传 no_llm=False（CLI：--llm）
     dry: bool = False
     max_words: int = MAX_WORDS
     fixes: str | None = None
@@ -907,7 +982,7 @@ def render_report(src: str, o: Opts, reps: list[Rep], g: Google, bilingual_note:
     L = [f"# gtrans 报告：{src}",
          f"领域 {o.domain}；单元 {len(reps)}；Google 请求 {g.requests} 次、{g.chars} 字符、缓存命中 {g.hits}；"
          f"DeepSeek 输入 {tin} / 输出 {tout} token；开思考的单元 {nthink}"
-         + ("；未调用 LLM（--no-llm）" if o.no_llm else ""),
+         + ("；未调用 LLM（默认零模型；加 --llm 才核译）" if o.no_llm else ""),
          f"标题双语：{bilingual_note}", ""]
     for r in reps:
         L.append(f"## 单元 {r.idx}（{r.kind}，{r.words} 词，Google {r.chars} 字符{'，起始页 p.' + r.page if r.page else ''}）")
@@ -1009,22 +1084,23 @@ def run(src: Path, out_dir: Path, o: Opts, google: Google | None = None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Google 免费初译 → 脚本修正 → DeepSeek flash 核对润色")
+    ap = argparse.ArgumentParser(description="Google 免费初译 → 脚本修正（默认零模型）；--llm 才加 DeepSeek flash 核对润色")
     ap.add_argument("src", help="英文文本文件")
     ap.add_argument("-o", "--out", required=True, help="输出目录（zh.md、report.md、edits.jsonl）")
     ap.add_argument("--domain", default="进化生物学", help="yiku 领域")
     ap.add_argument("--llm-mode", choices=("rewrite", "edits"), default="rewrite",
-                    help="rewrite（默认）：整段改写 + 意义核对；edits：旧的 JSON 改动单")
+                    help="（仅 --llm）rewrite（默认）：整段改写 + 意义核对；edits：旧的 JSON 改动单")
     ap.add_argument("--rewrite-engine", help=f"改写引擎（缺省 {ENGINE}，如 claude-sonnet）；意义核对始终用 {ENGINE}")
     ap.add_argument("--think-escalate", action="store_true", help="仍有警告（rewrite 模式：未修复的意义警告）的单元才开思考再跑一次")
-    ap.add_argument("--no-llm", action="store_true", help="只做 Google + 脚本修正")
+    ap.add_argument("--llm", action="store_true", help="开启 LLM 核对/改写（默认不调模型）")
+    ap.add_argument("--no-llm", action="store_true", help="已是默认（兼容旧调用，无操作）；与 --llm 同给时以 --llm 为准")
     ap.add_argument("--dry", action="store_true", help="只列计划，不联网、不调模型")
     ap.add_argument("--max-words", type=int, default=MAX_WORDS, help="每个 LLM 单元的英文词数上限")
     ap.add_argument("--fixes", help="修正表 TSV（缺省 skill/google_fixes.tsv）")
     ap.add_argument("--cache", help=f"Google 缓存 sqlite（缺省 {DEFAULT_CACHE}）")
     a = ap.parse_args(argv)
     src = Path(a.src)
-    o = Opts(a.domain, a.think_escalate, a.no_llm, a.dry, a.max_words, a.fixes, a.cache, src.stem,
+    o = Opts(a.domain, a.think_escalate, not a.llm, a.dry, a.max_words, a.fixes, a.cache, src.stem,
              llm_mode=a.llm_mode, rewrite_engine=a.rewrite_engine)
     try:
         run(src, Path(a.out), o)

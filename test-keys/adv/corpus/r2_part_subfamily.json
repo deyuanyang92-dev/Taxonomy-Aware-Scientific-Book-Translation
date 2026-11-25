@@ -1,0 +1,26 @@
+{
+  "id": "r2_part_subfamily",
+  "format": "ab",
+  "lang": "en",
+  "source": "Key to terminals\n1a. Antennae elbowed ...... Formicinae (part) (p. 47)\n1b. Character absent ...... Nephtys",
+  "translation": "Key to terminals\n1a. Antennae elbowed ...... Formicinae (part) (p. 48)\n1b. Character absent ...... Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Formicinae"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": [
+      "target_changed"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:158–177 去页码后仍保留部分收录注；配对只改页码，应报去向变化。"
+}

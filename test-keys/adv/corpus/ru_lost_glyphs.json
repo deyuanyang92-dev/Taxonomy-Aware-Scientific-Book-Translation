@@ -1,0 +1,17 @@
+{
+ "id": "ru_lost_glyphs",
+ "format": "other",
+ "lang": "ru",
+ "source": "<!-- PDF p.73 -->\nТаблица для определения\n□ │ □□□ … □\n□ └ □□□ … □",
+ "declared_entries": [
+  "1"
+ ],
+ "expect": {
+  "keys": 1,
+  "branches": [],
+  "findings": [
+   "empty_key"
+  ]
+ },
+ "why": "调用方声明入口 1，OCR 仅留下框线与缺字方框。无法据此建立可识别的检索表。 ｜主会话裁定 r3：有标题无有效分支改报 empty_key（error，同样阻断，且指明是哪张表）。"
+}

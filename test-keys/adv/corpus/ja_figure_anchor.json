@@ -1,0 +1,23 @@
+{
+  "id": "ja_figure_anchor",
+  "format": "dash",
+  "lang": "ja",
+  "source": "針葉樹の検索表\n1. 針葉は束生する…………図3 Pinus\n— 針葉は単生する…………図4 Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "图号修饰终点，图号后的属名仍须提取。日文图号语境见上轮报告 B 节，例句为合成。"
+}

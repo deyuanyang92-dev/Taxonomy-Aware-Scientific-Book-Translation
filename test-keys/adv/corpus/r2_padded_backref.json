@@ -1,0 +1,33 @@
+{
+  "id": "r2_padded_backref",
+  "format": "backref",
+  "lang": "en",
+  "source": "01a. Ligule short ...... 02\n01b. Ligule long ...... Poa\n02(01). Awn present ...... Festuca\n02′(01). Awn absent ...... Bromus",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Poa"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Festuca"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Bromus"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:139、589 对主号去前导零，却用回指原串 01 查来源，误报回指不符。"
+}

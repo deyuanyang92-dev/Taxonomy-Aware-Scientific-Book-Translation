@@ -1,5 +1,4 @@
 """跨书 memory：合并术语表、absorb 候选。"""
-from pathlib import Path
 
 import book_memory as bm
 

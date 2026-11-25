@@ -112,6 +112,58 @@ def split_figures(text: str) -> tuple[str, list[str]]:
     return "\n".join(squeezed).strip("\n") + "\n", captions
 
 
+def caption_id(text: str) -> str:
+    """Stable id from the caption label: 'Fig. 3.' -> 'fig-3', 'Table 2.1' -> 'table-2.1'."""
+    m = re.match(r"^(?:◂ )?(Fig\.|Table)\s*(\d+(?:\.\d+)*)", text.strip())
+    if not m:
+        return ""
+    return f"{'fig' if m.group(1).startswith('Fig') else 'table'}-{m.group(2)}"
+
+
+def split_blocks(blocks: list[dict], max_gap: float = 1.0, x_tol: float = 6.0,
+                 max_chars: int = 1500) -> tuple[list[dict], list[dict]]:
+    """Caption boundaries from block geometry (issue #18).
+
+    ``blocks``: reading order, each ``{"id", "text", "bbox": (x0, y0, x1, y1)}``.
+    A caption starts at a block whose text matches CAPTION_START and takes the
+    following blocks only while they are geometrically the same caption: the
+    previous caption block did not end a sentence, the vertical gap is at most
+    ``max_gap`` line heights, and the left edge matches within ``x_tol`` pt.
+    Anything else, e.g. an indented body paragraph, stays body.  Returns
+    (body blocks, captions); a caption is ``{"id", "blocks", "bbox", "text",
+    "chars", "oversize"}`` and carries the union bbox so a figure can share
+    the id.  ``oversize`` marks captions longer than ``max_chars``.
+    """
+    body: list[dict] = []
+    captions: list[dict] = []
+    i = 0
+    while i < len(blocks):
+        b = blocks[i]
+        if not CAPTION_START.match(b["text"].strip()):
+            body.append(b)
+            i += 1
+            continue
+        group = [b]
+        i += 1
+        while i < len(blocks):
+            nxt, last = blocks[i], group[-1]
+            if CAPTION_START.match(nxt["text"].strip()) or ends_sentence(last["text"]):
+                break
+            lines = max(1, len(last["text"].splitlines()))
+            line_h = (last["bbox"][3] - last["bbox"][1]) / lines
+            gap = nxt["bbox"][1] - last["bbox"][3]
+            if gap > max_gap * line_h or abs(nxt["bbox"][0] - group[0]["bbox"][0]) > x_tol:
+                break
+            group.append(nxt)
+            i += 1
+        text = _join_caption([g["text"] for g in group])
+        bbox = (min(g["bbox"][0] for g in group), min(g["bbox"][1] for g in group),
+                max(g["bbox"][2] for g in group), max(g["bbox"][3] for g in group))
+        captions.append({"id": caption_id(text), "blocks": [g["id"] for g in group], "bbox": bbox,
+                         "text": text, "chars": len(text), "oversize": len(text) > max_chars})
+    return body, captions
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="分离英文原文中的图注/表注，输出 正文.txt 与 图注.txt")
     ap.add_argument("src", help="按章抽出的英文原文 .txt")

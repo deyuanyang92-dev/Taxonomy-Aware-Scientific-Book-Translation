@@ -21,6 +21,8 @@
 - 找原件 PDF 要同时搜 `/mnt/n` 和 `/mnt/p` 两个盘（不少原件在 `/mnt/n/Sandisk/`、OneDrive、微信/QQ 目录）；找到后先比 sha256，再用 `docstore attach <key> <pdf> --check` 绑定到已登记资料（不复制、不移动原件），不要另登记一份。
 - 库根默认 `/mnt/p/翻译-译作/参考资料/_资料库/`，可用 `--root` 或 `DOCSTORE_ROOT` 覆盖。
 
+- OCR 引擎或参数评测前，先读 `docs/ocr_tool_survey.md`、`docs/ocr_hard_scans.md`、`docs/ocr_eval/LEDGER.tsv`，已测的不重复；每次新测试必须追加一行到 `LEDGER.tsv`（日期、引擎/参数、测试集、指标、结果、费用、出处）。子代理做 OCR 调研，提示词必须带这三个文件。
+
 ## 技能目录与仓库的关系（以仓库为准）
 
 - `skill/*.md`、`skill/domains/`、`scripts/` 以**本仓库为准**；`~/.claude/skills/yzz-translate/`（Codex 端 `~/.codex/skills/yzz-translate` 指向同一目录）只是副本，不是软链接。
@@ -44,11 +46,6 @@
 - 运行前先核对脚本的帮助、适用输入、产物与限制；先做可检查的小样，再扩大运行。记录执行命令、软件版本、日志和校验结果，保证过程可复现。
 - 脚本不存在、失败，或无法保留原始结构（如分类学检索表、图注与插图对应关系）时，先报 GitHub issue 并附复现材料/验收标准，再诊断并修复或实现脚本能力。临时手工结果只能标记为中间稿，不能冒充正式交付。
 - 模型主要承担语言理解任务（翻译、核译、疑难裁定）；重复、结构化和可确定的处理交给脚本。新增脚本按下方规则配测试、lint 和类型检查，并把成功流程补入文档或技能。
-- **模型/审计发现问题必须回流脚本**：跑 `scripts/mine_script_gaps.py`（吃 `qa_issues`/`revise_issues`/`audit`/`check`），看 `script_gaps/backlog.md`。`uncovered`（漏检）先改检测器并补测试，再改书、再重建；禁止只改这一本的 aligned 就当交付完成。
-- **排版三阶段**：A `booklayout preview`（html|typst，真图，DRAFT，只改 JSON，产物仅 `work/` 临时目录）→ B 模型核验（`audit`/`keys-check`/`layout_invariants` + 对照原 PDF 抽查乱码）+ 用户看小样确认 → C 仅 `verify` 全绿才 `build` 全书 Word/PDF 并交付。见 `docs/preview_workflow.md`、`docs/booklayout.md`（preview 节）。
-- **正式交付必须严格验收零缺陷**：优先 `booklayout verify --aligned … --pdf … --out-dir …`（keys+qa+check+key-report+gate 一次过）。`qa` 默认要 PDF；`check --strict` 要 PDF+检索表格式。试译才可用 `--draft`。有格式/排版/文字缺陷不得交付。
-- **verify 未绿禁止出/交付 Word·PDF**：门禁未过不得 `build --pdf`、不得生成/拷贝 DOCX·PDF 到交付目录；迭代禁止往交付目录刷半成品。迭代只用 audit / keys-check / 单元测 / `preview` 小样（`work/`）；勿往 work 刷半成品正式 PDF 干扰目检。交付目录已有未过检旧稿可保留不覆盖或标勿用。
-- **禁止排版一次比一次差**：修版必须对照 `docs/layout_invariants.md` 与 `tests/test_layout_invariants.py`；不得删弱测试过关；改前改后 audit/keys 缺陷数不得无故恶化（变差回退）；已确认√样例（属名居中、种记述块序、目录清洗等）必须仍绿。规则详见 `.cursor/rules/delivery-gate.mdc`、`no-break-adjacent.mdc`。
 
 ## 改动规则
 
@@ -58,13 +55,3 @@
 - 子任务不得再派生子任务；每完成一步写盘，中断不丢进度。
 - 只用中文或英文。结论给依据（文件:行号、书名+页码、DOI）；依据不足写「未确证」。
 - 提交信息末尾的署名行由各模型按自身环境添加。
-
-## 防线：修 A 不得破 B
-
-- **只改用户点名的项/卷**；发现旁路问题只记录，不顺手改。
-- **版式按书族区分**：先确认 `layout_profile`（见 `docs/layout_profiles.md`）。今岛日本志用 `imajima_ja` / `docs/monograph_layout_ja.md`；其他书类似但有差异，须另建配置，**禁止**把今岛块序套到所有书。
-- **改今岛排版前**须陈述物种记述块序：属（仅首次）→ 图N+拉丁学名（标题无中文种名）→ 日名 → 中文种名（日名下）→ 文献（属种斜体、不译）→ 描述 → 分布 → 图版 → 图注；页首上种尾巴 ≠ 新种开头。
-- 通识不变量见 `docs/layout_invariants.md`（中文在前、检索表、管道不互撕等）；I4 物种记述块序**仅日本志**。
-- 改 `booklayout` 前/后必跑：`.venv/bin/python -m pytest -q tests/test_layout_invariants.py`；不得删旧断言让新补丁过关。
-- Cursor 规则：`.cursor/rules/no-break-adjacent.mdc`、`delivery-gate.mdc`（全局）、`.cursor/rules/booklayout-invariants.mdc`（改排版代码时）。
-- **小样也要三审**（结构=物种记述序列 / keys+invariants / 对照原页）；未过审不得把路径当可看小样交给用户。

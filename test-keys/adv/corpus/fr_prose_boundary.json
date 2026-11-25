@@ -1,0 +1,23 @@
+{
+  "id": "fr_prose_boundary",
+  "format": "dash",
+  "lang": "fr",
+  "source": "Clé des genres\n1. Aiguilles en faisceaux ........ Pinus\n— Aiguilles isolées ........ Picea\n\nLes spécimens examinés proviennent de deux vallées. La carte de répartition figure à la page 23.",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "末支后紧接采集地正文，段末页号不属于末支。"
+}

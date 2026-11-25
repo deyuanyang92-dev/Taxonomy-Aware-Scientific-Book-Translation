@@ -1,0 +1,28 @@
+{
+  "id": "en_trichotomy",
+  "format": "polytomy",
+  "lang": "en",
+  "source": "Key to specimens\n1a. Leaves alternate ........ p. 10\n1b. Leaves opposite ........ p. 11\n1c. Leaves in whorls of three or more ........ p. 12",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "10"
+      ],
+      [
+        "1b",
+        "page",
+        "11"
+      ],
+      [
+        "1c",
+        "page",
+        "12"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "三个互斥的叶序各有地址。依 SPEC 多歧的 c 支合法。"
+}

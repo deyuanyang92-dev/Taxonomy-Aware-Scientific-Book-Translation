@@ -1,0 +1,21 @@
+{
+  "id": "ru_single_prime",
+  "format": "prime",
+  "lang": "ru",
+  "source": "Таблица для определения родов\n1′. Хвоинки одиночные ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": [
+      "single_branch",
+      "lone_alternate"
+    ]
+  },
+  "why": "只有撇号支，同时满足单支和无主支两个定义。"
+}

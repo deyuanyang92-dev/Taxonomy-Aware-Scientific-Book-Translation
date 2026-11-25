@@ -161,7 +161,8 @@ class KeyParser:
             self.primes += 1
             lab = f"{self.n or '?'}" + "'" * self.primes
         self.cur = {"page": pg, "key": self.key_id, "lead": lab, "kind": kind, "text": "", "term": [],
-                    "ty1": None, "last_y1": y1, "prev": prev, "reopen": reopen, "lx1": None}
+                    "ty1": None, "last_y1": y1, "prev": prev, "reopen": reopen, "lx1": None,
+                    "ly0": None}
         self.items.setdefault(pg, []).append(("couplet", self.cur))
 
     def _rest(self, pg: int, text: str, why: str, r: Row | None = None) -> None:
@@ -341,6 +342,7 @@ class KeyParser:
                      and not self._page_has_target(width, rows, cal))
         rows = sorted(rows, key=lambda r: (r["y0"] + r["y1"]) / 2 - (g["lead_y_pull"] if marker(r) else 0))
         rows = self._same_line_left_to_right(rows, marker)
+        bottom_y = max((r["y1"] for r in rows), default=0.0)
         for r in rows:
             t = r["t"]
             if inline and r["x0"] < tm + g["inline_tol"] * width:
@@ -392,6 +394,11 @@ class KeyParser:
                     self.events.append((pg, "PAGENO", val))
                     self._rest(pg, val, "pageno", r)
                     continue
+                if kind == "jump" and c["term"] and r["y1"] >= bottom_y - 1:
+                    # 条目已有终点，页面最底的孤立数字是页码（2009 卷 p168 的「165」曾被当成第二个终点）。
+                    self.events.append((pg, "PAGENO", val))
+                    self._rest(pg, val, "pageno", r)
+                    continue
                 self._term(val, r["y1"])
                 continue
             if _BARE_NUM.match(t) and r["x0"] < tm + g["indent_tol"] * width:
@@ -402,6 +409,10 @@ class KeyParser:
                 continue
             m = gr.tail_jump.match(t) if r["x1"] >= right - g["right_tol"] * width else None
             body, tail = (m.group(1), m.group(2)) if m else (t, None)
+            if not m and r["x1"] >= right - g["right_tol"] * width:
+                mt = _TAIL_TAXON.match(t)
+                if mt:  # 「…鰓はない.Glycera brevicirris Grube（図65)」：终点名并在正文行内
+                    body, tail = mt.group(1), mt.group(2).strip()
             if not m and r["x1"] >= right - g["right_tol"] * width:
                 m2 = gr.group_taxon.match(t)
                 if m2:
@@ -419,6 +430,7 @@ class KeyParser:
                 self.events.append((pg, "IMPLICIT_LOST", c["lead"]))
             c["text"] += body
             c["lx1"] = r["x1"]
+            c["ly0"] = r["y0"]
             c["last_y1"] = max(c["last_y1"], r["y1"])
             if tail:
                 self._term(tail, r["y1"])
@@ -488,9 +500,11 @@ def term_struct(gr: Grammar, v: str) -> dict[str, str]:
     return {"kind": "taxon", "taxon": v}
 
 
+# 正文行尾「标点 + 拉丁名 + （図N）」。名称部分不得含中日文，避免吞掉描述。
+_TAIL_TAXON = re.compile(
+    r"^(.*?[;；.．。，,]\s*)([A-Z][A-Za-z.\-]+(?:\s+[A-Za-z.&\-()]+){0,6}\s*[（(]\s*図\s*\d+\s*[）)])\s*$")
 _LEADER_RUN = re.compile(r"\s*[…‥⋯.．·]{2,}\s*")
 _DESC_PUNCT = re.compile(r"[，；、。;,]")
-_JA_CHAR = re.compile(r"[\u3040-\u30ff\u4e00-\u9fff]")
 
 
 def pull_text_from_slots(c: dict[str, Any]) -> bool:
@@ -498,22 +512,17 @@ def pull_text_from_slots(c: dict[str, Any]) -> bool:
 
     OCR 偶尔把一整行（描述 + 点线 + 名称/号）并成一个右栏框，于是整句落进终点。
     - name_jump：名称里还有点线 → 最后一段点线之前是描述，之后才是名称；
-      正文不空时（折行的描述续行被并进终点框，2001 卷第 267 页条目 13），描述含日文和标点才接到正文后面；
     - group_taxon：类群部分带标点或过长 → 它其实是描述，终点只剩学名。"""
-    has_text = bool(c["text"].strip(" —一-"))
+    if c["text"].strip(" —一-"):
+        return False
     for i, s in enumerate(c["slots"]):
         if s["kind"] == "name_jump":
             parts = _LEADER_RUN.split(s["name"])
             if len(parts) >= 2 and parts[-1].strip() and parts[0].strip():
-                desc = _LEADER_RUN.sub(" ", " ".join(parts[:-1])).strip()
-                if has_text and not (_DESC_PUNCT.search(desc) and _JA_CHAR.search(desc)):
-                    continue
-                c["text"] = c["text"].rstrip(" ;；.．。") + "；" + desc if has_text else desc
+                c["text"] = _LEADER_RUN.sub(" ", " ".join(parts[:-1])).strip()
                 s["name"] = parts[-1].strip()
                 c["terminals"][i] = f"{s['name']} -> {s['num']}"
                 return True
-        elif has_text:
-            continue
         elif s["kind"] == "group_taxon":
             g = s["group"]
             if _DESC_PUNCT.search(g) or len(g) > 14:
@@ -550,6 +559,9 @@ def recover_tail_target(gr: Grammar, c: dict[str, Any]) -> str | None:
         head = m.group(1).rstrip(" …‥⋯.．·*")
         term = f"{m.group(2)} -> {m.group(3)}" if name == "tail_name_jump" else m.group(2)
         c["text"] = head
+        term = gr.fix_term(term)
+        if not term:
+            return None
         c["terminals"].append(term)
         c["slots"].append(term_struct(gr, term))
         return name
@@ -565,9 +577,12 @@ def extract(pages: Iterable[tuple[int, float, list[Row]]], grammar: Grammar | No
         kp.feed_page(width, rows, pg)
     leads = kp.finish()
     gr = kp.gr
+    for ld in leads:  # 固定错字写进终点文本本身（共享同一列表，补读终点仍能被图检查看到）
+        ld["term"][:] = [t for t in (gr.fix_term(v) for v in ld["term"]) if t]
     index = {id(ld): i for i, ld in enumerate(leads)}
     couplets = [{"key": ld["key"], "lead": ld["lead"], "kind": ld["kind"], "page": ld["page"],
                  "text": ld["text"], "terminals": ld["term"],
+                 **({"geom": {"y0": ld["ly0"], "y1": ld["last_y1"]}} if ld.get("ly0") is not None else {}),
                  "slots": [term_struct(gr, v) for v in ld["term"]]} for ld in leads]
     for c in couplets:
         pull_text_from_slots(c)

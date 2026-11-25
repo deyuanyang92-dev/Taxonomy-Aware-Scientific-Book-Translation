@@ -1,0 +1,26 @@
+{
+  "id": "r3_ru_order",
+  "format": "ab",
+  "lang": "en",
+  "source": "1a. Eyes present ...... Harmothoe (p. 76)\n1b. Eyes absent ...... Antinoe",
+  "translation": "1б. Глаз нет ...... Antinoe\n1а. Глаза есть ...... Harmothoe (с. 76)",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Antinoe"
+      ]
+    ],
+    "findings": [
+      "order_changed"
+    ]
+  },
+  "why": "booklayout/keygraph.py:828。俄译显式 а/б 保留身份，仅交换排印顺序。"
+}

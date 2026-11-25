@@ -1,0 +1,30 @@
+{
+  "id": "en_duplicate_prime",
+  "format": "prime",
+  "lang": "en",
+  "source": "Key to leaves\n1. Leaves opposite ........ p. 8\n1'. Leaves alternate ........ p. 9\n1′. Leaves whorled ........ p. 10",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "8"
+      ],
+      [
+        "1b",
+        "page",
+        "9"
+      ],
+      [
+        "1b",
+        "page",
+        "10"
+      ]
+    ],
+    "findings": [
+      "duplicate_lead"
+    ]
+  },
+  "why": "直撇号和真撇号归一后重复，不能按原字形去重。"
+}

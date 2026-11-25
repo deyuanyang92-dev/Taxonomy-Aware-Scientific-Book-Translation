@@ -1,0 +1,25 @@
+{
+  "id": "en_empty_cell",
+  "format": "table",
+  "lang": "en",
+  "source": "Key to genera\n| Lead | Character | Destination |\n| --- | --- | --- |\n| 1a | Needles in bundles | Pinus |\n| 1b | Needles solitary | |",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "none",
+        ""
+      ]
+    ],
+    "findings": [
+      "no_target"
+    ]
+  },
+  "why": "末行第三格为空；第二格的性状不能补作分类终点。"
+}

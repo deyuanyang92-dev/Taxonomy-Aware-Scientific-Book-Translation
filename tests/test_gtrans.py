@@ -80,6 +80,7 @@ class Engine:
 
 
 def go(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replies: dict[str, str] | None = None, **kw: Any) -> tuple[Engine, Path]:
+    kw.setdefault("no_llm", False)                        # 默认已是零模型；这些用例显式开 LLM
     kw.setdefault("llm_mode", "edits")                    # 这里的旧用例测 edits 模式；rewrite 模式见 go_rw
     eng = Engine(replies or {})
     monkeypatch.setattr(gtrans, "engine_call", eng)
@@ -425,7 +426,7 @@ def test_engine_failure_keeps_google_text(net: Net, tmp_path: Path, monkeypatch:
     monkeypatch.setattr(gtrans, "engine_call", fail)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    gtrans.run(src, tmp_path / "o", gtrans.Opts(cache=str(tmp_path / "c.sqlite")))
+    gtrans.run(src, tmp_path / "o", gtrans.Opts(no_llm=False, cache=str(tmp_path / "c.sqlite")))
     assert "达尔文" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
     assert "调用失败：连不上" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")
 
@@ -439,7 +440,7 @@ def test_dry_run_no_network_no_model(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setattr(gtrans, "yiku_table", lambda en, domain: TABLE)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    rc = gtrans.main([str(src), "-o", str(tmp_path / "o"), "--dry", "--cache", str(tmp_path / "c.sqlite")])
+    rc = gtrans.main([str(src), "-o", str(tmp_path / "o"), "--dry", "--llm", "--cache", str(tmp_path / "c.sqlite")])
     assert rc == 0 and not (tmp_path / "o").exists()
     out = capsys.readouterr().out
     assert "[dry]" in out and "单元 3" in out and "LLM 2 次" in out
@@ -474,6 +475,7 @@ class RwEngine:
 
 def go_rw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, eng: RwEngine, **kw: Any) -> Path:
     monkeypatch.setattr(gtrans, "engine_call", eng)
+    kw.setdefault("no_llm", False)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
     gtrans.run(src, tmp_path / "out", gtrans.Opts(cache=str(tmp_path / "cache.sqlite"), stem="in", **kw))
@@ -605,7 +607,7 @@ def test_edits_mode_still_works_via_cli(net: Net, tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(gtrans, "engine_call", eng)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm", "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
     assert "该谱系后来分裂" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
     assert len(eng.calls) == 2 and "采纳 1，拒绝 0" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")
 
@@ -646,3 +648,93 @@ def test_google_uses_configured_languages_and_cools_down_on_429(tmp_path, monkey
     assert g.translate("Тялото късо.") == "Body short."
     assert seen[0]["sl"] == ["bg"] and seen[0]["tl"] == ["en"]
     assert g._cool_until > 0 and sleeps  # 429 后设了全体冷却并等待
+
+
+# ---------------------------------------------------------------- issue #6：HTTP 400 按句拆分重试
+
+def _long_para() -> str:
+    return " ".join(f"Sentence number {i} of the secret text." for i in range(20))
+
+
+def test_http_400_splits_at_sentences_and_keeps_order(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    seen: list[str] = []
+
+    def http_get(url: str, timeout: float = 30) -> str:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+        seen.append(q)
+        if len(q) > 200:
+            raise urllib.error.HTTPError(url, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+        return json.dumps([[["T(" + q + ")", q, None, None, 1]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"), pause=(0, 0))
+    text = _long_para()
+    out = g.translate(text)
+    # 顺序保持：每句译文按原顺序出现
+    idx = [out.index(f"Sentence number {i} of") for i in range(20)]
+    assert idx == sorted(idx)
+    assert g.diagnostics and g.diagnostics[0]["length"] == len(text)
+    assert all(len(q) <= 200 for q in seen[2:])        # 前两次是主端点+后备端点的 400
+
+
+def test_http_400_diagnostics_have_no_source_text(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def http_get(url: str, timeout: float = 30) -> str:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+        if len(q) > 200:
+            raise urllib.error.HTTPError(url, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+        return json.dumps([[["ok", q, None, None, 1]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    log = tmp_path / "diag.jsonl"
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"), pause=(0, 0), diag_path=log)
+    g.translate(_long_para())
+    rec = json.loads(log.read_text().splitlines()[0])
+    assert rec["code"] == 400 and rec["length"] > 200 and "classes" in rec and "sha1" in rec
+    assert "secret" not in log.read_text()
+    assert "secret" not in capsys.readouterr().err
+
+
+def test_http_400_unsplittable_still_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def bad(url: str, timeout: float = 30) -> str:
+        raise urllib.error.HTTPError(url, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(gtrans, "http_get", bad)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"), pause=(0, 0))
+    with pytest.raises(gtrans.GoogleError):
+        g.translate("short")
+
+
+def test_prefetch_400_split_and_alignment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    def http_get(url: str, timeout: float = 30) -> str:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+        if len(q) > 200:
+            raise urllib.error.HTTPError(url, 400, "Bad Request", {}, None)  # type: ignore[arg-type]
+        return json.dumps([[["T:" + q, q, None, None, 1]]])
+
+    monkeypatch.setattr(gtrans, "http_get", http_get)
+    monkeypatch.setattr(gtrans, "_sleep", lambda s: None)
+    g = gtrans.Google(gtrans.Cache(tmp_path / "c.sqlite"))
+    a, b = _long_para(), "Second paragraph."
+    g.prefetch([a, b], workers=2)
+    assert g.has(a) and g.has(b)
+    assert g.translate(b) == "T:Second paragraph."
+
+
+# ---------------------------------------------------------------- 默认零模型（用户 2026-11-25）
+
+def test_default_is_zero_llm_and_llm_flag_enables(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    assert gtrans.Opts().no_llm is True
+    eng = Engine({})
+    monkeypatch.setattr(gtrans, "engine_call", eng)
+    monkeypatch.setattr(gtrans, "yiku_table", lambda en, domain: TABLE)
+    src = tmp_path / "in.txt"
+    src.write_text(DOC, encoding="utf8")
+    base = ["-o", str(tmp_path / "o1"), "--cache", str(tmp_path / "c.sqlite")]
+    assert gtrans.main([str(src), *base]) == 0 and eng.calls == []              # 默认不调模型
+    assert gtrans.main([str(src), "--no-llm", "-o", str(tmp_path / "o2"), "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert eng.calls == []                                                      # --no-llm 无操作
+    assert gtrans.main([str(src), "--llm", "--llm-mode", "edits", "-o", str(tmp_path / "o3"), "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert len(eng.calls) == 2                                                  # --llm 才调

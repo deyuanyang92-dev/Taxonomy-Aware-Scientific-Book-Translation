@@ -1,0 +1,23 @@
+{
+  "id": "en_no_stop",
+  "format": "prime",
+  "lang": "en",
+  "source": "Key to specimens\n1 Body with parapodia ........ p. 76\n1' Body without parapodia ........ p. 81",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "76"
+      ],
+      [
+        "1b",
+        "page",
+        "81"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "数字和撇号之后直接留空格，没有句点。"
+}

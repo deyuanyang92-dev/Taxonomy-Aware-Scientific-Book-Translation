@@ -1,0 +1,33 @@
+{
+  "id": "r3_pair_across_page",
+  "format": "backref",
+  "lang": "en",
+  "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n<!-- PDF p.32 -->\nKey to genera (continued)\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Harmothoe"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Antinoe"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nereis"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "booklayout/keygraph.py:584。换页续表标题不改变 2(3) 与 3(2) 的对应。"
+}

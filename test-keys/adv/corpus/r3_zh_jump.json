@@ -1,0 +1,38 @@
+{
+ "id": "r3_zh_jump",
+ "format": "backref",
+ "lang": "en",
+ "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis",
+ "translation": "1(4) 有鞘翅 ...... 1\n2(3) 体窄 ...... Harmothoe\n3(2) 体宽 ...... Antinoe\n4(1) 无鞘翅 ...... Nereis",
+ "expect": {
+  "keys": 1,
+  "branches": [
+   [
+    "1a",
+    "jump",
+    "2"
+   ],
+   [
+    "2a",
+    "taxon",
+    "Harmothoe"
+   ],
+   [
+    "2b",
+    "taxon",
+    "Antinoe"
+   ],
+   [
+    "1b",
+    "taxon",
+    "Nereis"
+   ]
+  ],
+  "findings": [
+   "target_changed",
+   "cycle",
+   "unreachable"
+  ]
+ },
+ "why": "booklayout/keygraph.py:823。原文 1(4) 隐式接 2；中文改成显式回到 1。期望原译对照识别改号。 ｜主会话裁定 r3：run_corpus 改为译文也跑 check，译文图检查命中 cycle、unreachable 属正确检出。"
+}

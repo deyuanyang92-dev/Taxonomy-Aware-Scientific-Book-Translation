@@ -1,0 +1,25 @@
+{
+  "id": "r2_count_fig",
+  "format": "ab",
+  "lang": "ru",
+  "source": "1a. Усики короткие ...... Carabus\n1b. Усики длинные, см. рис. 4",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabus"
+      ],
+      [
+        "1b",
+        "none",
+        ""
+      ]
+    ],
+    "findings": [
+      "no_target"
+    ]
+  },
+  "why": "合成例。booklayout/keygraph.py:51、196–198 将正文末尾的俄文插图引用识作跳转 4；没有分类终点。"
+}

@@ -76,21 +76,29 @@ def _vote_line(lines: list[tuple[str, float]], line_no: int) -> tuple[str, list[
     return "".join(out).rstrip(), disagreements, unresolved
 
 
+def _diff_chars(a: str, b: str) -> int:
+    """两段文本不同的字符数（difflib opcodes）。"""
+    sm = difflib.SequenceMatcher(None, a, b)
+    return sum(max(i2 - i1, j2 - j1) for tag, i1, i2, j1, j2 in sm.get_opcodes() if tag != "equal")
+
+
 def vote(readings: list[Reading]) -> tuple[str, float | None, list[dict], int]:
     if not readings:
         return "", None, [], 0
     ordered = sorted(readings, key=lambda r: (_weight(r), len(r.text)), reverse=True)
     if len(ordered) >= 2:
         srcs = {(ordered[0].source or "").lower(), (ordered[1].source or "").lower()}
-        if {"rapidocr", "tesseract"} <= srcs or {"rapid", "tess"} <= srcs:
-            # 当前校准：RapidOCR 在本项目样本上明显更稳，先保守采用其文本，
-            # 再交给 lexicon 规则纠错；避免次优引擎拉低 CER。
-            return ordered[0].text.strip(), round(float(ordered[0].conf), 4), [], 0
-    if len(ordered) >= 2:
-        r0 = difflib.SequenceMatcher(None, ordered[0].text, ordered[1].text).ratio()
-        if r0 < 0.35:
-            # 两引擎分歧过大时，保留主引擎结果，避免“坏引擎拉低”。
-            return ordered[0].text.strip(), round(float(ordered[0].conf), 4), [], 0
+        ratio = difflib.SequenceMatcher(None, ordered[0].text, ordered[1].text).ratio()
+        bypass = {"rapidocr", "tesseract"} <= srcs or {"rapid", "tess"} <= srcs or ratio < 0.35
+        if bypass:
+            # 仍保留主引擎文本（CER 校准，行为不变），但分歧必须上报：
+            # 不得返回 0 未决，否则下游会把该页标成 ocr_sampled（Codex 评审 consensus.py:79）。
+            n = _diff_chars(ordered[0].text, ordered[1].text)
+            if n == 0:
+                return ordered[0].text.strip(), round(float(ordered[0].conf), 4), [], 0
+            dis = [{"kind": "engine_disagreement", "similarity": round(ratio, 4),
+                    "sources": [ordered[0].source, ordered[1].source], "chars": n}]
+            return ordered[0].text.strip(), round(float(ordered[0].conf), 4), dis, n
     base = ordered[0]
     base_lines = base.text.splitlines()
     mapped: list[list[tuple[str, float]]] = [[(ln, _weight(base))] for ln in base_lines] or [[("", _weight(base))]]

@@ -1,0 +1,23 @@
+{
+  "id": "ru_prime_page",
+  "format": "prime",
+  "lang": "ru",
+  "source": "Таблица для определения родов\n1. Хвоинки собраны в пучки ........ Pinus\n<!-- PDF p.37 -->\n1′. Хвоинки одиночные ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "换页仍属同一偶句，俄文标题和真撇号均须保留其作用。"
+}

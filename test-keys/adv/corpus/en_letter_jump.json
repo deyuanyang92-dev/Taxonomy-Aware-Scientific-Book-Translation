@@ -1,0 +1,33 @@
+{
+  "id": "en_letter_jump",
+  "format": "other",
+  "lang": "en",
+  "source": "Key to conifers\nA. Needles in sheathed bundles ........ Pinus\naa. Needles solitary ........ B\nB. Needles on woody pegs ........ Picea\nbb. Needles leaving circular scars ........ Abies",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "jump",
+        "2"
+      ],
+      [
+        "2a",
+        "taxon",
+        "Picea"
+      ],
+      [
+        "2b",
+        "taxon",
+        "Abies"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "字母 B 单独作去向，指第二偶句。A/aa、B/bb 和字母跳转据《Nova Scotia Plants》Pteridophyta 章 Key to ferns and allies；本例另拟性状。https://ojs.library.dal.ca/NSM/article/download/5292/4777"
+}

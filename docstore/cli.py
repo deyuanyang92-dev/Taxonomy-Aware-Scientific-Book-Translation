@@ -13,7 +13,7 @@ from .store import LEVELS, Store, agent
 
 SKIP_ADD = {"_资料库", "_本地知识库", "知识库", "参考库", "_work", "__pycache__", ".git"}
 DOC_EXT = {".pdf"}
-WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix"}
+WRITE_CMDS = {"add", "text", "verify", "import", "pair", "rebuild", "set", "rename", "attach", "consensus", "qc", "postfix", "namefix"}
 WRITE_CMDS.add("proofread")
 
 
@@ -62,6 +62,7 @@ def cmd_text(st: Store, a) -> None:
             fix=not a.no_fix,
             layer_only=a.layer_only,
             ocr_threads=a.ocr_threads,
+            redo=a.redo_ocr,
             log=lambda m: print(m, flush=True),
         )
         print(json.dumps(r, ensure_ascii=False), flush=True)
@@ -201,12 +202,16 @@ def cmd_cite(st: Store, a) -> None:
 
 def cmd_export(st: Store, a) -> None:
     fmt = "translate" if a.translate else "marked" if a.marked else "md" if a.md else "txt"
-    txt = st.export(a.key, fmt, _parse_pages(a.pages))
+    want = _parse_pages(a.pages)
+    txt = st.export(a.key, fmt, want)
     if a.out:
         Path(a.out).write_text(txt, encoding="utf-8")
         print(a.out)
     else:
         sys.stdout.write(txt)
+    if getattr(a, "strict", False) and st.missing_pages(a.key, want):
+        print("--strict：存在缺页，导出视为失败", file=sys.stderr)
+        raise SystemExit(3)
 
 
 def cmd_status(st: Store, a) -> None:
@@ -282,6 +287,27 @@ def cmd_lang(st: Store, a) -> None:
             st.update_doc(key, **fields)
 
 
+def cmd_namefix(st: Store, a) -> None:
+    """学名校正（零模型）：每页抽拉丁名，核本地 WoRMS 缓存，结果每名一行写进页面 JSON extra.names；正文不改。"""
+    from . import namefix
+
+    lo, hi = (int(x) for x in (a.pages.split("-") + [a.pages])[:2]) if a.pages else (0, 10**9)
+    w = namefix.Worms(a.cache) if a.cache else namefix.Worms()
+    stats: dict[str, int] = {}
+    for n in st.page_numbers(a.key):
+        if not lo <= n <= hi:
+            continue
+        pg = st.read_page(a.key, n) or {}
+        rows = namefix.fix_text(pg.get("text") or "", w)
+        for r in rows:
+            stats[r["status"]] = stats.get(r["status"], 0) + 1
+            if a.dry or r["status"] != "exact":
+                print(f"p{n}\t{r['status']}\t{r['ocr']}\t{r['worms'] or '-'}")
+        if rows and not a.dry:
+            st.set_extra(a.key, n, "names", rows)
+    print(f"{a.key}\t{stats}{'（dry）' if a.dry else ''}")
+
+
 def cmd_postfix(st: Store, a) -> None:
     """拉丁字母语种 OCR 后处理（latinfix，零 token）：词表取同语种全部资料的主版本页文本。
     改过的页写新版本（producer=latinfix，成为主版本），旧版本留在 alternates；改动逐条记 _audit/latinfix_<key>.jsonl。"""
@@ -289,6 +315,9 @@ def cmd_postfix(st: Store, a) -> None:
     from .store import make_version
 
     vocabs: dict[str, object] = {}
+    protect = _read_wordlist(a.protect) if getattr(a, "protect", None) else None
+    dictionary = {w.lower() for w in _read_wordlist(a.dictionary)} if getattr(a, "dictionary", None) else None
+    review_all: list[dict] = []
     audit = st.root / "_audit"
     audit.mkdir(exist_ok=True)
     for key in a.keys:
@@ -305,14 +334,20 @@ def cmd_postfix(st: Store, a) -> None:
                 pg = st.read_page(key, n) or {}
                 if not (pg.get("text") or "").strip():  # 规则幂等：已改过的页再跑只会应用新加的规则
                     continue
-                new, ch = latinfix.fix_page(pg["text"], vocab)  # type: ignore[arg-type]
+                detail: list[dict] = []
+                rv: list[dict] = []
+                new, ch = latinfix.fix_page(pg["text"], vocab, lang=lang or None, protect=protect,  # type: ignore[arg-type]
+                                            review=rv, dictionary=dictionary, detail=detail)
+                review_all += [{"key": key, "page": n, **r} for r in rv]
                 if not ch:
                     continue
                 n_pages += 1
                 n_changes += len(ch)
-                for rule, old, rep in ch:
+                for (rule, old, rep), dt in zip(ch, detail, strict=True):
                     stats[rule] = stats.get(rule, 0) + 1
-                    log.write(json.dumps({"page": n, "rule": rule, "old": old, "new": rep, "dry": a.dry},
+                    log.write(json.dumps({"page": n, "rule": rule, "old": old, "new": rep, "dry": a.dry,
+                                          "lang": lang or None, "engine": pg.get("engine"),
+                                          **{k: dt[k] for k in ("n_old", "n_new") if k in dt}},
                                          ensure_ascii=False) + "\n")
                 if a.dry:
                     continue
@@ -323,7 +358,15 @@ def cmd_postfix(st: Store, a) -> None:
                                  conf=(pg.get("quality") or {}).get("ocr_conf"),
                                  extra={"latinfix": {"changes": len(ch), "base_producer": base}})
                 st.put_version(key, n, v, promote=True)
-        print(f"{key}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+        print(f"{key}\t{lang or '-'}\t改 {n_pages} 页 {n_changes} 处\t{stats}{'（dry）' if a.dry else ''}")
+    if getattr(a, "review_out", None):
+        Path(a.review_out).write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in review_all),
+                                      encoding="utf-8")
+        print(f"复核队列 {len(review_all)} 条 → {a.review_out}")
+
+
+def _read_wordlist(path: str) -> set[str]:
+    return {ln.strip() for ln in Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()}
 
 
 def cmd_proofread(st: Store, a) -> None:
@@ -348,10 +391,82 @@ def cmd_attest(st: Store, a) -> None:
         print(f"{r['docs']}\t{r['pages']}{cap}\t{r['phrase']}\t{','.join(r['sample_keys'])}")
 
 
+
+def cmd_struct(st: Store, args) -> None:
+    from . import structdoc as sdm
+
+    if args.struct_cmd == "build":
+        keys = json.loads(Path(args.keys).read_text(encoding="utf-8")) if args.keys else None
+        aligned = json.loads(Path(args.aligned).read_text(encoding="utf-8")) if args.aligned else None
+        if keys is None and aligned is None:
+            print("需要 --keys 或 --aligned", file=sys.stderr)
+            raise SystemExit(2)
+        treat = json.loads(Path(args.treatments).read_text(encoding="utf-8")) if args.treatments else None
+        sd = sdm.build(args.doc, keys=keys, aligned=aligned, treatments=treat)
+        sdm.save(sd, Path(args.out))
+        print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
+        return
+    if args.struct_cmd == "auto":
+        from . import structauto
+
+        if args.cache:
+            cache, pdf = Path(args.cache), args.pdf
+            last = args.last
+        else:
+            from .engines import ppocr
+
+            d = st.doc(args.key)
+            pdf = d["path"]
+            if not pdf or not Path(pdf).exists():
+                print(f"{args.key}：无可用原件 PDF；可用 --cache", file=sys.stderr)
+                sys.exit(1)
+            cache = ppocr._cache_file(pdf, 1, args.dpi).parent
+            last = args.last or int(d["pages"] or 0)
+        try:
+            kd = structauto.keys_from_cache(cache, args.first, last, pdf=pdf, dpi=args.dpi,
+                                            recover_tail=args.recover_tail)
+        except (FileNotFoundError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        sd = structauto.auto(args.key or args.doc or cache.name, kd)
+        sdm.save(sd, Path(args.out))
+        print(f"structdoc={args.out} {json.dumps(sd['summary'], ensure_ascii=False)}")
+        return
+    if args.struct_cmd == "score":
+        from . import structauto
+
+        r = structauto.score(sdm.load(Path(args.file)), json.loads(Path(args.gold).read_text(encoding="utf-8")))
+        print(json.dumps(r, ensure_ascii=False))
+        if args.ledger:
+            g = json.loads(Path(args.gold).read_text(encoding="utf-8"))
+            structauto.append_ledger(Path(args.ledger), structauto.ledger_row(g["doc"], g["set"], r, args.note or ""))
+        return
+    sd = sdm.validate(sdm.load(Path(args.file)))
+    for p in sd["problems"][:50]:
+        print(f"{p['scope']}: {p['code']}: {p['detail']}")
+    print(json.dumps(sd["summary"], ensure_ascii=False))
+    if sd["summary"]["uncertain"]:
+        raise SystemExit(1)
+
+
 def cmd_keys(st: Store, a) -> None:
     """检索表偶句重建：读 PP-OCR 行框缓存，零 token，不触发 OCR（issue #38）。"""
-    from . import keys
+    from . import keyblocks, keys
 
+    if a.keys_cmd == "blocks":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        out = json.dumps(keyblocks.couplet_blocks(data), ensure_ascii=False, indent=1)
+        Path(a.out).write_text(out, encoding="utf-8") if a.out else print(out)
+        return
+    if a.keys_cmd == "plan":
+        data = json.loads(Path(a.file).read_text(encoding="utf-8"))
+        plan = keyblocks.repair_plan(data)
+        Path(a.out).write_text(json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8")
+        if a.pdf:
+            for p in keyblocks.render_pages(Path(a.pdf), plan["pages_to_check"], Path(a.render_dir)):
+                print(p)
+        print(f"{len(plan['fixes'])} 处待核，页 {plan['pages_to_check']}；填 why 后用 extract --fix 应用", file=sys.stderr)
+        return
     if a.keys_cmd == "check":
         data = json.loads(Path(a.file).read_text(encoding="utf-8"))
         rep = keys.check_couplets(data["couplets"])
@@ -376,6 +491,16 @@ def cmd_keys(st: Store, a) -> None:
         pages, missing = keys.read_cache_pages(cache, a.first, last)
         data = keys.extract(pages)
         data["missing_pages"] = missing
+        if a.recover_tail:
+            from . import keytail
+
+            if not a.key or not st.doc(a.key)["path"]:
+                print("--recover-tail 需要已登记的 key（要读原件 PDF 页图）", file=sys.stderr)
+                sys.exit(1)
+            rlog = keytail.recover_tail_jumps(data, keytail.pdf_renderer(st.doc(a.key)["path"], a.dpi),
+                                              keytail.tesseract_digits)
+            data["tail_recovery"] = rlog
+            print(f"行尾跳转号补读：{sum(1 for x in rlog if x['got'])}/{len(rlog)} 条补回", file=sys.stderr)
         if a.fix:
             try:
                 keys.apply_fixes(data, json.loads(Path(a.fix).read_text(encoding="utf-8")))
@@ -471,6 +596,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--no-fix", action="store_true", help="不对共识文本再跑 lexicon 编辑距离纠错（保留引擎原文）")
     s.add_argument("--engines", default="rapidocr,tesseract", help="OCR 引擎列表，逗号分隔")
     s.add_argument("--vlm", help="可选 VLM（仅处理低置信分歧）")
+    s.add_argument("--redo-ocr", action="store_true",
+                   help="对已入库页重跑 OCR（仅 --engines paddle_vl）：结果只加为 alternates 版本并记模型名，不改主版本")
     s.set_defaults(fn=cmd_text)
 
     s = sub.add_parser("consensus", help="对已有 OCR 版本重算共识，不重复 OCR")
@@ -534,6 +661,7 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--marked", action="store_true",
                    help="翻译用原文：每页前一行 <!-- p.N -->（印刷页码），供种名按页规范（species_format.py）")
     s.add_argument("--pages", help="只导出这些 PDF 页（1 起），如 24-30,32")
+    s.add_argument("--strict", action="store_true", help="有缺页（无页面记录）就以非零退出码结束；默认只在 stderr 警告")
     s.add_argument("-o", "--out")
     s.set_defaults(fn=cmd_export)
 
@@ -577,8 +705,18 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("postfix", help="拉丁字母语种 OCR 后处理（♂♀、小型大写、µm、全库词频纠错；零 token）")
     s.add_argument("keys", nargs="+")
-    s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本")
+    s.add_argument("--dry", action="store_true", help="只记录将改什么，不写版本；按语种、规则报数")
+    s.add_argument("--protect", help="受保护词表文件（每行一词：学名、作者、地名等，可由 yiku/taxadb 导出）")
+    s.add_argument("--dictionary", help="词典文件（每行一词），只用于标疑进复核队列，绝不用来替换")
+    s.add_argument("--review-out", help="复核队列 JSONL（歧义候选、词典标疑），不改正文")
     s.set_defaults(fn=cmd_postfix)
+
+    s = sub.add_parser("namefix", help="学名校正：抽页内拉丁名，核本地 WoRMS 缓存，每名一行写进页面 JSON extra.names（零模型）")
+    s.add_argument("key")
+    s.add_argument("--pages", help="页码范围，如 3-12")
+    s.add_argument("--dry", action="store_true", help="只打印，不写页面")
+    s.add_argument("--cache", help="WoRMS 缓存 sqlite，默认 ~/.specimen_inventory/worms_cache.sqlite")
+    s.set_defaults(fn=cmd_namefix)
 
     s = sub.add_parser("proofread", help="Proofread low-confidence OCR against page images")
     s.add_argument("key")
@@ -612,6 +750,8 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
     e.add_argument("--cache", help="行框缓存目录（含 pNNNN.json）；缺省由 key 的 PDF 指纹推出")
     e.add_argument("--dpi", type=int, default=200)
+    e.add_argument("--recover-tail", action="store_true",
+                   help="对无终点的条目，裁行尾右边缘用 tesseract 补读跳转号（只接受本表已有的、向前的号）")
     e.add_argument("--first", type=int, default=1)
     e.add_argument("--last", type=int, default=0, help="末页（默认到资料末页；用 --cache 时必须给）")
     e.add_argument("--out", help="写 keys.json（couplets、keys、events、missing_pages）")
@@ -620,7 +760,42 @@ def main(argv: list[str] | None = None) -> int:
     c = ks.add_parser("check", help="对 keys.json 重做按表图检查（人工补完条目后用）")
     c.add_argument("file")
     c.add_argument("--problems", action="store_true")
+    b = ks.add_parser("blocks", help="keys.json → 偶句翻译单元（终点与条目号不交模型）")
+    b.add_argument("file")
+    b.add_argument("--out")
+    pl = ks.add_parser("plan", help="缺陷 → keys_fix.json 骨架（why 留空，人对照页面图像填）；可渲出待核页 PNG")
+    pl.add_argument("file")
+    pl.add_argument("--out", required=True)
+    pl.add_argument("--pdf", help="原件 PDF；给了就把待核页渲成 PNG")
+    pl.add_argument("--render-dir", default="keys_pages")
     s.set_defaults(fn=cmd_keys)
+
+    s = sub.add_parser("struct", help="StructDoc：keys.json / aligned.json → 统一结构化 JSON（零模型）")
+    ss = s.add_subparsers(dest="struct_cmd", required=True)
+    sb = ss.add_parser("build", help="构建并校验，写 structdoc.json")
+    sb.add_argument("doc", help="资料 key（写入 doc 字段）")
+    sb.add_argument("--keys", help="keys.json")
+    sb.add_argument("--aligned", help="aligned.json")
+    sb.add_argument("--treatments", help="treatments.json（booklayout treatments <aligned> --out 产出）")
+    sb.add_argument("--out", required=True)
+    sa = ss.add_parser("auto", help="识别缓存 → keys → StructDoc 一步生成（零模型，不 OCR）")
+    sa.add_argument("key", nargs="?", help="已登记资料 key（与 --cache 二选一）")
+    sa.add_argument("--cache")
+    sa.add_argument("--pdf", help="用 --cache 且 --recover-tail 时的原件 PDF")
+    sa.add_argument("--doc", help="用 --cache 时写入 doc 字段")
+    sa.add_argument("--dpi", type=int, default=200)
+    sa.add_argument("--first", type=int, default=1)
+    sa.add_argument("--last", type=int, default=0)
+    sa.add_argument("--recover-tail", action="store_true")
+    sa.add_argument("--out", required=True)
+    ssc = ss.add_parser("score", help="对人工金标计分（偶句查全/查准、终点正确率、错误被标出率）")
+    ssc.add_argument("file", help="structdoc.json")
+    ssc.add_argument("gold", help="人工金标 json")
+    ssc.add_argument("--ledger", help="追加一行到该 tsv（如 docs/ocr_eval/STRUCT_LEDGER.tsv）")
+    ssc.add_argument("--note")
+    sc = ss.add_parser("check", help="重做校验，列问题；有 uncertain 块时退出码 1")
+    sc.add_argument("file")
+    s.set_defaults(fn=cmd_struct)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")

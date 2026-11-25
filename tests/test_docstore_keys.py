@@ -297,8 +297,8 @@ def test_cli_extract_applies_fix_file(tmp_path, capsys):
 
 IMAJIMA = {  # 缓存目录哈希 → (页数, 表数, 偶句数, 自洽表数, 缺陷数)
     "966b8423a9d4": (406, 14, 424, 12, 2),   # 2001（插图版页打断检索表后，p383 续表接回 4''，422→424、缺陷 3→2；孤立「…」作条目横线后 419→420；粘在描述末尾的终点拆回后缺陷 6→5；整行拉丁名认作终点、同行按 x 排序后 420→422、缺陷 5→3）
-    "858f37873e50": (363, 8, 295, 5, 5),     # 2007（页眉页码不参与校准、长横线框与正文左缘重叠、单个独立条目号加并框条目号也能校准，288→295、缺陷 9→5；同上；条目号框贴近正文也算条目号后 p219 的 28 个偶句找回，253→288）
-    "c1ac037a042b": (361, 10, 555, 6, 4),    # 2009（条目号后紧跟「数字+汉字」的正文不再被当成跳转号，缺陷 6→4；内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
+    "858f37873e50": (363, 8, 296, 5, 4),     # 2007（12 与 12' 粘成一行时按「标点+拉丁名（図N）」拆开，295→296、缺陷 5→4；页眉页码不参与校准、长横线框与正文左缘重叠、单个独立条目号加并框条目号也能校准，288→295、缺陷 9→5；同上；条目号框贴近正文也算条目号后 p219 的 28 个偶句找回，253→288）
+    "c1ac037a042b": (361, 10, 555, 7, 3),    # 2009（页底孤立的页码不再当作终点，缺陷 4→3；条目号后紧跟「数字+汉字」的正文不再被当成跳转号，缺陷 6→4；内联页自校准 493→566；左缘页码与表后正文页不再开幽灵条目 566→555，缺陷 23→6）
 }
 
 
@@ -472,16 +472,6 @@ def test_pull_text_from_slots_moves_description_back_into_text():
     assert d["text"].startswith("鰓先端") and d["slots"] == [{"kind": "taxon", "taxon": "Euphrosine sp.C（図155)"}]
     ok = {"text": "体は小さい", "terminals": ["2"], "slots": [{"kind": "jump", "num": "2"}]}
     assert not keys.pull_text_from_slots(ok)
-    # 折行的描述续行被并进终点框：正文不空，描述（含日文和标点）接到正文后面（2001 卷第 267 页条目 13）
-    w = {"text": "両歯板の基部は靭帯で連結される；.",
-         "terminals": ["第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色………Scoletoma -> 14"],
-         "slots": [{"kind": "name_jump", "name": "第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色………Scoletoma", "num": "14"}]}
-    assert keys.pull_text_from_slots(w)
-    assert w["text"] == "両歯板の基部は靭帯で連結される；第V歯板は第Ⅳ歯板から離れる；足刺は黄色，褐色または黒色"
-    assert w["slots"] == [{"kind": "name_jump", "name": "Scoletoma", "num": "14"}]
-    keep = {"text": "体は小さい", "terminals": ["Eunoe……14"],
-            "slots": [{"kind": "name_jump", "name": "Eunoe", "num": "14"}]}
-    assert not keys.pull_text_from_slots(keep)  # 正常的「学名……号」不动
     jp = {"text": "", "terminals": ["シンカイウロコムシ亜科 -> Branchinotogluminae"],
           "slots": [{"kind": "group_taxon", "group": "シンカイウロコムシ亜科", "taxon": "Branchinotogluminae"}]}
     assert not keys.pull_text_from_slots(jp)

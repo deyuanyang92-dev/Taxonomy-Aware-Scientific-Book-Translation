@@ -1,0 +1,23 @@
+{
+  "id": "de_page_only",
+  "format": "dash",
+  "lang": "de",
+  "source": "Bestimmungsschlüssel\n1. Nadeln in Bündeln ........ S. 12\n— Nadeln einzeln ........ S. 18",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "page",
+        "18"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "德文 S. 引向记述页，两个页码均不参与图的可达性检查。"
+}

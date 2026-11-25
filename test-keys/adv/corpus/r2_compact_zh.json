@@ -1,0 +1,23 @@
+{
+  "id": "r2_compact_zh",
+  "format": "ab",
+  "lang": "zh",
+  "source": "１ａ．触角长……Carabus\n１ｂ．触角短……Nebria",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Carabus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nebria"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:60–61、310 全角字符虽已归一，标点后仍强制空白，漏掉中文紧排编号。"
+}

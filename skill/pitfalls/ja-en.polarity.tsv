@@ -1,0 +1,10 @@
+# 日→英极性词对（两列，制表符分隔；# 开头为注释）。old→new 的差异恰为其中一对互换时，
+# transqa.guardrails 要求裁定模型给出原样出现在原文的引文，否则转人工，不自动落实。
+# 来源：2026-11-19 40 页植入测试里全部变体一致漏检的方位/大小翻转类（spec §4.1 要点 5）。
+present	absent
+larger	smaller
+longer	shorter
+anterior	posterior
+dorsal	ventral
+upper	lower
+more than	fewer than

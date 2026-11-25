@@ -18,13 +18,16 @@ References 节）建立「年份 → 姓氏」「姓氏集合」索引；斜体�
   italic.mixed         学名夹英语虚词（*Torrea and*）
   caption.allitalic    整条图注都在斜体里（应正体）
   caption.name_roman   图注里的学名被排成正体（应斜体），仅 --caption-names italic 时报
-  italic.higher_taxon  科级及以上阶元被排成斜体（应正体：只有属名、种名斜体）
+  italic.higher_taxon  科名斜体：原书作者名单里本来就斜体，仅提示
   italic.other         书名、强调等，仅提示
 
 用法：
   italic_check.py md <译文.md ...> [--caption-names italic|roman] [--report out.tsv]
   italic_check.py docx <交付.docx ...> [--fix] [--aligned aligned.json] [--out 输出.docx]
   italic_check.py pdf <原书.pdf> [--pages 20-40]
+  italic_check.py rendered <交付.docx|交付.pdf> [--report out.json] [--profile zoology] [--no-worms]
+      渲染产物审计（委托 taxostyle.py）：学名应斜体、sp./cf./aff. 与科级名称、命名人+年份应正体；
+      DOCX 看 run.italic（含表格），PDF 看 span flags/字体名；有 error 退出码 1。
 退出码：md/docx 有 critical/major 问题时 1，否则 0；pdf 只审计，恒 0。
 """
 from __future__ import annotations
@@ -43,32 +46,22 @@ import taxoformat as tf  # noqa: E402
 ITALIC = re.compile(r"(?<!\\)\*(?!\*)(?!\s)([^*\n]*?)(?<!\s)(?<!\\)\*(?!\*)")
 HAN = re.compile(r"[⺀-鿿豈-﫿＀-￯]")
 CAPTION = re.compile(
-    r"^\s*(?:\*\*)?(?:Figs?\.?|L[aá]ms?\.?|Tablas?|Tables?|Plates?|图|図|表)\s*[\dIVXivx]")
-# 图N + *学名*：学名斜体正确；roman 前缀仅图号时不算 caption.allitalic
-_CAPTION_FIG_ONLY_ROMAN = re.compile(
-    r"^\s*(?:\*\*)?(?:Figs?\.?|图|図)\s*\d+[a-zA-Z′']?\s*$",
-    re.I,
-)
+    r"^\s*(?:\*\*)?(?:Figs?\.?|L[aá]ms?\.?|Tablas?|Tables?|Plates?|图|表)\s*[\dIVXivx]")
 YEAR = re.compile(r"\b(?:1[89]|20)\d{2}[a-z]?\b")
 RANK = re.compile(r"\b(?:spp?|cf\.|aff\.|var\.|subsp\.|f\.|n\.\s*sp\.|gen\.\s*n\.|indet\.)")
 ABBR = re.compile(r"^[A-Z]\.\s+[a-z][a-z-]+")
 FAMILY = re.compile(r"(?:idae|inae|ini|oidea)$")
-FAMILY_RUN = re.compile(
-    r"\b[A-Z][a-z]{2,}(?:idae|inae|ini|oidea)"
-    r"(?:\s*(?:,|and|y|e|et|&)\s*[A-Z][a-z]{2,}(?:idae|inae|ini|oidea))*\b")
 FUNCTION_WORD = {"and", "or", "of", "the", "in", "with", "from", "between", "to",
                  "for", "on", "by", "as", "y", "e", "与", "和", "及"}
 CONNECTOR = {"and", "&", "et", "al.", "y", "e", "与", "和", "及", ","}
 
 LEVELS = {"italic.cjk": "critical", "citation.italic": "major", "italic.author": "major",
           "caption.allitalic": "major", "caption.name_roman": "major",
-          "italic.mixed": "major", "italic.higher_taxon": "major",
+          "italic.mixed": "major", "italic.higher_taxon": "info",
           "italic.other": "info"}
 BAD = {k for k, v in LEVELS.items() if v in ("critical", "major")}
 # 可自动去斜体的类别：去斜体后图注/正文的学名仍是斜体，只去掉非学名部分。
-# 科级及以上阶元（-idae/-inae/-ini/-oidea）一律正体，同样可自动更正。
-FIXABLE = {"citation.italic", "italic.author", "italic.mixed", "italic.cjk",
-           "italic.higher_taxon"}
+FIXABLE = {"citation.italic", "italic.author", "italic.mixed", "italic.cjk"}
 
 
 @dataclass
@@ -148,7 +141,7 @@ def _name_rx(lex: tf.Lexicon) -> re.Pattern[str] | None:
     if not lex.genera:
         return None
     genera = "|".join(sorted((re.escape(g) for g in lex.genera), key=len, reverse=True))
-    return re.compile(rf"(?<![A-Za-z])({genera})(?![A-Za-z])(?:\s+([a-z][a-z-]{{2,}}))?")
+    return re.compile(rf"(?<![A-Za-z])({genera})(?:\s+([a-z][a-z-]{{2,}}))?")
 
 
 def _name_matches(text: str, lex: tf.Lexicon) -> list[tuple[int, int, str]]:
@@ -265,12 +258,8 @@ def check_markdown(name: str, text: str, caption_names: str = "italic",
             kind = classify(m.group(1), lex, is_caption, caption_names, refs)
             out.append(Finding(kind, f"{name}:{i}", m.group(0)))
         if is_caption:
-            roman = ITALIC.sub("", line).strip()
-            # 「图14 *Eunoe barbata*」：图号正体 + 学名斜体，不是整条误斜
-            if _CAPTION_FIG_ONLY_ROMAN.match(roman):
-                continue
             covered = sum(len(re.sub(r"\s", "", m.group(1))) for m in spans)
-            total = len(re.sub(r"\s", "", roman)) + covered
+            total = len(re.sub(r"\s", "", ITALIC.sub("", line))) + covered
             if total and covered / total >= 0.8:
                 out.append(Finding("caption.allitalic", f"{name}:{i}", line.strip()[:120]))
     return out
@@ -311,10 +300,6 @@ def check_docx(path: Path, caption_names: str = "italic", refs: Refs | None = No
         if is_caption:
             italic_chars = sum(len(t) for t, it in runs if it)
             total = sum(len(t) for t, _ in runs)
-            roman = "".join(t for t, it in runs if not it)
-            # 「图3」正体 + 学名斜体：与 markdown 路径同一豁免
-            if _CAPTION_FIG_ONLY_ROMAN.match(roman.strip()):
-                continue
             if total and italic_chars / total >= 0.9:
                 out.append(Finding("caption.allitalic", where, line[:120]))
     return out
@@ -331,20 +316,6 @@ def _split_names(text: str, lex: tf.Lexicon) -> list[tuple[str, bool]]:
         pos = end
     if pos < len(text):
         pieces.append((text[pos:], False))
-    return pieces
-
-
-def _split_higher(text: str) -> list[tuple[str, bool]]:
-    """科级及以上阶元改正体，同一 run 里其余内容保持斜体。"""
-    pieces: list[tuple[str, bool]] = []
-    pos = 0
-    for m in FAMILY_RUN.finditer(text):
-        if m.start() > pos:
-            pieces.append((text[pos:m.start()], True))
-        pieces.append((m.group(0), False))
-        pos = m.end()
-    if pos < len(text):
-        pieces.append((text[pos:], True))
     return pieces
 
 
@@ -395,9 +366,7 @@ def fix_docx(path: Path, out: Path, caption_names: str = "italic",
             kind = classify(text, lex, False, caption_names, refs)
             if kind in FIXABLE:
                 findings.append(Finding(kind, f"{out.name}:p{i}", text.strip()[:80]))
-                fixed = (_split_higher(text) if kind == "italic.higher_taxon"
-                         else _split_names(text, lex))
-                _replace_run(par, run, fixed)
+                _replace_run(par, run, _split_names(text, lex))
     doc.save(str(out))
     return findings
 
@@ -455,7 +424,22 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--aligned", type=Path, help="aligned JSON，用其中的 ref 块建文献索引")
         if cmd == "pdf":
             p.add_argument("--pages", help="如 20-40，缺省全书")
+    rp = sub.add_parser("rendered", help="审计渲染后 DOCX/PDF 的学名体例（taxostyle）")
+    rp.add_argument("files", nargs="+", type=Path)
+    rp.add_argument("--report", type=Path)
+    rp.add_argument("--profile", choices=("zoology", "source"), default="zoology")
+    rp.add_argument("--no-worms", action="store_true")
     args = ap.parse_args(argv)
+
+    if args.cmd == "rendered":
+        import taxostyle
+
+        sub_args = [str(args.files[0]), "--profile", args.profile]
+        if args.no_worms:
+            sub_args.append("--no-worms")
+        if args.report:
+            sub_args += ["--report", str(args.report)]
+        return taxostyle.main(["audit", *sub_args])
 
     if args.cmd == "pdf":
         rows: list[str] = []

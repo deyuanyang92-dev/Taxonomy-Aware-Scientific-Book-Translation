@@ -1,0 +1,306 @@
+{
+ "n_lines": 8,
+ "line_keys": [
+  "errorCode",
+  "errorMsg",
+  "logId",
+  "result"
+ ],
+ "result_keys": [
+  "dataInfo",
+  "layoutParsingResults",
+  "preprocessedImages"
+ ],
+ "per_line": [
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    433,
+    1013,
+    1767,
+    1448
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3992,
+      "height": 6132
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1159,
+    1534,
+    1844,
+    1279
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    857,
+    1588,
+    618,
+    1837
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3988,
+      "height": 6132
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1379,
+    1533,
+    967,
+    1585
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 4016,
+      "height": 6136
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     },
+     {
+      "width": 3958,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1369,
+    1475,
+    736,
+    1185
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 3996,
+      "height": 6106
+     },
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 4052,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1838,
+    1631,
+    1679,
+    929
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 4104,
+      "height": 6132
+     },
+     {
+      "width": 4068,
+      "height": 6106
+     },
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 4056,
+      "height": 6132
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 4,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1334,
+    1026,
+    1554,
+    1094
+   ],
+   "dataInfo": {
+    "numPages": 4,
+    "pages": [
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 4044,
+      "height": 6106
+     },
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 4020,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  },
+  {
+   "lpr": 2,
+   "lpr_keys": [
+    "inputImage",
+    "markdown",
+    "outputImages",
+    "prunedResult"
+   ],
+   "md_len": [
+    1396,
+    1576
+   ],
+   "dataInfo": {
+    "numPages": 2,
+    "pages": [
+     {
+      "width": 4078,
+      "height": 6106
+     },
+     {
+      "width": 4036,
+      "height": 6106
+     }
+    ],
+    "type": "pdf"
+   }
+  }
+ ],
+ "resultUrl_keys": [
+  "jsonUrl"
+ ],
+ "secs": 114
+}

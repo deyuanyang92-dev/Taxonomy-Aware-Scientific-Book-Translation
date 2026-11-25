@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 CYR = 'Ѐ-ӿ'
 HAN = '一-鿿'
@@ -72,6 +73,20 @@ def base(lang: str) -> str:
     return lang.split('-')[0].lower()
 
 
+def wants_chinese_names(lang: str) -> bool:
+    """目标语言是中文时才需要「通行中文名」（yiku/Wikidata 专名核对）；其他目标语言保留原文学名与专名。"""
+    return base(lang) == 'zh'
+
+
+def gate_entities(res: list[dict[str, Any]], tl: str) -> list[dict[str, Any]]:
+    """专名解析结果按目标语言过滤：非中文目标返回空表（学名、专名保留原文，不要求中文通行名）。
+
+    用法：`entities.check(src, tgt, gate_entities(ents, tl))`；`chunk_entities` 在 `not wants_chinese_names(tl)`
+    时应跳过提取与 yiku/Wikidata 查询。
+    """
+    return list(res) if wants_chinese_names(tl) else []
+
+
 def info(lang: str) -> dict[str, str] | None:
     return LANG.get(base(lang))
 
@@ -81,11 +96,37 @@ def count_neg(text: str, lang: str) -> int | None:
     return len(re.findall(i['neg'], text, re.I)) if i else None
 
 
+_CJK_D = {'零': 0, '〇': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+
+
+_EN_ORD = ('first second third fourth fifth sixth seventh eighth ninth tenth eleventh twelfth thirteenth '
+           'fourteenth fifteenth sixteenth seventeenth eighteenth nineteenth twentieth').split()
+
+
+def _cjk_int(run: str) -> int:
+    """汉字数词串转整数：十=10，十五=15，二十三=23，一百=100；无法按位值解析（如「一二」）返回 0（不放行）。"""
+    total, cur, ok = 0, 0, True
+    for c in run:
+        if c in _CJK_D:
+            cur = _CJK_D[c]
+        elif c == '十':
+            total += (cur or 1) * 10
+            cur = 0
+        elif c == '百':
+            total += (cur or 1) * 100
+            cur = 0
+        else:
+            ok = False
+    return total + cur if ok and (total or cur) else 0
+
+
 def numeral_values(text: str, lang: str) -> list[int]:
     """文本里以数词出现的 1–20（按出现次数）。"""
     table = numerals(lang)
     if not table:
         return []
+    if base(lang) == 'en':   # first/second/…/twentieth 也是数词（译文常把「第3」写成 third）
+        table = {**table, **{w: i for i, w in enumerate(_EN_ORD, 1)}}
     if base(lang) in ('ja', 'zh'):
-        return [table[c] for c in text if c in table]
+        return [v for run in re.findall(r'[零〇一二两三四五六七八九十百]+', text) for v in [_cjk_int(run)] if v]
     return [table[w] for w in re.findall(r'[^\W\d_]+', text.lower()) if w in table]

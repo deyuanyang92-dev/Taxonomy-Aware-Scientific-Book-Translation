@@ -1,37 +1,11 @@
 """llm_engines：全部用 mock，不真调 API、不真起命令行。"""
 import json
 import subprocess
-import sys
 import types
-from types import SimpleNamespace
 
+import anthropic
+import httpx
 import pytest
-
-# 无 anthropic/httpx 时仍可跑 mock 测试（PEP 668 环境常见）
-try:
-    import anthropic
-    import httpx
-except ModuleNotFoundError:  # pragma: no cover
-    class _APIConnectionError(Exception):
-        def __init__(self, request=None):
-            self.request = request
-            super().__init__("connection")
-
-    class _APIStatusError(Exception):
-        def __init__(self, message="", response=None, body=None):
-            self.response = response
-            self.body = body
-            self.status_code = getattr(response, "status_code", None)
-            super().__init__(message)
-
-    anthropic = SimpleNamespace(  # type: ignore[assignment]
-        APIConnectionError=_APIConnectionError,
-        APIStatusError=_APIStatusError,
-        Anthropic=object,
-    )
-    httpx = SimpleNamespace(Request=lambda *a, **k: SimpleNamespace(method=a[0] if a else "POST", url=a[1] if len(a) > 1 else ""))  # type: ignore[assignment]
-    sys.modules.setdefault("anthropic", anthropic)
-    sys.modules.setdefault("httpx", httpx)
 
 import llm_engines as le
 
@@ -213,55 +187,6 @@ def test_claude_cli_command_and_stdin(monkeypatch):
     assert seen["cmd"][3] == "sonnet"
 
 
-def _capture_claude_cmd(monkeypatch):
-    seen = {}
-    out = json.dumps({"result": "ok", "is_error": False, "usage": {"input_tokens": 1, "output_tokens": 1}})
-
-    def fake_run(cmd, **kw):
-        seen["cmd"] = cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
-
-    monkeypatch.setattr(le.subprocess, "run", fake_run)
-    return seen
-
-
-def test_claude_cli_has_cost_guards_by_default(monkeypatch):
-    # 2026-11-19：claude -p 原先没有单次预算上限，也每次落一份会话文件
-    monkeypatch.delenv("YZZ_CLAUDE_MAX_USD", raising=False)
-    monkeypatch.delenv("YZZ_CLAUDE_EFFORT", raising=False)
-    seen = _capture_claude_cmd(monkeypatch)
-    le.call("claude-sonnet", "S", "U")
-    cmd = seen["cmd"]
-    assert "--no-session-persistence" in cmd
-    assert cmd[cmd.index("--max-budget-usd") + 1] == "1"
-    assert "--effort" not in cmd
-    assert cmd[-2:] == ["--system-prompt", "S"]
-
-
-def test_claude_cli_budget_and_effort_from_env(monkeypatch):
-    seen = _capture_claude_cmd(monkeypatch)
-    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "0.25")
-    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "low")
-    le.call("claude-sonnet", "S", "U")
-    cmd = seen["cmd"]
-    assert cmd[cmd.index("--max-budget-usd") + 1] == "0.25"
-    assert cmd[cmd.index("--effort") + 1] == "low"
-    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "off")
-    le.call("claude-sonnet", "S", "U")
-    assert "--max-budget-usd" not in seen["cmd"]
-
-
-def test_claude_cli_rejects_bad_env(monkeypatch):
-    _capture_claude_cmd(monkeypatch)
-    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "ultra")
-    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_EFFORT"):
-        le.call("claude-sonnet", "S", "U")
-    monkeypatch.delenv("YZZ_CLAUDE_EFFORT")
-    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "-3")
-    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_MAX_USD"):
-        le.call("claude-sonnet", "S", "U")
-
-
 def test_claude_cli_empty_result(monkeypatch):
     out = json.dumps({"result": "", "is_error": True})
     monkeypatch.setattr(le.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, out, ""))
@@ -355,6 +280,57 @@ def test_deepseek_retry_stops_when_night_window_closes(monkeypatch):
     monkeypatch.setattr(le, "_retryable", lambda exc: True)
     monkeypatch.setattr(le.time, "sleep", lambda s: None)
     monkeypatch.setattr(le, "is_peak", lambda now=None: True)
-    with pytest.raises(le.EngineError, match="高峰时段"):
+    with pytest.raises(le.EngineError, match="已进入高峰时段"):
         le._deepseek("deepseek-flash", "s", "u", 100, check_window=True)
     assert len(calls) == 1  # 第一次失败后不再重试
+
+
+def _capture_claude_cmd(monkeypatch):
+    seen = {}
+    out = json.dumps({"result": "ok", "is_error": False, "usage": {"input_tokens": 1, "output_tokens": 1}})
+
+    def fake_run(cmd, **kw):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(le.subprocess, "run", fake_run)
+    return seen
+
+
+def test_claude_cli_has_cost_guards_by_default(monkeypatch):
+    # 2026-11-19：claude -p 原先没有单次预算上限，也每次落一份会话文件
+    monkeypatch.delenv("YZZ_CLAUDE_MAX_USD", raising=False)
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT", raising=False)
+    seen = _capture_claude_cmd(monkeypatch)
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert "--no-session-persistence" in cmd
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "1"
+    assert "--effort" not in cmd
+    assert cmd[-2:] == ["--system-prompt", "S"]
+
+
+def test_claude_cli_budget_and_effort_from_env(monkeypatch):
+    seen = _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "0.25")
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "low")
+    le.call("claude-sonnet", "S", "U")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--max-budget-usd") + 1] == "0.25"
+    assert cmd[cmd.index("--effort") + 1] == "low"
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "off")
+    le.call("claude-sonnet", "S", "U")
+    assert "--max-budget-usd" not in seen["cmd"]
+
+
+def test_claude_cli_rejects_bad_env(monkeypatch):
+    _capture_claude_cmd(monkeypatch)
+    monkeypatch.setenv("YZZ_CLAUDE_EFFORT", "ultra")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_EFFORT"):
+        le.call("claude-sonnet", "S", "U")
+    monkeypatch.delenv("YZZ_CLAUDE_EFFORT")
+    monkeypatch.setenv("YZZ_CLAUDE_MAX_USD", "-3")
+    with pytest.raises(le.EngineError, match="YZZ_CLAUDE_MAX_USD"):
+        le.call("claude-sonnet", "S", "U")
+
+

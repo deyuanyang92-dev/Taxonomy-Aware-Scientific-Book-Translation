@@ -21,7 +21,7 @@ ABBR = {
     'bg': {'стр.': 'p.', 'табл.': 'pl.', 'фиг.': 'fig.', 'сем.': 'fam.', 'и др.': 'et al.'},
     'ru': {'стр.': 'p.', 'с.': 'p.', 'табл.': 'pl.', 'рис.': 'fig.', 'сем.': 'fam.', 'и др.': 'et al.'},
     'uk': {'стор.': 'p.', 'с.': 'p.', 'табл.': 'pl.', 'рис.': 'fig.'},
-    'de': {'S.': 'p.', 'Taf.': 'pl.', 'Abb.': 'fig.', 'u.': 'and'},
+    'de': {'Literaturverzeichnis': 'References', 'S.': 'p.', 'Taf.': 'pl.', 'Abb.': 'fig.', 'u.': 'and'},
     'fr': {'pl.': 'pl.', 'fig.': 'fig.'},
     'ja': {'頁': 'p.', '図版': 'pl.', '図': 'fig.'},
 }
@@ -39,6 +39,9 @@ def _own_ratio(t: str, sl: str) -> float:
     if not i or not i['own'] or not letters:
         return 0.0
     return sum(1 for ch in letters if re.match(f"[{i['own']}]", ch)) / len(letters)
+
+
+_REF_YEAR = r'(?:[1I][5-9lI][\dlIO]{2}|20[\dlIO]{2})[a-z]?(?:\s*[—–-]+\s*(?:[1I][5-9lI])?[\dlIO]{2,4}[a-z]?)?'
 
 
 def classify(text: str, sl: str = '') -> str:
@@ -59,6 +62,21 @@ def classify(text: str, sl: str = '') -> str:
     # 文献条目：「姓, 首字母. 年.」开头
     if '\n' not in t and re.match(rf'^[^\W\d_][\w\'\- ]{{1,40}},\s+(?:[^\W\d_]{{1,3}}\.\s*){{1,3}}.*?{YEAR}', t):
         return 'reference'   # 单行「姓, 首字母. 年.」；多行段可能夹叙述，不判文献
+    # 文献条目（真实页面，含折行与 OCR 杂符）：段首 70 字内出现「, 年份: 」（德文文献「姓, X., 1952: 题名」），
+    # 年份允许 OCR 把 1 识成 l/I、0 识成 O（190la）、范围（1856—1858）、后缀字母。叙述句里不会在段首出现「年份:」。
+    if re.match(rf'^.{{0,70}}?[,.‚„]\s*{_REF_YEAR}\s*:', t, re.S):
+        return 'reference'
+    # 页眉「Literaturverzeichnis 269」：确定性换成 References N，不送机翻（谷歌译成「参考文献」且无法保证一致）
+    if re.fullmatch(r'Literaturverzeichnis\s*[\dIVXLC]*', t):
+        return 'index'
+    # OCR 杂符（「IE」「'」「HC 2 eG」「» 7」）：短且没有 4 个字母以上的词，不送机翻；孤立的「pls.」同理
+    if not t.startswith('<!--') and (re.fullmatch(r'(?:pls?|figs?|pp?)\.?', t) or (
+            len(t) <= 12 and not re.search(r'[^\W\d_]{4,}', t) and not re.search(r'\d{3,}|\b(?:pp?|pls?)\.\s*\d', t))):
+        return 'index'
+    # 文献折行残片：短、含「pp. 1—84」「9 pls.」「vol. 5」类卷页标记、词很少
+    if (not t.startswith('<!--') and len(t) < 120 and len(words) <= 14
+            and re.search(r'\b(?:pp?|pls?|figs?|vol|no|Bd|Heft|Lief)\.\s*\d|\d\s*(?:pp|pls|figs)\.', t)):
+        return 'reference'
     # 异名录：多个年份、分号分隔、普通词很少（以学名、人名、页码为主）
     cites = len(re.findall(rf',\s*{YEAR}', t))                     # 「作者, 年份」
     evidence = '*' in t or re.search(r'(?:\bp|стр|с|S|pp)\.\s*\d', t)  # 斜体学名或页码引注

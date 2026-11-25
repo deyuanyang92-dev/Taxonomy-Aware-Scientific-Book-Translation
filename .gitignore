@@ -8,3 +8,7 @@ preface_config.json
 .pytest_cache/
 _资料库/
 build/
+
+test-ocr/.env*
+test-ocr/runs/
+test-ocr/zh_fauna/

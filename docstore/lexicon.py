@@ -219,16 +219,21 @@ class Fixer:
 
         return LATIN_RE.sub(repl, text)
 
-    def apply(self, text: str, *, english: bool | None = None) -> tuple[str, list[dict]]:
-        """english：True/False 强制英文页（保守）/中文页（原行为）；None 按中文字符占比自动判断。"""
+    def apply(self, text: str, *, english: bool | None = None, lang: str | None = None) -> tuple[str, list[dict]]:
+        """english：True/False 强制英文页（保守）/中文页（原行为）；None 按中文字符占比自动判断。
+        lang：资料语种；规则带 `lang = ["ja"]` 时只在该语种生效，语种未知时跳过（宁漏不错改）。"""
         fixed = text
         changes: list[dict] = []
         for rule in self.cfg.get("regex_rules", []):
+            if rule.get("lang") and lang not in rule["lang"]:
+                continue
             new = re.sub(rule["pattern"], rule["replace"], fixed)
             if new != fixed:
                 changes.append({"rule": rule.get("name", "regex"), "before": fixed, "after": new})
                 fixed = new
         for rule in self.cfg.get("replace_rules", []):
+            if rule.get("lang") and lang not in rule["lang"]:
+                continue
             if rule["before"] in fixed:
                 new = fixed.replace(rule["before"], rule["after"])
                 changes.append({"rule": rule.get("name", "replace"), "before": rule["before"], "after": rule["after"]})

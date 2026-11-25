@@ -1,0 +1,35 @@
+{
+ "id": "r3_second_title_empty",
+ "format": "backref",
+ "lang": "en",
+ "source": "Key to genera\n1(4) Elytra present\n2(3) Body narrow ...... Harmothoe\n3(2) Body broad ...... Antinoe\n4(1) Elytra absent ...... Nereis\nKey to a second group\n[plate illegible]",
+ "expect": {
+  "keys": 2,
+  "branches": [
+   [
+    "1a",
+    "jump",
+    "2"
+   ],
+   [
+    "2a",
+    "taxon",
+    "Harmothoe"
+   ],
+   [
+    "2b",
+    "taxon",
+    "Antinoe"
+   ],
+   [
+    "1b",
+    "taxon",
+    "Nereis"
+   ]
+  ],
+  "findings": [
+   "empty_key"
+  ]
+ },
+ "why": "booklayout/keymodel.py:358、booklayout/keygraph.py:837。两个标题，第二个标题后仅留图像占位。按 SPEC 的文档级定义，仍有一张可读表，不报 no_keys；此对照记录局部漏表的覆盖盲区。 ｜主会话裁定 r3：有标题无有效分支改报 empty_key（error，同样阻断，且指明是哪张表）。"
+}

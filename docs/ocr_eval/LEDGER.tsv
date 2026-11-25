@@ -1,0 +1,217 @@
+date	engine_params	set	metric	result	cost	source
+2026-11-15	PP-OCRv5 server 200dpi base	real14	CER	0.079	0	docs/ocr_hard_scans.md
+2026-11-15	PP-OCRv5 server 200dpi base	degraded20	CER	0.137	0	docs/ocr_hard_scans.md
+2026-11-15	full-page enhance	real14/degraded20	CER	0.058/0.252	0	docs/ocr_hard_scans.md
+2026-11-15	binarize (Otsu)	real14/degraded20	CER	0.060/0.078	0	docs/ocr_hard_scans.md
+2026-11-15	adaptive (adopted)	real14/degraded20	CER	0.079/0.039	0	docs/ocr_hard_scans.md
+2026-11-15	low-conf line upscale re-OCR	real14/degraded20	CER	0.080/0.134	0	docs/ocr_hard_scans.md
+2026-11-15	NLM denoise candidate	degraded20	CER	0.052 vs 0.051 (no gain)	0	docs/ocr_hard_scans.md
+2026-11-15	dpi 200 vs 300/400	Imajima 2 pages	char err	0.08%/1.1% vs 0.59%/1.4%	0	docs/ocr_hard_scans.md
+2026-11-15	PP-OCRv5 server	24 pages (12 real+12 degraded)	CER	2.23%/5.37%	0	docs/ocr_hard_scans.md
+2026-11-15	PP-OCRv5 mobile / RapidOCR / Tesseract	24 pages	CER	2.96%,11.5%,16.3% / 5.32%,39.3%,23.4%	0	docs/ocr_hard_scans.md
+2026-11-15	3-4 engine line vote	24 pages	CER	2.18-2.24% / 5.17-5.33% (no gain)	0	docs/ocr_hard_scans.md
+2026-11-15	disputed lines -> Haiku 5.5	24 pages	CER	1.94% / 1.18%	~$0.0001/line	docs/ocr_hard_scans.md
+2026-11-15	disputed lines -> Sonnet 5.5 low	24 pages	CER	1.96% / 0.79%	~$0.0014/line	docs/ocr_hard_scans.md
+2026-11-15	qwen2.5vl:3b CPU	9 pages	CER	0.70%/2.21% (worse than Haiku)	0	docs/ocr_hard_scans.md
+2026-11-15	NDLOCR-Lite whole page	Imajima 2 gold pages	CER	11.0%/11.3% (server 0.61%/0.08%)	0	docs/ocr_tool_survey.md
+2026-11-15	NDLOCR-Lite agrees w/ server or mobile	disputed JA lines 317	line-correct	97%	0	docs/ocr_hard_scans.md
+2026-11-21	UNTESTED: det thresh/box_thresh/limit_side_len/unclip/rec_score_thresh/textline_orientation, dpi 150/175/225, YomiToku, PaddleOCR-VL	-	-	no record found (grep unclip: code only)	0	this ledger
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_unclip_ratio":2.0}	Imajima gold 2001p61/2009p66	CER	1.23%/0.25%	0	scripts/bench/ocr_sweep.py pilot INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {}	Imajima gold 2001p61/2009p66	CER	1.84%/0.08%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_unclip_ratio":1.2}	Imajima gold 2001p61/2009p66	CER	3.37%/0.17%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_thresh":0.2}	Imajima gold 2001p61/2009p66	CER	1.53%/0.08%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_thresh":0.4}	Imajima gold 2001p61/2009p66	CER	1.84%/0.00%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_box_thresh":0.4}	Imajima gold 2001p61/2009p66	CER	1.68%/0.00%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_box_thresh":0.8}	Imajima gold 2001p61/2009p66	CER	8.42%/0.42%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"use_textline_orientation":true}	Imajima gold 2001p61/2009p66	CER	1.84%/0.08%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_limit_side_len":1600,"text_det_limit_type":"max"}	Imajima gold 2001p61/2009p66	CER	1.38%/0.17%	0	scripts/bench/ocr_sweep.py  INVALID(缺prep_ja后处理,基线1.84%≠0.61%)
+2026-11-21	PP-OCRv5 server 200dpi {}	Imajima gold 2001p61/2009p66	CER	0.61%/0.08%	0	scripts/bench/ocr_sweep.py baseline recheck with prep_ja
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_unclip_ratio":2.0}	Imajima gold 2001p61/2009p66	CER	0.61%/0.25%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_unclip_ratio":1.2}	Imajima gold 2001p61/2009p66	CER	2.30%/0.17%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_thresh":0.2}	Imajima gold 2001p61/2009p66	CER	0.61%/0.08%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_thresh":0.4}	Imajima gold 2001p61/2009p66	CER	0.61%/0.00%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_box_thresh":0.4}	Imajima gold 2001p61/2009p66	CER	0.46%/0.00%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_box_thresh":0.8}	Imajima gold 2001p61/2009p66	CER	7.50%/0.42%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"use_textline_orientation":true}	Imajima gold 2001p61/2009p66	CER	0.61%/0.08%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 server 200dpi {"text_det_limit_side_len":1600,"text_det_limit_type":"max"}	Imajima gold 2001p61/2009p66	CER	0.46%/0.17%	0	scripts/bench/ocr_sweep.py 
+2026-11-21	PP-OCRv5 sweep 小结(8参数)	gold 2页	CER	无参数稳定优于基线0.61/0.08；差异仅1-2字=噪声；box_thresh0.8与unclip1.2明显变差	0	金标准页太干净，分不出参数优劣；下一步须在劣化页(bench/quality.py)上扫
+2026-11-21	YomiToku 0.16.3（venv_yt, torch cu126）	三本最差页（11页）	—	未测：用户叫停，安装未完成	0	用户指令；许可 CC BY-NC-SA 4.0；幻灯片 0.97%/3.08% 未证实
+2026-11-21	PP-OCRv5_server 200dpi ADAPTIVE=0 +prep_ja	G0(14)	cer_norm	0.0602	0	test-ocr/runs/ppocrv5_server_200_raw
+2026-11-21	PP-OCRv5_server 200dpi ADAPTIVE=0 +prep_ja	G2 2007p1-12(循环金标)	cer_norm	0.0262	0	test-ocr/runs/ppocrv5_server_200_raw
+2026-11-21	PP-OCRv5_server 200dpi ADAPTIVE=1 +prep_ja	G0(14)	cer_norm	0.0602	0	test-ocr/runs/ppocrv5_server_200_adapt
+2026-11-21	PP-OCRv5_server 200dpi ADAPTIVE=1 +prep_ja	G2 2007p1-12(循环金标)	cer_norm	0.0259	0	test-ocr/runs/ppocrv5_server_200_adapt
+2026-11-21	Tesseract5.3.4 pn_psm11_dpi300 +prep_ja	G0	cer_norm	0.6670	0	test-ocr/runs/tess534_jpn_psm11_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm11_dpi300 +prep_ja	G2	cer_norm	1.2163	0	test-ocr/runs/tess534_jpn_psm11_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi200 +prep_ja	G0	cer_norm	0.2774	0	test-ocr/runs/tess534_jpn_psm3_dpi200
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi200 +prep_ja	G2	cer_norm	0.3890	0	test-ocr/runs/tess534_jpn_psm3_dpi200
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi300 +prep_ja	G0	cer_norm	0.2455	0	test-ocr/runs/tess534_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi300 +prep_ja	G2	cer_norm	0.3782	0	test-ocr/runs/tess534_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi400 +prep_ja	G0	cer_norm	0.2505	0	test-ocr/runs/tess534_jpn_psm3_dpi400
+2026-11-21	Tesseract5.3.4 pn_psm3_dpi400 +prep_ja	G2	cer_norm	0.4545	0	test-ocr/runs/tess534_jpn_psm3_dpi400
+2026-11-21	Tesseract5.3.4 pn_psm4_dpi300 +prep_ja	G0	cer_norm	0.5135	0	test-ocr/runs/tess534_jpn_psm4_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm4_dpi300 +prep_ja	G2	cer_norm	0.4759	0	test-ocr/runs/tess534_jpn_psm4_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm6_dpi300 +prep_ja	G0	cer_norm	0.4435	0	test-ocr/runs/tess534_jpn_psm6_dpi300
+2026-11-21	Tesseract5.3.4 pn_psm6_dpi300 +prep_ja	G2	cer_norm	2.3013	0	test-ocr/runs/tess534_jpn_psm6_dpi300
+2026-11-21	Tesseract4.1.1 std_jpn psm3 300dpi	G0	cer_norm	0.2888	0	test-ocr/runs/tess411_std_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 std_jpn psm3 300dpi	G2	cer_norm	0.4688	0	test-ocr/runs/tess411_std_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 std_jpn_vert psm3 300dpi	G0	cer_norm	0.9491	0	test-ocr/runs/tess411_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 std_jpn_vert psm3 300dpi	G2	cer_norm	0.9321	0	test-ocr/runs/tess411_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 std_Japanese psm3 300dpi	G0	cer_norm	0.2231	0	test-ocr/runs/tess411_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract4.1.1 std_Japanese psm3 300dpi	G2	cer_norm	0.2310	0	test-ocr/runs/tess411_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_jpn psm3 300dpi	G0	cer_norm	0.2478	0	test-ocr/runs/tess411_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_jpn psm3 300dpi	G2	cer_norm	0.3765	0	test-ocr/runs/tess411_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_jpn_vert psm3 300dpi	G0	cer_norm	0.9499	0	test-ocr/runs/tess411_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_jpn_vert psm3 300dpi	G2	cer_norm	0.9215	0	test-ocr/runs/tess411_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_Japanese psm3 300dpi	G0	cer_norm	0.1699	0	test-ocr/runs/tess411_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract4.1.1 fast_Japanese psm3 300dpi	G2	cer_norm	0.2375	0	test-ocr/runs/tess411_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_jpn psm3 300dpi	G0	cer_norm	0.2929	0	test-ocr/runs/tess411_best_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_jpn psm3 300dpi	G2	cer_norm	0.4360	0	test-ocr/runs/tess411_best_jpn_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_jpn_vert psm3 300dpi	G0	cer_norm	0.9438	0	test-ocr/runs/tess411_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_jpn_vert psm3 300dpi	G2	cer_norm	0.9315	0	test-ocr/runs/tess411_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_Japanese psm3 300dpi	G0	cer_norm	0.2237	0	test-ocr/runs/tess411_best_Japanese_psm3_dpi300
+2026-11-21	Tesseract4.1.1 best_Japanese psm3 300dpi	G2	cer_norm	0.2274	0	test-ocr/runs/tess411_best_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 std_jpn_vert psm3 300dpi	G0	cer_norm	0.9485	0	test-ocr/runs/tess534_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 std_jpn_vert psm3 300dpi	G2	cer_norm	0.9488	0	test-ocr/runs/tess534_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 std_Japanese psm3 300dpi	G0	cer_norm	0.2202	0	test-ocr/runs/tess534_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 std_Japanese psm3 300dpi	G2	cer_norm	0.2309	0	test-ocr/runs/tess534_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_jpn psm3 300dpi	G0	cer_norm	0.2455	0	test-ocr/runs/tess534_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_jpn psm3 300dpi	G2	cer_norm	0.3782	0	test-ocr/runs/tess534_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_jpn_vert psm3 300dpi	G0	cer_norm	0.9504	0	test-ocr/runs/tess534_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_jpn_vert psm3 300dpi	G2	cer_norm	0.9453	0	test-ocr/runs/tess534_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_Japanese psm3 300dpi	G0	cer_norm	0.1698	0	test-ocr/runs/tess534_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 fast_Japanese psm3 300dpi	G2	cer_norm	0.2338	0	test-ocr/runs/tess534_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_jpn psm3 300dpi	G0	cer_norm	0.2878	0	test-ocr/runs/tess534_best_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_jpn psm3 300dpi	G2	cer_norm	0.4338	0	test-ocr/runs/tess534_best_jpn_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_jpn_vert psm3 300dpi	G0	cer_norm	0.9474	0	test-ocr/runs/tess534_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_jpn_vert psm3 300dpi	G2	cer_norm	0.9465	0	test-ocr/runs/tess534_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_Japanese psm3 300dpi	G0	cer_norm	0.2212	0	test-ocr/runs/tess534_best_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.3.4 best_Japanese psm3 300dpi	G2	cer_norm	0.2249	0	test-ocr/runs/tess534_best_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_jpn psm3 300dpi	G0	cer_norm	0.2882	0	test-ocr/runs/tess551_std_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_jpn psm3 300dpi	G2	cer_norm	0.4689	0	test-ocr/runs/tess551_std_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_jpn_vert psm3 300dpi	G0	cer_norm	0.9507	0	test-ocr/runs/tess551_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_jpn_vert psm3 300dpi	G2	cer_norm	0.9375	0	test-ocr/runs/tess551_std_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_Japanese psm3 300dpi	G0	cer_norm	0.2209	0	test-ocr/runs/tess551_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 std_Japanese psm3 300dpi	G2	cer_norm	0.2246	0	test-ocr/runs/tess551_std_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_jpn psm3 300dpi	G0	cer_norm	0.2469	0	test-ocr/runs/tess551_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_jpn psm3 300dpi	G2	cer_norm	0.3752	0	test-ocr/runs/tess551_fast_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_jpn_vert psm3 300dpi	G0	cer_norm	0.9511	0	test-ocr/runs/tess551_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_jpn_vert psm3 300dpi	G2	cer_norm	0.9330	0	test-ocr/runs/tess551_fast_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_Japanese psm3 300dpi	G0	cer_norm	0.1712	0	test-ocr/runs/tess551_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 fast_Japanese psm3 300dpi	G2	cer_norm	0.2356	0	test-ocr/runs/tess551_fast_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_jpn psm3 300dpi	G0	cer_norm	0.2914	0	test-ocr/runs/tess551_best_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_jpn psm3 300dpi	G2	cer_norm	0.4355	0	test-ocr/runs/tess551_best_jpn_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_jpn_vert psm3 300dpi	G0	cer_norm	0.9474	0	test-ocr/runs/tess551_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_jpn_vert psm3 300dpi	G2	cer_norm	0.9564	0	test-ocr/runs/tess551_best_jpn_vert_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_Japanese psm3 300dpi	G0	cer_norm	0.2218	0	test-ocr/runs/tess551_best_Japanese_psm3_dpi300
+2026-11-21	Tesseract5.5.1 best_Japanese psm3 300dpi	G2	cer_norm	0.2235	0	test-ocr/runs/tess551_best_Japanese_psm3_dpi300
+2026-11-21	PP-OCRv5_mobile 200dpi +prep_ja	G0(14)	cer_norm	0.0551	0	test-ocr/runs/ppocrv5_mobile_200
+2026-11-21	PP-OCRv5_mobile 200dpi +prep_ja	G2(循环金标)	cer_norm	0.0525	0	test-ocr/runs/ppocrv5_mobile_200
+2026-11-21	PP-OCRv6_medium 200dpi +prep_ja	G0(14)	cer_norm	0.0482	0	test-ocr/runs/ppocrv6_medium_200
+2026-11-21	PP-OCRv6_medium 200dpi +prep_ja	G2(循环金标)	cer_norm	0.0483	0	test-ocr/runs/ppocrv6_medium_200
+2026-11-21	YomiToku 0.16.3 std cuda 200dpi +prep_ja	G0(14)	cer_norm	0.0812	0	test-ocr/runs/yomitoku_std_200
+2026-11-21	YomiToku 0.16.3 std cuda 200dpi +prep_ja	G2(循环金标)	cer_norm	0.2112	0	test-ocr/runs/yomitoku_std_200
+2026-11-21	YomiToku 0.16.3 lite cuda 200dpi +prep_ja	G0(14)	cer_norm	0.0828	0	test-ocr/runs/yomitoku_lite_200
+2026-11-21	YomiToku 0.16.3 lite cuda 200dpi +prep_ja	G2(循环金标)	cer_norm	0.2136	0	test-ocr/runs/yomitoku_lite_200
+2026-11-21	NDLOCR-Lite v1.4.0 200dpi	G0	cer_norm	0.1055 (3.1 s/page)	free	ocr_run_ext.py ndlocr_200
+2026-11-21	NDLOCR-Lite v1.4.0 200dpi	G2	cer_norm	0.1994 (3.1 s/page)	free	ocr_run_ext.py ndlocr_200
+2026-11-21	PaddleOCR-VL-1.6 (0.9B) paddle GPU 200dpi +prep_ja	G0	cer_norm	0.1666 (136 s/page, 6GB GTX1660S)	free	ocr_run_ext.py paddlevl_200；个别页 cer>3（疑似重复/幻觉），中位页很低；不宜全书用
+2026-11-21	PaddleOCR-VL-1.6 (0.9B) paddle GPU 200dpi +prep_ja	G2	cer_norm	2.1307 (136 s/page)	free	同上；G2 受幻觉页拉高
+2026-11-21	PaddleOCR-VL-1.6 难页复核	j2001_p0150	cer_norm	0.921 (PP-OCRv6 同页0.324)	free	结论：难页也不优于 PP-OCR，放弃该用途
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium dpi300	G0 (n=14)	cer_norm	0.0487	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium dpi300	G2 (n=12)	cer_norm	0.0473	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium dpi150	G0 (n=14)	cer_norm	0.049	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium dpi150	G2 (n=12)	cer_norm	0.0528	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium text_det_thresh=0.2	G0 (n=14)	cer_norm	0.0485	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium text_det_thresh=0.2	G2 (n=12)	cer_norm	0.0487	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium unclip=2.0	G0 (n=14)	cer_norm	0.0501	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium unclip=2.0	G2 (n=12)	cer_norm	0.0565	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium use_textline_orientation	G0 (n=14)	cer_norm	0.0482	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium use_textline_orientation	G2 (n=12)	cer_norm	0.0481	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium limit_side_len=1600 max	G0 (n=14)	cer_norm	0.0492	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v6 medium limit_side_len=1600 max	G2 (n=12)	cer_norm	0.0507	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v5 server dpi300	G0 (n=14)	cer_norm	0.0588	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v5 server dpi300	G2 (n=12)	cer_norm	0.0426	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v5 server use_textline_orientation 200dpi	G0 (n=14)	cer_norm	0.0602	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	PaddleOCR 3.7 GPU sweep: v5 server use_textline_orientation 200dpi	G2 (n=12)	cer_norm	0.0291	free	scripts/bench/ocr_run.py sw_*；基线 v6 medium 200dpi 0.0482/0.0483，v5 server 0.0602/0.0262
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm1 (psm3基线同值)	G0 (n=14)	cer_norm	0.1809	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm1 (psm3基线同值)	G2 (n=12)	cer_norm	0.2178	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +oem1	G0 (n=14)	cer_norm	0.1809	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +oem1	G2 (n=12)	cer_norm	0.2178	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +load_system_dawg=0+freq_dawg=0	G0 (n=14)	cer_norm	0.1809	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +load_system_dawg=0+freq_dawg=0	G2 (n=12)	cer_norm	0.2178	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +preserve_interword_spaces=1	G0 (n=14)	cer_norm	0.1805	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +preserve_interword_spaces=1	G2 (n=12)	cer_norm	0.2176	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1	G0 (n=14)	cer_norm	0.1559	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1	G2 (n=12)	cer_norm	0.1896	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +dpi200	G0 (n=14)	cer_norm	0.2401	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +dpi200	G2 (n=12)	cer_norm	0.2324	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +dpi400	G0 (n=14)	cer_norm	0.1593	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +dpi400	G2 (n=12)	cer_norm	0.2806	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +lang jpn+eng	G0 (n=14)	cer_norm	0.3337	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +lang jpn+eng	G2 (n=12)	cer_norm	0.267	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm12	G0 (n=14)	cer_norm	0.651	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm12	G2 (n=12)	cer_norm	0.8559	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm13	G0 (n=14)	cer_norm	1.0	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm13	G2 (n=12)	cer_norm	0.9996	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm5	G0 (n=14)	cer_norm	0.9636	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +psm5	G2 (n=12)	cer_norm	2.0827	free	test-ocr/runs/tg_*；scripts/bench/ocr_run_tess.py；对照 PaddleOCR v6 medium 0.0482/0.0483
+2026-11-21	kraken 7.2 CPU，blla 分行 + PP-OCRv6 medium 识别模型（zenodo.21788410）200dpi	试点 j2001_p0073（G0 的 1 页，n=1，非全集）	cer_norm；假名/汉字召回	0.7363；假名 0.0、汉字 0.0、数字 0.96、拉丁 0.96	free	45 秒/页；与 PaddleOCR 原生 v6 同页对比未做
+2026-11-21	kraken 7.2 CPU，blla 分行 + CATMuS-Print fondue-large（zenodo.10592716）200dpi	试点 j2001_p0073（G0 的 1 页，n=1，非全集）	cer_norm；假名/汉字召回	0.9345；假名 0.0、汉字 0.0、拉丁 0.93	free	预期：训练语种为欧文印刷，不含日文
+2026-11-21	Tesseract 5.3.4 jpn_vert（tessdata_fast）psm5 dpi300	G0 n=14 / G2 n=12	cer_norm 均值	G0 0.9546；G2 3.0478	free	竖排模型不适用于这些页（页面主体为横排）；runs/tess_jpnvert_psm5_300
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=otsu	G0 (n=14)	cer_norm	0.1518	free	test-ocr/runs/tp_smoke；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=otsu	G2 (n=12)	cer_norm	0.2067	free	test-ocr/runs/tp_smoke；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=adaptive	G0 (n=14)	cer_norm	0.1468	free	test-ocr/runs/tp_adaptive；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=adaptive	G2 (n=12)	cer_norm	0.2116	free	test-ocr/runs/tp_adaptive；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=deskew	G0 (n=14)	cer_norm	0.1504	free	test-ocr/runs/tp_deskew；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=deskew	G2 (n=12)	cer_norm	0.2034	free	test-ocr/runs/tp_deskew；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=scale2(600dpi等效)	G0 (n=14)	cer_norm	0.1594	free	test-ocr/runs/tp_scale2；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=scale2(600dpi等效)	G2 (n=12)	cer_norm	0.4910	free	test-ocr/runs/tp_scale2；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=denoise	G0 (n=14)	cer_norm	0.1411	free	test-ocr/runs/tp_denoise；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=denoise	G2 (n=12)	cer_norm	0.2028	free	test-ocr/runs/tp_denoise；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=deskew+otsu	G0 (n=14)	cer_norm	0.1557	free	test-ocr/runs/tp_deskew-otsu；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	Tesseract 5.3.4 fast Japanese psm3 dpi300 +textord_heavy_nr=1 +prep=deskew+otsu	G2 (n=12)	cer_norm	0.2087	free	test-ocr/runs/tp_deskew-otsu；ocr_run_tess.py --prep；基线0.1559/0.1896
+2026-11-21	kraken 7.2 CPU PP-OCRv6 medium segment -bl	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.763/0.617/0.000/0.0054	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
+2026-11-21	kraken 7.2 CPU CATMuS-Print fondue-large	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.766/0.623/0.001/0.0073	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
+2026-11-21	Tesseract 5.3.4 best eng psm3	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.806/0.607/0.000/0.0020	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
+2026-11-21	Tesseract 5.3.4 best lat psm3	旧英文页 Greg p50/p120 Mayr p100/p200 (n=4)	cer_norm	0.807/0.604/0.001/0.0010	free	/root/ocr_eval/eu_runs；docs/ocr_eval/manifest.json 旧金标(cursor)，仅一致率
+2026-11-21	PP-OCRv6 medium 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0394/0.0214 (z09 .040 z33 .069 z54 .010) 3.31s/页	free	scripts/bench/zh_run.py; test-ocr/runs/zh_ppv6m
+2026-11-21	PP-OCRv5 server 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0490/0.0252 3.37s/页	free	test-ocr/runs/zh_ppppocrv5server
+2026-11-21	PP-OCRv5 mobile 200dpi	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.0542/0.0292 1.14s/页	free	test-ocr/runs/zh_ppppocrv5mobile
+2026-11-21	Tesseract 5.3.4 chi_sim psm3	zh动物志 3本×10页 n=27有效(3页金标无正文剔除), gold=Datalab accurate 去英文描述/页眉 (参照,非人工真值)	cer_norm/bag_err	0.1318/0.0911 1.86s/页	free	test-ocr/runs/zh_tess_chisim
+2026-11-21	docstore.qc.score_page 静默漏检基线(植入: 字替换/改数字/丢行, conf=0.95)	ja G0 dev n_clean=14 n_seeded=42 (植入为合成)	seeded_detect/clean_false_alarm	0.071/0.071 (检出率≈误报率,质控对内容无区分力)	free	scripts/bench/qc_baseline.py ja
+2026-11-21	docstore.qc.score_page 真实 OCR 静默漏检(cer_norm>=0.03 仍判 pass)	ja G0 dev run=ppocrv6_medium_200 n_real=6 / ppocrv5_server_200_raw n_real=8	real_silent_miss	1.000 (6/6) / 0.875 (7/8)	free	scripts/bench/qc_baseline.py ja --run-tag <tag>
+2026-11-21	Tesseract 5.3.4 rus psm3 200dpi	ru n=5 (sonnet G1) / n=5 (Datalab accurate 参照)	cer_norm/bag_err	vsSonnet 0.1716/0.1363; vsDatalab 0.2570/0.1910; 金标互差 CER 0.1273	free	scripts/bench/multi_ocr.py; bench/runs/tesseract
+2026-11-21	Tesseract 5.3.4 fra psm3 200dpi	fr n=5 (sonnet G1) / n=5 (Datalab accurate 参照)	cer_norm/bag_err	vsSonnet 0.0654/0.0399; vsDatalab 0.0848/0.0483; 金标互差 CER 0.0431	free	scripts/bench/multi_ocr.py; bench/runs/tesseract
+2026-11-21	Tesseract 5.3.4 lat+eng psm3 200dpi	la n=5 (sonnet G1) / n=5 (Datalab accurate 参照)	cer_norm/bag_err	vsSonnet 0.0812/0.0580; vsDatalab 0.0909/0.0610; 金标互差 CER 0.0475	free	scripts/bench/multi_ocr.py; bench/runs/tesseract
+2026-11-21	QC 静默漏检基线 (score_page, conf=0.95, 空 yiku) + Tesseract ru	ru n=5 (G1 sonnet 金标, dev+val)	植入检出/干净误报/真页静默漏检	0.00/0.00/1.00 (n_seeded=15, n_clean=5, n_real=5)	free	scripts/bench/qc_baseline.py; bench/runs/tesseract
+2026-11-21	QC 静默漏检基线 (score_page, conf=0.95, 空 yiku) + Tesseract fr	fr n=5 (G1 sonnet 金标, dev+val)	植入检出/干净误报/真页静默漏检	0.00/0.00/1.00 (n_seeded=15, n_clean=5, n_real=5)	free	scripts/bench/qc_baseline.py; bench/runs/tesseract
+2026-11-21	QC 静默漏检基线 (score_page, conf=0.95, 空 yiku) + Tesseract la	la n=5 (G1 sonnet 金标, dev+val)	植入检出/干净误报/真页静默漏检	0.00/0.00/1.00 (n_seeded=15, n_clean=5, n_real=5)	free	scripts/bench/qc_baseline.py; bench/runs/tesseract
+2026-11-21	PaddleOCR 3.7.0 (paddlepaddle-gpu 3.3.1) 11-12 配置扫描 vs Tesseract 5.3.4 fast/best 9-11 配置	ru n=5 (金标=Datalab accurate 参照)	cer_norm vsDL	Paddle 最佳 P11 v5sdet+cyrillic5rec 0.1798 / v5sdet+eslav 0.1878 / v6m 0.84(不识西里尔)；Tess 最佳 T5 rus+eng 0.1807, best 0.2360, base 0.2570	free	scripts/bench/ocr_matrix.py; bench/matrix/results.md; n=5 不足以宣称优劣
+2026-11-21	PaddleOCR 3.7.0 11 配置扫描 vs Tesseract 9-11 配置	fr n=5 (金标=Datalab accurate 参照)	cer_norm vsDL	Paddle 最佳 P7 v6m dpi300 0.0696（v6m 默认 0.0714）；Tess 最佳 T9 best dpi300 0.0770，base 0.0848	free	scripts/bench/ocr_matrix.py; bench/matrix/results.md; n=5
+2026-11-21	PaddleOCR 3.7.0 11 配置扫描 vs Tesseract 9-11 配置	la n=5 (金标=Datalab accurate 参照)	cer_norm vsDL	Paddle 最佳 P7 v6m dpi300 0.0659（v6m 默认 0.0663）；Tess 最佳 T5 lat+eng 0.0903，base 0.0975	free	scripts/bench/ocr_matrix.py; bench/matrix/results.md; n=5
+2026-11-22	Tesseract 5.3.4 18 配置（语言包 +eng/+lat、best、psm/oem/dpi/预处理）	ru n=50 (金标=Datalab accurate 参照)	cer_norm vsDL	最优 T16 rus+eng best 0.1299（+eng 使 0.3010→0.131，配对Δ -0.171 [-0.232,-0.121]）；其余参数 ±0.005 内噪声；psm1/oem1/ips 与 T5 输出逐字相同	free	scripts/bench/ocr_matrix.py; bench/summary_150.md; n=50
+2026-11-22	Tesseract 18 配置 vs 本地 PaddleOCR 3.7.0 P0-P11	fr n=50 (金标=Datalab accurate 参照)	cer_norm vsDL	本地 Paddle P8 v5sdet+v6mrec 0.1063 最优；Tess 最佳 T16 best+eng 0.1149（配对 Δ +0.0086 [+0.0052,+0.0128]，Paddle 略优）	free	scripts/bench/engine_summary.py; bench/summary_150.md; n=50
+2026-11-22	云 API PaddleOCR-VL-1.6/1.5/VL、PP-StructureV3、PP-OCRv5 + 本地 Paddle + Tesseract	la n=50 (金标=Datalab accurate 参照)	cer_norm vsDL	VL-1.6 0.1178、VL-1.5 0.1180、VL 0.1248（三者互相不显著）；本地 P0 0.1393；PP-OCRv5 0.1554；StructureV3 0.1677；Tess 最佳 lat+eng 0.1778	free (AI Studio 免费额度)	bench/summary_150.md; scripts/bench/paddle_api.py; n=50
+2026-11-22	云 API 五版本 vs Tesseract rus+eng vs 本地 P11	ru n=50 (金标=Datalab accurate 参照)	cer_norm vsDL	Tess rus+eng 0.1306 < 本地 P11 cyrillic 0.1429 < VL-1.6 0.1986（中位数 VL .052 ≈ Tess .058）；PP-OCRv5 0.705、StructureV3 0.754（无西里尔，不可用）；本地 PP-OCRv6 medium 0.72	free	bench/summary_150.md; n=50
+2026-11-22	OvisOCR2 0.8B 本地 transformers fp16（GTX1660S）	ru n=1	cer_norm vsDL	0.083（截循环后）vs VL-1.6 API 0.041；288 s/页（GPU 争用）；30 页约 2.5h，用户定排除；输出混入拉丁字母	free	scripts/bench/ovis_hf.py; bench/EXCLUDED.md; n=1 不作结论
+2026-11-22	多引擎融合 fr: 基底 P0 + T16 + P1，逐页择优上界/2:1字符投票	fr n=50 (金标=Datalab 参照)	cer_norm	0.1065→上界0.1053/投票0.1055（改善+0.0010 [+0.0006,+0.0015]）	free	scripts/bench/fusion_exp.py；收益可忽略
+2026-11-22	多引擎融合 ru: 基底 T16 + P11 + VL-1.6	ru n=50 (金标=Datalab 参照)	cer_norm	0.1299→上界0.1167/投票0.1234（改善+0.0065 [+0.0054,+0.0077]）	free	scripts/bench/fusion_exp.py；上界也仅 -0.013
+2026-11-22	多引擎融合 la: 基底 VL-1.6 + P0 + T12	la n=50 (金标=Datalab 参照)	cer_norm	0.1178→上界0.1119/投票0.1186（投票改善 -0.0008 [-0.0024,+0.0009]，无效）	free	scripts/bench/fusion_exp.py
+2026-11-22	后处理(去连字符换行+去页眉页码) 只改文本不重跑 OCR	fr/ru/la 各 n=50 (金标=Datalab 参照)	cer_norm	fr 0.1065→0.0949；ru 0.1299→0.1257；la 0.1178→0.1183（无益）	free	临时脚本，尚未入库；金标本身已去页眉/去连字符，故部分收益是口径对齐
+2026-11-22	采纳：docstore.textify.TESS_LANG ru rus→rus+eng、la lat→lat+eng	ru/la n=50 (金标=Datalab 参照，配对 bootstrap)	cer_norm	ru 0.301→0.1306（Δ0.170 [0.121,0.232]，49/50 页更好）；la 0.1909→0.1778（Δ0.0131 [0.0107,0.0156]，50/50 页）；fr 加 eng 无差别（Δ0.0003 [-0.0003,0.0009]）未采纳	free	docstore/textify.py；tests/test_tess_lang.py
+2026-11-22	docstore keys extract + structdoc 图检查（零模型）	Imajima 2001/2007/2009 共 11 页原页图人工目视（PDF页 2007:56,176,177,217,218；2001:172,266；2009:67,168,197,297），约 130 偶句；交付 aligned 不作参照（用户 2026-11-22 否决）	图检查标出的问题是否真缺陷（精度）；终点号是否正确	图检查标出的 11 处全部是真缺陷（11/11；但这些页是按被标出选的，选择偏倚，查全率未测）：终点号丢失 8 处(→2,12,18,8,26,12,28,18 等)；12/12' 两条被并成一条；页脚页码 165 被当成终点；'50' 被抽成 '500'；另有静默错误图检查看不到：図133→図13、鰓→鳃/嚢→囊、学名内空格丢失、'24”.' 前缀	free	本目录 scratchpad 目视记录；n=11 页，不外推
+2026-11-22	docstore keys extract --recover-tail（keytail：右缘窄条 tesseract 数字补读 + 12/12' 拆分 + 页底页码不当终点；零模型）	同上 11 页（n=11，选页偏向告警页）	补回终点号正确率；误接受数；三卷自洽表数	8/8 丢失终点补回且与目视一致，另「500→50」补回 1/1（共 9/9 条，误接受 0）；12/12' 拆开（2007 偶句 295→296）；页码终点去除（2009 缺陷 4→3）；三卷自洽表 2001 12/14、2007 5/8、2009 7/10；仍剩：静默文本错误（図133→図13、鰓→鳃、学名空格）。n=11 且是告警页，查全率未测	free	tests/test_docstore_keytail{,_real}.py；本会话 scratchpad rec_*.json
+2026-11-22	OCR 对比：西语 Fauna Ibérica 扫描本（无文字层）Vol.41 抽样50页（250dpi）	Vol.41 n=50 西班牙语；金标=Sonnet 视觉转写（仅少数片段对原页图核过，未全核）	CER（去页眉页脚/标签后）	Tesseract spa+eng 均值0.0769/中位0.0133；云 PaddleOCR-VL-1.6 均值0.0145/中位0.0040（2026-11-23 更正：初版评分脚本把含“Fauna Ibérica/ANNELIDA”字样的整段正文当页眉丢弃，只丢假设侧，已改为仅丢<60字短行）；本地 Paddle(P0_v6m) 均值≈0.224（原因未查，P8 中止）。VL-1.6 在重音与小写大写字母上明显更好；Tesseract 丢 ø/ö、小型大写	VL云端免费(有500/504重试)；Tesseract free	本会话 scratchpad score.py；v21/v25/v36 见后三行
+2026-11-23	OCR 对比：Fauna Ibérica Vol.21 抽样50页中取8页（Tesseract 与 VL 分歧最大4页+中位4页）	Vol.21 n=8；金标=Sonnet 视觉转写（子代理，未放大裁图）	CER（同上，短页眉页脚行已去）	Tesseract spa+eng 均值0.2038/中位0.0713；VL-1.6 均值0.1030/中位0.0119；P0_v6m 均值0.2706/中位0.2213。VL 均值被 p549 双栏索引拉高（0.712，bag-of-words F1=0.997，纯阅读顺序/引导点写法差异，不是漏字）	同上	scratchpad score2.py；n=8 偏向难页，不代表全卷
+2026-11-23	OCR 对比：Vol.25 同法8页	Vol.25 n=8；Sonnet 视觉转写	CER	Tesseract 均值0.2080/中位0.0311；VL-1.6 均值0.0355/中位0.0137；P0_v6m 均值0.1053/中位0.0189。VL 最高页 p521 索引（0.18）为引导点“. . .”与“.....”写法差异	同上	同上
+2026-11-23	OCR 对比：Vol.36 同法8页	Vol.36 n=8；Sonnet 视觉转写	CER	Tesseract 均值0.2132/中位0.1331；VL-1.6 均值0.0762/中位0.0106；P0_v6m 均值0.2837/中位0.2572。VL 最高页 p408 索引（0.428）同为引导点写法差异	同上	同上
+2026-11-23	OCR 对比（50页版，取代同卷8页行）：Fauna Ibérica Vol.21 抽样50页	Vol.21 n=50；金标=Sonnet 视觉转写（子代理，未放大裁图；v25 p149/159/169/190/200 重转一次）	CER 均值/中位	Tesseract spa+eng 0.1338/0.0479；VL-1.6 0.0228/0.0071；P0_v6m 0.1615/0.0688	free	score2.py；/mnt/p/翻译-译作/yanjie/交付_v41_样本50页/score_out_all.json
+2026-11-23	OCR 对比（50页版，取代同卷8页行）：Fauna Ibérica Vol.25 抽样50页	Vol.25 n=50；金标=Sonnet 视觉转写（子代理，未放大裁图；v25 p149/159/169/190/200 重转一次）	CER 均值/中位	Tesseract spa+eng 0.0761/0.0142；VL-1.6 0.0176/0.0078；P0_v6m 0.1414/0.0165	free	score2.py；/mnt/p/翻译-译作/yanjie/交付_v41_样本50页/score_out_all.json
+2026-11-23	OCR 对比（50页版，取代同卷8页行）：Fauna Ibérica Vol.36 抽样50页	Vol.36 n=50；金标=Sonnet 视觉转写（子代理，未放大裁图；v25 p149/159/169/190/200 重转一次）	CER 均值/中位	Tesseract spa+eng 0.0588/0.0114；VL-1.6 0.0209/0.0059；P0_v6m 0.1180/0.0132	free	score2.py；/mnt/p/翻译-译作/yanjie/交付_v41_样本50页/score_out_all.json
+2026-11-23	VL 拼写纠错 scripts/vl_spellfix.py（词典+本批词频+Tesseract 第二读数）	四卷 aligned.json 共200页；仅 Vol.21 有 Tesseract（v25 仅1页，v36/v41 无）；金标=Sonnet 转写（未放大核）	自动改正确/错改（对金标词集）	自动改 4 对 0 错；另有 29 条未自动改但正确的建议（待人工采纳）。初版无第二引擎约束：23对66错，已废弃。局限：金标未核；v25/36/41 缺 Tesseract 所以覆盖低；Síldos/brizoos/Paraeblersia 等 7 个已知错多数仍只给建议
+2026-11-23	docstore/spellfix.py（B+C：aspell+本批词频+WoRMS 学名+Tesseract+DeepSeek flash 裁疑点）	四卷 aligned.json 共200页；Tesseract 仅 Vol.21（v25 仅1页）；金标=Sonnet 转写（未放大核）	自动改正确/错改（金标词集）	自动改 57：对 55 错 2（worms 36/2、tess 5/0、llm tess-disagree 13/0、tess-weak 1/0）；LLM 在 dict/vol/worms-weak/ambiguous 类 26 对 23 错，故只作待审建议（249 条，其中约 28 正确）。DeepSeek 仅数千 token（几批，远低于 ¥0.1，用独立 usage 文件，未动书籍预算账）。7 个已知错：Síldos 自动改对，diminuitos 给出正确建议；Diplosyllis LLM 判 KEEP；brizoos/ligeiramente/Paraeblersia/pueda 未触发
+2026-11-23	docstore/spellfix.py 四卷全量 Tesseract 后重评（OMP_THREAD_LIMIT=1 后 15 并行，三卷约 3 分钟）	四卷各50页；Tesseract 四卷齐；金标=Sonnet 转写（未放大核）	自动改正确/错改	自动改 100：对 97 错 2 未定 1（llm(tess-disagree) 54/0、tess 20/1、llm(tess-weak) 11/0、worms 12/1）；待审建议 42 条（其中 12 条正确）。曾出现 falcígeros→falcígeras 等词形变化错改，已加 inflection 守卫（末两位不同的同词干）。已接入 vl_to_aligned 默认流程（--no-spellfix 关闭）
+2026-11-23	spellfix Vol.21 七个已知错未触发原因排查	v21 p36/47/232/407	根因	brizoos：aspell es 无 briozoos，ED-1 无候选（词典缺口）；ligeiramente：词典有 ligeramente，但全书出现 2 次，词频自证有效而被放过；Paraeblersia：Tesseract 也读成同样，且 WoRMS 缓存无 Paraehlersia（缓存缺口，按设计跳过）；pueda(应为 puede)：是合法词，属语法错非拼写错，本方法不覆盖；diminuitos→diminutos 仅建议（dict 类无第二证据）；Diplosyllis 被 worms-weak 误提 Dioplosyllis，DeepSeek 判 KEEP（正确）。未改规则：放宽会重现 dict/vol 类 23 对 66 错
+2026-11-23	spellfix 优化：索引块只建议/低频词候选/分类学词表（docstore/data/zoo_es.txt）	四卷各50页（sf13）；金标=Sonnet 转写，Glyphobesione/(kosteriensis) 已对 v25 p521 原页图放大核对：原书印刷即如此	自动改正确/错改	自动改 96：对 93、错 2、未定 1。brizoos→briozoos ×2、p407 ligeiramente→ligeramente 已自动修；前次两处“错改”其实是改了原书印刷的异写，现 index 块与括号异名 key 条目只建议不改。残余错改：pseudoespinígeros→-eras（llm tess-weak，词形变化）、rathkei→ratbkei（llm tess-disagree，Tesseract 读错被采纳）。仍未修：p47 ligeiramente/diminuitos（LLM KEEP/仅建议）、Paraeblersia（Tesseract 同读且 WoRMS 缓存缺）、pueda（语法错）
+2026-11-23	spellfix 守卫补全（sf19）：LLM 不得改 WoRMS 已知名、o↔a 性数互换需新词>=5倍、两引擎同读的属名仅允许同长度易混字母替换、vol-strong、genera_extra.txt	四卷各50页；金标=Sonnet 转写	自动改正确/错改	自动改 109：对 108、错 0、未定 1（tess 29/0、llm(tess-disagree) 47/0、llm(tess-weak) 14/0(1 未定)、worms 17/0、vol-strong 1/0）。Vol.21 已知错：brizoos、ligeiramente(两处)、Paraeblersia、Síldos 已自动修；仍未修 diminuitos（仅建议）、pueda（语法错）。建议 70 条待审
+2026-11-23	spellfix：LLM 自动采纳扩到 worms-weak 与 dict（候选须在本卷文字或 Tesseract 页词集里出现）	四卷各50页（sf21）	自动改正确/错改	自动改 122：对 119、错 0、未定 3（tess 29、llm(tess-disagree) 47、worms 17、llm(tess-weak) 15、llm(worms-weak) 11、llm(dict) 2、vol-strong 1）。diminuitos→diminutos 已自动修；Diplosyllis→Dioplosyllis 经核：v21 金标与 VL 全卷 Dioplosyllis 出现 7 次，改动与全书一致。仍未修：pueda→puede（合法词的语法错，拼写纠错不覆盖）。建议 57 条待审

@@ -1,0 +1,23 @@
+{
+  "id": "zh_three_columns",
+  "format": "table",
+  "lang": "zh",
+  "source": "属检索表\n| 支号 | 鉴别性状 | 去向 |\n| --- | --- | --- |\n| 1a | 针叶成束 | Pinus |\n| 1b | 针叶单生 | Picea |",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "三列表的单元格边界已划定去向，Markdown 分隔行没有分支。"
+}

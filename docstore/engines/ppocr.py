@@ -186,7 +186,9 @@ def _cache_file(pdf_path: str, page_no: int, dpi: int) -> Path:
     unclip = os.environ.get("DOCSTORE_PPOCR_UNCLIP")
     root = Path(os.environ.get("DOCSTORE_PPOCR_CACHE", str(Path.home() / ".cache" / "docstore_ppocr")))
     ver = "_v2" if os.environ.get("DOCSTORE_PPOCR_ADAPTIVE", "1") != "0" else ""  # v2：旋转判断+自适应二值化+纠斜
-    return root / fp / f"{model}_{dpi}{'_u' + unclip if unclip else ''}{ver}" / f"p{page_no:04d}.json"
+    extra = os.environ.get("DOCSTORE_PPOCR_PARAMS")  # 调参扫描：参数不同缓存不同
+    ptag = "_p" + hashlib.sha1(extra.encode()).hexdigest()[:8] if extra else ""
+    return root / fp / f"{model}_{dpi}{'_u' + unclip if unclip else ''}{ptag}{ver}" / f"p{page_no:04d}.json"
 
 
 def ppocr_rows(pdf_path: str, page_no: int, dpi: int) -> tuple[list[Any], float]:
@@ -214,6 +216,20 @@ def ppocr_rows(pdf_path: str, page_no: int, dpi: int) -> tuple[list[Any], float]
     cf.parent.mkdir(parents=True, exist_ok=True)
     cf.write_text(json.dumps({**meta, "width": width, "rows": out}, ensure_ascii=False), encoding="utf-8")
     return out, width
+
+
+def save_rows_layout(root: str | Path, key: str, pdf_path: str, pages: list[int], dpi: int) -> int:
+    """把本地 PP-OCR 行框（缓存里的 rows）复制进资料库 <root>/layout/<key>/ppocr/pNNNN.json，
+    与云版面同处，不依赖 ~/.cache（2026-11-24：版面必须随库保存，避免重复 OCR）。返回写入页数。"""
+    d = Path(root) / "layout" / key / "ppocr"
+    d.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for p in pages:
+        cf = _cache_file(pdf_path, p, dpi)
+        if cf.exists():
+            (d / f"p{int(p):04d}.json").write_text(cf.read_text(encoding="utf-8"), encoding="utf-8")
+            n += 1
+    return n
 
 
 def ppocr_run(pdf_path: str, page_no: int, dpi: int) -> tuple[str, float | None]:

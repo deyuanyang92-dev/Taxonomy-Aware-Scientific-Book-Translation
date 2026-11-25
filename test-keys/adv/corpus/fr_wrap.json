@@ -1,0 +1,23 @@
+{
+  "id": "fr_wrap",
+  "format": "ab",
+  "lang": "fr",
+  "source": "Clé des genres\n1a. Aiguilles réunies\n    en faisceaux ........ Pinus\n1b. Aiguilles isolées ........ Picea",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Pinus"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Picea"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "第一支的形态描述在介词前折行，后一行的属名属于该支。"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "r2_double_ellipsis",
+  "format": "ab",
+  "lang": "zh",
+  "source": "1a. 有鳃⋯⋯Glycera\n1b. 无鳃⋯⋯Nephtys",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "taxon",
+        "Glycera"
+      ],
+      [
+        "1b",
+        "taxon",
+        "Nephtys"
+      ]
+    ],
+    "findings": []
+  },
+  "why": "合成例。booklayout/keygraph.py:26 需要至少三个符号；两个居中三点符在纸上已有六点，兼容归一后仍是两个字符。"
+}

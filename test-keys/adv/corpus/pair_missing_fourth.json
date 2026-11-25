@@ -1,0 +1,36 @@
+{
+  "id": "pair_missing_fourth",
+  "format": "polytomy",
+  "lang": "en",
+  "source": "Key to specimens\n1a. Leaves opposite ........ p. 12\n1b. Leaves alternate ........ p. 18\n1c. Leaves whorled ........ p. 20\n1d. Leaves solitary at base ........ p. 22",
+  "translation": "标本检索表\n1a. 叶对生…………第 12 页\n1b. 叶互生…………第 18 页\n1c. 叶轮生…………第 20 页",
+  "expect": {
+    "keys": 1,
+    "branches": [
+      [
+        "1a",
+        "page",
+        "12"
+      ],
+      [
+        "1b",
+        "page",
+        "18"
+      ],
+      [
+        "1c",
+        "page",
+        "20"
+      ],
+      [
+        "1d",
+        "page",
+        "22"
+      ]
+    ],
+    "findings": [
+      "missing_branch"
+    ]
+  },
+  "why": "四歧变三歧，d 消失。前三支的顺序与去向均保留。"
+}
