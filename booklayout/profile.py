@@ -102,6 +102,9 @@ class StyleProfile:
     key_headers: list[str] = field(default_factory=lambda: ["", "", ""])
     toc_headings: bool = False  # contents lists headings (levels 1..toc_depth) with page numbers
     toc_depth: int = 3
+    word_toc_title: str = "Índice de apartados"
+    word_toc_after_page: int = 0  # word_toc: TOC page goes after this many source pages (1 = after the cover)
+    word_toc: bool = False  # add a Word TOC field page (outline levels) when the source contents is printed as-is
 
     @property
     def text_w(self) -> float:

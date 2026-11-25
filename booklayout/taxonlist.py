@@ -19,7 +19,7 @@ import re
 from typing import Any
 
 MIN_RUN = 5
-_RANK = re.compile(r"^(?:Familia|Subfamilia|G[eé]nero|Subg[eé]nero|Tribu|Orden|Family|Subfamily|Genus|Subgenus)\s+[A-Z][a-zæøöüéèáíóúñ-]+")
+_RANK = re.compile(r"^(?:Familia|Superfamilia|Suborden|Subfamilia|G[eé]nero|Subg[eé]nero|Tribu|Orden|Superfamilia|Suborden|Family|Subfamily|Genus|Subgenus)\s+[A-Z][A-Za-zæøöüéèáíóúñ-]+")
 _SPECIES = re.compile(
     r"^[A-Z][a-zæøöüéèáíóúñ-]+ (?:\([A-Z][a-z]+\) )?[a-zı-]{3,}(?: [a-zı-]{3,})? \(?[A-ZÁÉÍÓÚÀ-Ü]")
 _DATED = re.compile(r"\d{4}|en prensa|in press|nom\. n|comb\. n|sp\. n")
@@ -39,10 +39,37 @@ def taxon_line_rank(text: str) -> int | None:
     return None
 
 
+def _split_rank_blocks(page: dict[str, Any]) -> None:
+    """One block per line when a block is nothing but taxon-rank lines ("Orden X\\nFamilia Y").
+
+    The aligner merges neighbouring checklist lines into one block; promote_headings then
+    turned only some of them into headings, so one list showed three styles and its
+    Orden/Familia lines filled the contents (Vol. 25 pp. 13-16).
+    """
+    out: list[dict[str, Any]] = []
+    for b in page.get("blocks", []):
+        tx = b.get("text") or ""
+        lines = [x for x in tx.split("\n") if x.strip()]
+        if (b.get("role") in ("body", "ref") and len(lines) > 1
+                and all(taxon_line_rank(x) is not None for x in lines)):
+            tr = b.get("translation")
+            tr_lines = [x for x in (tr or "").split("\n") if x.strip()]
+            for k, line in enumerate(lines):
+                nb = dict(b, text=line)
+                nb.pop("block_id", None)
+                if tr is not None:
+                    nb["translation"] = tr_lines[k] if len(tr_lines) == len(lines) else line
+                out.append(nb)
+        else:
+            out.append(b)
+    page["blocks"] = out
+
+
 def unify_taxon_lists(data: dict[str, Any], min_run: int = MIN_RUN) -> int:
     """Re-tag runs of one-line taxon names as role 'taxon'.  Returns blocks changed."""
     n = 0
     for page in data.get("pages", []):
+        _split_rank_blocks(page)
         blocks = page.get("blocks", [])
         i = 0
         while i < len(blocks):
@@ -116,3 +143,25 @@ def pdf_list_style_mismatches(pdf: str, min_run: int = MIN_RUN) -> list[dict]:
                     run.append((pno, text, (size, bool(bold))))
     flush()
     return out
+
+
+_TOC_LEADER = re.compile(r"^\s*(Orden|Order|Superfamilia|Suborden|Familia|Subfamilia)\b.*\.{4,}")
+
+
+def pdf_toc_rank_entries(pdf: str, titles: tuple[str, ...] = ("Índice de apartados", "Table of contents", "Contents")) -> list[dict]:
+    """Checklist rank lines (Orden/Familia ...) printed as contents entries.
+
+    A scanned checklist is body text, not a heading; one such entry means the
+    list was promoted to headings and leaked into the Word contents.
+    """
+    import fitz
+
+    hits: list[dict] = []
+    for pno, page in enumerate(fitz.open(pdf), 1):
+        text = page.get_text()
+        if not any(t.lower() in text[:200].lower() for t in titles):
+            continue  # the book's own printed ÍNDICE is source content
+        for line in text.splitlines():
+            if _TOC_LEADER.match(line):
+                hits.append({"page": pno, "text": line.strip()[:60]})
+    return hits

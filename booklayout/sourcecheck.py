@@ -97,6 +97,14 @@ def load_names(path: Path | None = DEFAULT_WORMS, extra: Iterable[str] = ()) -> 
                 for part in (vn or "").split():
                     if part.isalpha():
                         out.add(part.lower())
+            # 科、目、纲、门名不一定作为 valid_name 出现在缓存里（Nephtyidae、Eunicida）：取分类列。
+            for col in ("phylum", "class_name", "ord", "family", "genus"):
+                try:
+                    for (v,) in db.execute(f"SELECT DISTINCT {col} FROM worms_taxa"):
+                        if v and str(v).isalpha():
+                            out.add(str(v).lower())
+                except sqlite3.Error:
+                    pass
             try:
                 for (au,) in db.execute("SELECT DISTINCT authority FROM worms_taxa"):
                     for part in TOKEN.findall(au or ""):
@@ -244,7 +252,7 @@ def aligned_tokens(aligned: Path, furniture: list[re.Pattern[str]]
 def running_head_patterns(metadata: dict[str, Any]) -> list[re.Pattern[str]]:
     pats = [re.compile(r"^\d{1,4}$")]
     for key in ("running_left", "running_right"):
-        head = (metadata.get(key) or "").strip()
+        head = re.sub(r"</?i>", "", metadata.get(key) or "").strip()
         if head:
             pats.append(re.compile(r"^(\d{1,4}\s+)?" + re.escape(head) + r"(\s+\d{1,4})?$"))
     return pats
@@ -273,7 +281,12 @@ def name_variant(word: str, names: frozenset[str]) -> str | None:
     return None
 
 
+ORDINALS = "ªº°"
+
+
 def classify(src: str, out: str, lex: Lexicon) -> str:
+    if out != src and out.rstrip(ORDINALS) == src:
+        return "tess_noise"     # Mª / Nº: Tesseract drops the raised ordinal letter, the output keeps it
     s_ok, o_ok = lex.real(src), lex.real(out)
     if not s_ok and not o_ok and lex.seen.get(src, 0) >= 2 and lex.seen.get(out, 0) == 0:
         return "output_error"   # 原书 OCR 里多次高置信读到 src、从未读到 out（领域词不在词典时）
@@ -305,7 +318,7 @@ def compare(src_toks: list[SrcTok], src_lines: list[SrcLine], out_words: list[st
             return
         kind = classify(s, o, lex)
         t = src_toks[i]
-        items.append({"id": _id(t.page, t.line, s, o, j), "type": kind, "src_page": t.page, "out_page": out_pages[j],
+        items.append({"id": _id(t.page, t.line, s, o), "type": kind, "src_page": t.page, "out_page": out_pages[j],
                       "source": s, "output": o, "conf": round(t.conf, 1), "box": t.box,
                       "context": _ctx(src_toks, i), "ref": refs[j] if refs else None})
 
@@ -328,7 +341,7 @@ def compare(src_toks: list[SrcTok], src_lines: list[SrcLine], out_words: list[st
                 pass                              # 只差空格：pdftotext/Tesseract 的切分差异
             elif t.conf >= min_conf:
                 kind = classify_phrase(src_toks[i1:i2], out_words[j1:j2], lex)
-                items.append({"id": _id(t.page, t.line, s, o, j1), "type": kind, "src_page": t.page,
+                items.append({"id": _id(t.page, t.line, s, o), "type": kind, "src_page": t.page,
                               "out_page": out_pages[j1], "source": s, "output": o, "conf": round(t.conf, 1),
                               "box": t.box, "context": _ctx(src_toks, i1)})
             for k in range(i2 - i1):
@@ -345,7 +358,7 @@ def compare(src_toks: list[SrcTok], src_lines: list[SrcLine], out_words: list[st
         if hit:
             flagged.add(lo)
             t = src_toks[i]
-            items.append({"id": _id(t.page, t.line, t.text, o, j), "type": "name_suspect", "src_page": t.page,
+            items.append({"id": _id(t.page, t.line, t.text, o), "type": "name_suspect", "src_page": t.page,
                           "out_page": out_pages[j], "source": t.text, "output": o, "suggest": hit,
                           "conf": round(t.conf, 1), "box": t.box, "context": _ctx(src_toks, i),
                           "ref": refs[j] if refs else None})
@@ -378,8 +391,13 @@ def compare(src_toks: list[SrcTok], src_lines: list[SrcLine], out_words: list[st
         near_pages = sorted({q for p in cand for q in (p - 1, p, p + 1)})
         near = " ".join(w for p in near_pages for w in page_text.get(p, []))
         kind = "moved" if phrase and phrase in near else "missing"
-        items.append({"id": _id(ln.page, ln.line, ln.text), "type": kind, "src_page": ln.page, "out_page": None,
-                      "source": ln.text, "output": "", "conf": round(ln.conf, 1), "box": ln.box, "context": ln.text})
+        it: dict[str, Any] = {"id": _id(ln.page, ln.line, ln.text), "type": kind, "src_page": ln.page, "out_page": None,
+              "source": ln.text, "output": "", "conf": round(ln.conf, 1), "box": ln.box, "context": ln.text}
+        if kind == "missing":
+            hit = fuzzy_find([src_toks[k].text for k in ln.toks], near.split(), lex)
+            if hit:
+                it["fuzzy_output"] = hit      # 整行在成品近页找到，只是原书 OCR 误读个别词（Amphbinomidae）
+        items.append(it)
     counts: dict[str, int] = {}
     for it in items:
         counts[it["type"]] = counts.get(it["type"], 0) + 1
@@ -403,25 +421,178 @@ def _ctx(toks: list[SrcTok], i: int, n: int = 6) -> str:
 
 BLOCKING = ("missing", "moved", "output_error", "conflict", "name_suspect")
 
+# ---------- 问题分类登记（确定性，不用模型） ----------
+# 每项除 type（怎么对不上）外再标 category（属于哪类问题），并决定是否阻塞交付。
+# 不阻塞的类别仍逐条写进 <out>.issues.tsv，不隐藏；学名类另汇总成 <out>.name-fixes.tsv 供统一替换。
+CATEGORIES: dict[str, tuple[bool, str]] = {
+    # category: (blocking, 说明)
+    "figure_text": (False, "原书图内标注文字（图区内），成品以图片保留，不算漏文"),
+    "reading_order": (False, "文字在成品相邻页找到，仅阅读顺序/分栏顺序不同"),
+    "name_ocr": (False, "原书 OCR 把学名读错，成品写法是 WoRMS 学名，判成品对"),
+    "name_replace": (True, "成品学名疑似错字，有 WoRMS 候选，进统一替换表"),
+    "ocr_noise": (False, "Tesseract 自身误读（成品是真词）"),
+    "text": (True, "其他文字差异，需人工判定"),
+}
+
+
+def _lev(a: str, b: str, cap: int = 3) -> int:
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def name_fix_of(src: str, out: str, lex: Lexicon) -> bool:
+    """原书 OCR 词不是真词、成品词是已知学名部分、两者只差 ≤2 个字符：成品对（Nepbtyidae→Nephtyidae）。"""
+    s, o = fold(src.strip(".,;:()")), fold(out.strip(".,;:()"))
+    if len(o) < 5 or not o.isalpha() or lex.real(src):
+        return False      # s == o：只差重音（Poeobíidae→Poeobiidae），原书 OCR 加错重音
+    if o not in lex.names:
+        return False
+    return _lev(s, o) <= 2
+
+
+def fuzzy_find(src_words: list[str], near: list[str], lex: Lexicon) -> str | None:
+    """src 行（折叠后）在成品词序列 near 里连续出现，允许原书 OCR 非真词与成品词差 ≤2 字符。"""
+    sw = [fold(w.strip(".,;:()")) for w in src_words]
+    sw = [w for w in sw if w]
+    if len(sw) < 3:
+        return None
+    loose = [not lex.real(w) and len(w) >= 4 for w in src_words if fold(w.strip(".,;:()"))]
+    for s in range(0, len(near) - len(sw) + 1):
+        ok = True
+        for k, w in enumerate(sw):
+            o = near[s + k]
+            if o == w or (loose[k] and _lev(w, o) <= 2):
+                continue
+            ok = False
+            break
+        if ok:
+            return " ".join(near[s:s + len(sw)])
+    return None
+
+
+FIG_MARGIN_MM = 10.0   # 图周标注（箭头引线外的器官名）离图形笔画最远约 1 cm
+
+
+def in_boxes(box: Iterable[int], boxes: list[tuple[int, int, int, int]], margin: int = 0) -> bool:
+    x0, y0, x1, y1 = box
+    return any(x0 < b[2] + margin and x1 > b[0] - margin and y0 < b[3] + margin and y1 > b[1] - margin
+               for b in boxes)
+
+
+def figure_boxes(page_png: Path, dpi: int) -> list[tuple[int, int, int, int]]:
+    """原书页图上的图区（scanfigures 连通域法，与 figures 子命令同一算法），坐标与 Tesseract 同为 dpi 像素。"""
+    try:
+        import cv2
+
+        from .scanfigures import find_figures
+    except ImportError:
+        return []
+    gray = cv2.imread(str(page_png), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        return []
+    return [(b.x0, b.y0, b.x1, b.y1) for b in find_figures(gray, dpi=dpi)]
+
+
+def categorize(items: list[dict[str, Any]], lex: Lexicon,
+               figs: dict[int, list[tuple[int, int, int, int]]] | None = None, dpi: int = 300) -> None:
+    figs = figs or {}
+    margin = int(FIG_MARGIN_MM * dpi / 25.4)
+    for it in items:
+        t = it["type"]
+        if t == "missing" and it.get("fuzzy_output"):
+            cat = "ocr_noise"
+        elif t in ("missing", "moved") and in_boxes(it["box"], figs.get(it["src_page"], []), margin):
+            cat = "figure_text"
+        elif t == "moved":
+            cat = "reading_order"
+        elif t == "tess_noise":
+            cat = "ocr_noise"
+        elif t == "name_suspect":
+            cat = "name_replace"
+        elif t in ("review", "output_error", "conflict") and " " not in it["source"].strip() \
+                and name_fix_of(it["source"], it["output"].split(" ")[0], lex):
+            cat = "name_ocr"
+        elif t in ("output_error", "conflict") and fold(it["source"]) in lex.names and len(it["source"]) >= 5 \
+                and fold(it["output"]) not in lex.names and _lev(fold(it["source"]), fold(it["output"])) <= 2:
+            cat = "name_replace"
+            it.setdefault("suggest", it["source"])
+        else:
+            cat = "text"
+        it["category"] = cat
+        it["blocking"] = CATEGORIES[cat][0]
+
+
+def write_ledger(report: dict[str, Any], out: Path) -> tuple[Path, Path]:
+    """问题登记表：每项一行（含不阻塞的）；学名类另汇总成替换表（错→对，次数，页）。"""
+    base = str(out)[:-5] if str(out).endswith(".json") else str(out)
+    led, nf = Path(base + ".issues.tsv"), Path(base + ".name-fixes.tsv")
+    cols = ("category", "blocking", "type", "src_page", "out_page", "source", "output", "suggest", "id", "crop")
+    order = {c: i for i, c in enumerate(CATEGORIES)}
+    rows = sorted(report["items"], key=lambda it: (order[it["category"]], it["src_page"]))
+
+    def clean(v: Any) -> str:
+        return "" if v is None else str(v).replace("\t", " ").replace("\n", " ")
+
+    led.write_text("\t".join(cols) + "\n" + "".join(
+        "\t".join(clean(it.get(c)) for c in cols) + "\n" for it in rows), encoding="utf-8")
+    agg: dict[tuple[str, str, str], list[int]] = {}
+    for it in rows:
+        if it["category"] == "name_replace":
+            agg.setdefault(("output_wrong", it["output"], it.get("suggest") or ""), []).append(it["src_page"])
+        elif it["category"] == "name_ocr":
+            agg.setdefault(("source_ocr_wrong", it["source"], it["output"].split(" ")[0]), []).append(it["src_page"])
+    nf.write_text("kind\twrong\tright\tcount\tsrc_pages\n" + "".join(
+        f"{k}\t{w}\t{r}\t{len(p)}\t{','.join(map(str, sorted(set(p))))}\n"
+        for (k, w, r), p in sorted(agg.items(), key=lambda kv: (kv[0][0], -len(kv[1])))), encoding="utf-8")
+    return led, nf
+
 
 def verdict(report: dict[str, Any], accepted: set[str]) -> tuple[bool, dict[str, int]]:
     open_: dict[str, int] = {}
     for it in report["items"]:
         if it["type"] == "tess_noise" or it["id"] in accepted:
             continue
+        if "blocking" in it and not it["blocking"]:
+            continue
         if it["type"] in BLOCKING or it["type"] == "review":
             open_[it["type"]] = open_.get(it["type"], 0) + 1
+    for pr in report.get("folio", {}).get("problems", []):
+        if pr.get("id") not in accepted:
+            open_["folio"] = open_.get("folio", 0) + 1
     return not open_, open_
 
 
-def crop_items(source_pdf: Path, items: list[dict[str, Any]], crops: Path, dpi: int) -> None:
+def crop_items(source_pdf: Path, items: list[dict[str, Any]], crops: Path, dpi: int,
+               page_png_dir: Path | None = None) -> None:
+    """Crop each flagged box. Reuses the page PNG already rendered for OCR (one decode per page,
+    in-process crop) instead of one pdftoppm render per item (was 31 s of a 43 s make)."""
     crops.mkdir(parents=True, exist_ok=True)
+    from PIL import Image
+
+    pages: dict[int, Any] = {}
     for it in items:
         if it["type"] == "tess_noise":
             continue
         x0, y0, x1, y1 = it["box"]
         pad = int(dpi * 0.15)
         dest = crops / f"p{it['src_page']:04d}_{it['type']}_{it['id']}"
+        png = page_png_dir / f"p{it['src_page']:04d}.png" if page_png_dir else None
+        if png is not None and png.exists():
+            if it["src_page"] not in pages:
+                pages[it["src_page"]] = Image.open(png).convert("RGB")
+            im = pages[it["src_page"]]
+            left, top = max(0, x0 - pad * 4), max(0, y0 - pad)
+            im.crop((left, top, min(im.width, left + x1 - x0 + pad * 8),
+                     min(im.height, top + y1 - y0 + pad * 2))).save(f"{dest}.png")
+            it["crop"] = f"{dest}.png"
+            continue
         subprocess.run(["pdftoppm", "-cropbox", "-r", str(dpi), "-f", str(it["src_page"]), "-l", str(it["src_page"]),
                         "-x", str(max(0, x0 - pad * 4)), "-y", str(max(0, y0 - pad)), "-W", str(x1 - x0 + pad * 8),
                         "-H", str(y1 - y0 + pad * 2), "-singlefile", "-png", str(source_pdf), str(dest)],
@@ -439,7 +610,13 @@ def parse_pages(spec: str) -> list[int]:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     work = Path(args.work)
-    cache = work / "tesseract"
+    # OCR of the source book never changes: keep it outside the per-build work dir so a fresh
+    # out-dir (or a new session) does not redo ~45 s of Tesseract.
+    import hashlib
+
+    st = Path(args.source_pdf).stat()
+    key = hashlib.sha1(f"{Path(args.source_pdf).resolve()}|{st.st_size}|{st.st_mtime_ns}|{args.lang}|{args.dpi}".encode()).hexdigest()[:16]
+    cache = Path(os.environ.get("BOOKLAYOUT_OCR_CACHE", Path.home() / ".cache" / "booklayout" / "ocr")) / key
     cache.mkdir(parents=True, exist_ok=True)
     pages = parse_pages(args.pages)
     furn_src = [re.compile(p) for p in (args.source_furniture or [])] + [re.compile(r"^\W*\d{1,4}\W*$")]
@@ -458,11 +635,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         words, opages = output_tokens(args.pdf, furn_out)
     lex = Lexicon(load_spanish(args.dict_lang), load_names(args.worms, _extra_names(args.names)))
     report = compare(toks, lines, words, opages, lex, args.min_conf, refs)
+    fig_pages = {it["src_page"] for it in report["items"] if it["type"] in ("missing", "moved")}
+    figs = {p: figure_boxes(cache / f"p{p:04d}.png", args.dpi) for p in sorted(fig_pages)}
+    categorize(report["items"], lex, figs, args.dpi)
     if not args.no_crops:
-        crop_items(args.source_pdf, report["items"], work / "crops", args.dpi)
+        crop_items(args.source_pdf, report["items"], work / "crops", args.dpi, cache)
     accepted = set(json.loads(Path(args.accepted).read_text(encoding="utf-8"))) if args.accepted else set()
+    if args.pdf:
+        # Footers: printed numbers, odd/even text and blank front pages, read by position from the
+        # same OCR (MISTAKES H8: the builder's footers were never compared with the source).
+        from . import folio
+        base = folio.source_baseline(dict(zip(pages, tsvs)), meta)
+        feet, n_pg, _l, _r = folio.output_footers(args.pdf)
+        probs = folio.compare_source(base, feet, n_pg, meta)
+        for pr in probs:
+            pr["id"] = _id("folio", pr["kind"], pr["page"])
+        report["folio"] = {"source": {k: v for k, v in base.items() if k != "pages"}, "problems": probs}
     ok, open_ = verdict(report, accepted)
-    report.update({"ok": ok, "open": open_, "pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf),
+    cats: dict[str, int] = {}
+    for it in report["items"]:
+        cats[it["category"]] = cats.get(it["category"], 0) + 1
+    report.update({"categories": cats, "ok": ok, "open": open_, "pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf),
                    "pdf": str(args.pdf) if args.pdf else None, "aligned": str(args.aligned) if args.aligned else None, "lang": args.lang, "dictionary_words": len(lex.words),
                    "name_words": len(lex.names)})
     order = {"missing": 0, "moved": 1, "output_error": 2, "conflict": 3, "name_suspect": 4, "review": 5, "tess_noise": 6}
@@ -483,7 +676,9 @@ def cmd_source_check(args: argparse.Namespace) -> int:
         return 2
     report = run(args)
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
-    summary = {k: report[k] for k in ("ok", "open", "counts", "ratio", "src_tokens", "out_tokens")}
+    led, nf = write_ledger(report, Path(args.out))
+    summary = {k: report[k] for k in ("ok", "open", "categories", "counts", "ratio", "src_tokens", "out_tokens")}
+    summary.update({"issues": str(led), "name_fixes": str(nf)})
     print(json.dumps(summary, ensure_ascii=False))
     return 0 if report["ok"] else 1
 

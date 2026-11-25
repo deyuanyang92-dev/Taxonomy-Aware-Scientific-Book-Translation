@@ -129,3 +129,10 @@ def test_gate_blocks_on_failed_source_check(tmp_path: Path):
     assert any("source-check" in p for p in gate["problems"])
     assert gate["coverage"]["source_check"] is True
     assert isinstance(args, argparse.Namespace)
+
+
+def test_classify_dropped_ordinal_is_tesseract_noise():
+    # Vol25 p4: Tesseract reads "M" for the printed "Mª"; the output is right
+    assert sc.classify("M", "Mª", LEX) == "tess_noise"
+    assert sc.classify("N", "Nº", LEX) == "tess_noise"
+    assert sc.classify("Mª", "M", LEX) != "tess_noise"

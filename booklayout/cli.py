@@ -244,12 +244,15 @@ def _convert_pdf(docx: Path, pdf_out: Path | None) -> Path:
         raise SystemExit("libreoffice/soffice not found; cannot create PDF")
     target_dir = (pdf_out.parent if pdf_out else docx.parent).resolve()
     target_dir.mkdir(parents=True, exist_ok=True)
+    from .folio import lo_parity_copy
+
     with tempfile.TemporaryDirectory(prefix="lo-profile-") as profile:
         # Concurrent builds shared one LibreOffice profile and one of them
         # silently failed.  A per-process profile makes parallel builds safe.
+        src = lo_parity_copy(docx, Path(profile)) or docx  # odd/even footers: LO counts physical pages
         proc = subprocess.run(
             [exe, f"-env:UserInstallation={Path(profile).as_uri()}", "--headless",
-             "--convert-to", "pdf", "--outdir", str(target_dir), str(docx.resolve())],
+             "--convert-to", "pdf", "--outdir", str(target_dir), str(src.resolve())],
             capture_output=True,
             text=True,
         )
@@ -740,8 +743,18 @@ def _reference_problems(pdf: Path, meta: BookMeta) -> dict:
     texts = [norm(page.get_text("text")) for page in doc]
     wrong: list[dict] = []
     checked = 0
+    # A reference is a printed page number.  With printed folios (Vol. 25: pdf page 1
+    # prints 4) look it up through the footers, and skip numbers the PDF does not print
+    # (an excerpt's contents page cites pages beyond the excerpt).  2026-11-25: the
+    # reproduced ÍNDICE said 13/23 while the reflowed headings printed on 12/22.
+    from . import folio as _folio
+    printed = {f["number"]: f["page"] for f in _folio.output_footers(pdf)[0] if f["number"]}
 
-    def lands_on(page_no: int, words: list[str]) -> bool:
+    def lands_on(page_no: int, words: list[str]) -> bool | None:
+        if printed:
+            if page_no not in printed:
+                return None
+            page_no = printed[page_no]
         if not (1 <= page_no <= len(texts)) or not words:
             return True
         target = texts[page_no - 1].replace("-", "")
@@ -762,18 +775,23 @@ def _reference_problems(pdf: Path, meta: BookMeta) -> dict:
                 if not words:
                     continue
                 for number in re.findall(r"\d{1,3}", match.group(2)):
+                    hit = lands_on(int(number), words)
+                    if hit is None:
+                        continue
                     checked += 1
                     count += 1
-                    if not lands_on(int(number), words):
+                    if not hit:
                         wrong.append({"section": title, "kind": kind, "page": index + 1,
                                       "entry": left[:70], "ref": int(number)})
         return count
 
     contents_stop = {"contents", "family", "genus", "species", "index", "names",
                      "list", "appendix", "annex", "alphabetical", "taxonomic"}
+    titles = {meta.contents_title.upper(), "ÍNDICE", "INDICE", "SUMARIO", "CONTENTS"}
     for i, text in enumerate(texts):
-        lines = [line.strip().upper() for line in doc[i].get_text("text").splitlines()[:5]]
-        if any(meta.contents_title.upper() in line for line in lines):
+        lines = [line.strip().upper() for line in doc[i].get_text("text").splitlines()]
+        if (any(meta.contents_title.upper() in line for line in lines[:5])
+                or any(line in titles for line in lines)):
             scan([i], "contents", "contents", contents_stop)
             break
     index_start = next((i for i in range(len(texts) - 1, -1, -1)
@@ -1142,6 +1160,34 @@ def cmd_qa(args: argparse.Namespace) -> int:
             report.update(_reference_problems(args.pdf, meta))
             from .taxonlist import pdf_list_style_mismatches
             report["taxon_list_style_mismatch"] = pdf_list_style_mismatches(args.pdf)
+            from .frontmatter import run_together_lines
+            report["front_run_together"] = run_together_lines(args.pdf, getattr(meta, "front_pages", []) or [])
+            if report["front_run_together"]:
+                layout_problems.append(
+                    f"{len(report['front_run_together'])} front-matter lines run a name into its affiliation "
+                    f"(page {report['front_run_together'][0]['page']}): one printed line each")
+            from .profile import StyleProfile
+            prof = StyleProfile.from_file(args.profile) if getattr(args, "profile", None) else StyleProfile()
+            if prof.footer_style == "folio":
+                from . import folio
+                band = (prof.page_h - prof.margin_bottom) * 72 / 25.4
+                feet, n_pg, x_l, x_r = folio.output_footers(args.pdf, band)
+                report["folio_problems"] = folio.qa_problems(feet, n_pg, x_l, x_r, meta)
+                if report["folio_problems"]:
+                    layout_problems.append(
+                        f"{len(report['folio_problems'])} footer problems: {folio.summarize(report['folio_problems'])}")
+            from .taxonlist import pdf_toc_rank_entries
+            report["toc_rank_entries"] = pdf_toc_rank_entries(args.pdf)
+            if report["toc_rank_entries"]:
+                layout_problems.append(
+                    f"{len(report['toc_rank_entries'])} checklist rank lines (Orden/Familia) are in the contents "
+                    f"(first page {report['toc_rank_entries'][0]['page']}): a checklist is body text, not headings")
+            from .iczn import pdf_italic_family_group
+            report["italic_family_group"] = pdf_italic_family_group(args.pdf)
+            if report["italic_family_group"]:
+                structure_problems.append(
+                    f"{len(report['italic_family_group'])} family-group names (-idae/-inae/-oidea/-ini) "
+                    f"are italic; they print roman (first page {report['italic_family_group'][0]['page']})")
             from .runstyle import run_style_mismatches
             report["run_style_mismatch"] = run_style_mismatches(args.pdf)
             if report["run_style_mismatch"]:
@@ -1655,7 +1701,8 @@ def _repair_locked(args: argparse.Namespace) -> int:
         print(f"error: bad patch file: {exc}", file=sys.stderr)
         return 2
     out = args.out or args.aligned
-    if _overlap(out, [args.patch]) or _overlap(args.report, [args.aligned, args.patch, args.out]):
+    report_path = getattr(args, "report", None)  # `repair` has no --report option
+    if _overlap(out, [args.patch]) or _overlap(report_path, [args.aligned, args.patch, args.out]):
         print("error: --out/--aligned/--report must not be the --patch file or overwrite the aligned book",
               file=sys.stderr)
         return 2
@@ -1665,7 +1712,7 @@ def _repair_locked(args: argparse.Namespace) -> int:
         print(f"error: bad page patch: {exc}", file=sys.stderr)
         return 2
     _write_json(out, data)
-    if _overlap(args.report, [args.aligned, args.patch, args.out, out]):
+    if _overlap(report_path, [args.aligned, args.patch, args.out, out]):
         print("error: --report resolves to the aligned book/patch/out; report not written", file=sys.stderr)
         return 2
     print(json.dumps({"out": str(out), "patched_pages": report["patched_pages"]},
@@ -2091,11 +2138,19 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
     from . import alignmd, keymodel, pdffigures
+    from . import make as make_module
+
+    make_module.add_parser(sub)
+    from . import editor as editor_module
+
+    editor_module.add_parser(sub)
 
     alignmd.add_parser(sub)
     audit_module.add_parser(sub)
     from . import sourcecheck as sourcecheck_module
     sourcecheck_module.add_parser(sub)
+    from . import review as review_module
+    review_module.add_parser(sub)
     from . import sourcefix as sourcefix_module
     sourcefix_module.add_parser(sub)
     treatments_module.add_parser(sub)

@@ -22,7 +22,7 @@ from typing import Any
 
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.text import WD_BREAK, WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
@@ -123,6 +123,7 @@ class BookMeta:
     contents_indent_prefixes: list[str] = field(default_factory=list)  # e.g. ["Género"]
     own_pages: list[int] = field(default_factory=list)  # source pages that start a new page and are followed by one
     centered_pages: list[int] = field(default_factory=list)  # source pages set centred (cover, title)
+    front_pages: list[int] = field(default_factory=list)  # title/copyright/board/author pages typeset line by line (frontmatter.py)
     # Source pages printed as the scan itself (cover photo, logo plates that OCR
     # cannot reproduce): figs_dir/source_pages/pNNNN.png, one full page each.
     image_pages: list[int] = field(default_factory=list)
@@ -134,6 +135,14 @@ class BookMeta:
     chapter_titles: dict[str, str] = field(default_factory=dict)
     body_start_page: int = 1
     folio_offset: int = 3
+    # Folio footer.  folio_start: number printed on output page 1 (Vol. 25: the scan
+    # lacks 3 leading pages, so pdf page 1 prints as 4).  folio_first_page: first source
+    # page that carries a footer; the own pages before it print none (a section break
+    # separates them).  0 = footer from page 2 on, as before.
+    folio_start: int = 1
+    folio_first_page: int = 0
+    folio_bold: bool = True  # page number bold (Vol. 25 source: regular)
+    footer_italic: bool = True  # running text italic unless it carries <i> markup
     # When the source starts a chapter part-way down a page, insert the
     # chapter title at its real position instead of moving it to page top.
     heading_in_flow: bool = False
@@ -474,8 +483,24 @@ def _rule_above(par, color: str = "808080", sz: int = 4) -> None:
         "w:cnfStyle", "w:rPr", "w:sectPr", "w:pPrChange")
 
 
+def _clear_style_tabs(par) -> None:
+    """Cancel the tab stops a paragraph inherits from its style.
+
+    Word's Header/Footer styles carry a centre tab at 3.25 in and a right tab at
+    6.5 in; on a text block narrower than 6.5 in the first TAB lands on the centre
+    stop, so the right-hand footer item printed mid-page (Vol. 25, H8)."""
+    st = par.style
+    while st is not None:
+        for ts in st.paragraph_format.tab_stops:
+            par.paragraph_format.tab_stops.add_tab_stop(ts.position, WD_TAB_ALIGNMENT.CLEAR)
+        st = st.base_style
+
+
+_MARK = re.compile(r"(<i>.*?</i>)")
+
+
 def _folio_footer(sec, meta: BookMeta, doc: Any) -> None:
-    """Ruled footer, odd/even mirrored: even = page + series, odd = volume + page."""
+    """Ruled footer, odd/even mirrored: even = page + running_right, odd = running_left + page."""
     doc.settings.odd_and_even_pages_header_footer = True
     size = PROFILE.footer_size - 1
     for ft, page_first in ((sec.even_page_footer, True), (sec.footer, False)):
@@ -483,20 +508,61 @@ def _folio_footer(sec, meta: BookMeta, doc: Any) -> None:
         fp = ft.paragraphs[0]
         for r in list(fp.runs):
             r._r.getparent().remove(r._r)
+        _clear_style_tabs(fp)
         fp.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT)
         _rule_above(fp)
-        def text(s: str, italic: bool = True):
-            r = fp.add_run(s)
-            r.font.name, r.font.size, r.italic = BODY_FONT, Pt(size), italic
-            r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
-            if _CJK.search(s):  # 纯英文串不设 eastAsia 提示，否则 Word 标点变全角
-                r._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
+        def text(s: str):
+            # "<i>ANNELIDA POLYCHAETA</i> I": only the marked part italic; no markup: footer_italic
+            marked = "<i>" in s
+            for part in _MARK.split(s):
+                if not part:
+                    continue
+                ital = part.startswith("<i>") if marked else meta.footer_italic
+                part = part[3:-4] if part.startswith("<i>") else part
+                r = fp.add_run(part)
+                r.font.name, r.font.size, r.italic = BODY_FONT, Pt(size), ital
+                r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
+                if _CJK.search(part):  # 纯英文串不设 eastAsia 提示，否则 Word 标点变全角
+                    r._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
         if page_first:
-            _page_field(fp, size, bold=True)
+            _page_field(fp, size, bold=meta.folio_bold)
             text('\t' + meta.running_right)
         else:
             text(meta.running_left + '\t')
-            _page_field(fp, size, bold=True)
+            _page_field(fp, size, bold=meta.folio_bold)
+
+
+def _blank_header_footer(sec) -> None:
+    """Own, empty header and footers: the front pages before folio_first_page print none."""
+    for hf in (sec.header, sec.even_page_header, sec.first_page_header,
+               sec.footer, sec.even_page_footer, sec.first_page_footer):
+        hf.is_linked_to_previous = False
+        for p in hf.paragraphs:
+            for r in list(p.runs):
+                r._r.getparent().remove(r._r)
+
+
+def _set_folio_start(sec, start: int) -> None:
+    sp = sec._sectPr
+    for old in sp.findall(qn('w:pgNumType')):
+        sp.remove(old)
+    if start == 1:
+        return
+    pg = OxmlElement('w:pgNumType')
+    pg.set(qn('w:start'), str(start))
+    sp.insert_element_before(pg, 'w:cols', 'w:formProt', 'w:vAlign', 'w:noEndnote', 'w:titlePg',
+                             'w:textDirection', 'w:bidi', 'w:rtlGutter', 'w:docGrid',
+                             'w:printerSettings', 'w:sectPrChange')
+
+
+def start_folio_section(doc: Any, meta: BookMeta) -> None:
+    """New page and section where the source starts printing footers; numbering continues."""
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    _set_folio_start(sec, 1)  # the clone carries pgNumType start: drop it, or numbering restarts
+    sec.different_first_page_header_footer = False
+    for hf in (sec.header, sec.even_page_header, sec.footer, sec.even_page_footer):
+        hf.is_linked_to_previous = False  # a linked part resolves to the blank front definition
+    set_header_footer(sec, meta, doc)
 
 
 def set_header_footer(sec, meta: BookMeta, doc: Any = None):
@@ -508,13 +574,14 @@ def set_header_footer(sec, meta: BookMeta, doc: Any = None):
     hdr = sec.header
     hp = hdr.paragraphs[0]
     hp.text = ''
+    _clear_style_tabs(hp)
     hp.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT)
-    r = hp.add_run(meta.running_left)
+    r = hp.add_run(re.sub(r"</?i>", "", meta.running_left))
     r.font.name, r.font.size, r.italic = BODY_FONT, Pt(PROFILE.header_size), True
     r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     if _CJK.search(meta.running_left):
         r._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
-    r2 = hp.add_run('\t' + meta.running_right)
+    r2 = hp.add_run('\t' + re.sub(r"</?i>", "", meta.running_right))
     r2.font.name, r2.font.size, r2.italic = BODY_FONT, Pt(PROFILE.header_size), True
     r2._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
     if _CJK.search(meta.running_right):
@@ -1369,7 +1436,7 @@ def iter_pages(data, meta: BookMeta):
         if p["page"] < meta.body_start_page:
             continue
         p, counts = repair_key_page(p)
-        if PROFILE.unwrap_lines:
+        if PROFILE.unwrap_lines and p["page"] not in meta.front_pages:
             p = unwrap_page_lines(p)
         for k, v in counts.items():
             KEY_REPAIRS[k] = KEY_REPAIRS.get(k, 0) + v
@@ -1407,9 +1474,19 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
     for p in iter_pages(data, meta):
         if meta.skip_after_page is not None and p["page"] >= meta.skip_after_page:
             continue
+        if (PROFILE.word_toc and not PROFILE.toc_headings and not TOC_MARK
+                and p["page"] > PROFILE.word_toc_after_page):
+            # Word TOC page after the first word_toc_after_page source pages (cover etc.)
+            if doc.paragraphs:
+                page_break(doc)
+            para(doc, PROFILE.word_toc_title, size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
+            TOC_MARK.append(para(doc, "", size=2))  # its page break rides on the last entry
+            rendered_any, prev_own = False, False
         img_page = p["page"] in meta.image_pages
         own = p["page"] in meta.own_pages or img_page
-        if rendered_any and (own or prev_own):
+        if rendered_any and meta.folio_first_page > 1 and p["page"] == meta.folio_first_page:
+            start_folio_section(doc, meta)
+        elif rendered_any and (own or prev_own):
             page_break(doc)
         prev_own, rendered_any = own, True
         if img_page:
@@ -1476,11 +1553,24 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
                 prev_body = None
                 continue
+            if role == "figure_group":
+                render_figure_group(doc, b, figs_dir)
+                prev_body = None
+                continue
             if role in GENERIC_ROLES:
                 render_generic_block(doc, b, genera)
                 prev_body = None
                 continue
             if not text:
+                continue
+            if p["page"] in meta.front_pages and role in ("body", "heading", "note", "citation"):
+                from .frontmatter import front_block
+                front_block(doc, p["page"], b, text, genera, {
+                    "centred": p["page"] in meta.centered_pages,
+                    "half_title": all("\n" not in (x.get("translation") or "") and len((x.get("translation") or "").split()) <= 3
+                                      for x in p["blocks"]) and len(p["blocks"]) <= 3,
+                    "first": b is p["blocks"][0]})
+                prev_body = None
                 continue
             if p["kind"] == "index" and text.upper().startswith("ALPHABETICAL INDEX"):
                 continue
@@ -1573,7 +1663,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 prev_body = None
             elif role == "taxon":
                 para(doc, text, size=10, align=WD_ALIGN_PARAGRAPH.LEFT, left=4.5 * int(b.get("rank", 0)),
-                     before=2.0 if b.get("rank") == 0 else 0.0, after=0.4, keep=True, genera=genera)
+                     before=_taxon_gap(text, int(b.get("rank", 0))), after=0.4, keep=True, genera=genera)
                 prev_body = None
             elif role == "index":
                 if meta.contents_in_place:
@@ -1590,6 +1680,34 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
 
 
 GENERIC_ROLES = frozenset({"table", "list", "quote", "box", "footnote"})
+
+
+def render_figure_group(doc, b: dict, figs_dir: Path) -> None:
+    """Caption-less pictures (publisher logos) set side by side on one centred line.
+
+    ``figures``: list of {"crop": path relative to --figures (or absolute), "height_mm": 16};
+    ``gap_mm`` between pictures.  A missing file is skipped (check reports figures).
+    """
+    from PIL import Image
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(6)
+    gap = float(b.get("gap_mm", 14))
+    first = True
+    for f in b.get("figures", []):
+        path = Path(f.get("crop", ""))
+        if not path.is_absolute():
+            path = figs_dir / path
+        if not path.is_file():
+            continue
+        with Image.open(path) as im:
+            w, h = im.size
+        h_mm = float(f.get("height_mm", 16))
+        if not first:
+            p.add_run(chr(0x2003) * max(1, round(gap / 4)))
+        p.add_run().add_picture(str(path), width=Mm(h_mm * w / h), height=Mm(h_mm))
+        first = False
 
 
 def _cell_text(cell: Any) -> tuple[str, int]:
@@ -1924,6 +2042,49 @@ TOC_ROWS: list[tuple[int, str]] = []
 TOC_MARK: list = []
 
 
+def _fld(par, kind: str | None = None, instr: str | None = None, first: bool = False):
+    from docx.oxml import OxmlElement
+
+    def run():
+        r = OxmlElement("w:r")
+        (par._p.insert(1 if par._p.pPr is not None else 0, r) if first else par._p.append(r))
+        return r
+    els = []
+    if kind == "begin":
+        r = run(); c = OxmlElement("w:fldChar"); c.set(qn("w:fldCharType"), "begin"); r.append(c)
+        r2 = OxmlElement("w:r"); t = OxmlElement("w:instrText"); t.set(qn("xml:space"), "preserve")
+        t.text = instr; r2.append(t); r.addnext(r2)
+        r3 = OxmlElement("w:r"); c3 = OxmlElement("w:fldChar"); c3.set(qn("w:fldCharType"), "separate")
+        r3.append(c3); r2.addnext(r3)
+    elif kind == "end":
+        r = run(); c = OxmlElement("w:fldChar"); c.set(qn("w:fldCharType"), "end"); r.append(c)
+    return els
+
+
+def _wrap_toc_field(pars, depth: int) -> None:
+    """Make the rendered contents a real Word TOC field over Heading 1..depth.
+
+    The entries stay as the field's cached result (so PDF/LibreOffice and a Word
+    that does not refresh fields show the same list); Word's "Update field"
+    rebuilds it from the outline levels of the Heading styles.
+    """
+    if not pars:
+        return
+    _fld(pars[0], "begin", f' TOC \\o "1-{max(1, depth)}" \\h \\z \\u ', first=True)
+    _fld(pars[-1], "end")
+
+
+def _taxon_gap(text: str, rank: int) -> float:
+    """Space before a checklist line (pt): a blank gap before each Orden, none between its families
+    (Fauna Ibérica Vol. 25 pp. 13-16); other rank lines (Género X) keep the small gap."""
+    t = text.lstrip()
+    if re.match(r"(?:Orden|Order)\b", t):
+        return 9.0
+    if re.match(r"(?:Superfamilia|Familia|Subfamilia|Suborden)\b", t):
+        return 0.0
+    return 2.0 if rank == 0 else 0.0
+
+
 def fill_heading_contents(doc, genera, page_map) -> None:
     """Heading contents: one entry per heading of level <= toc_depth, in document order.
 
@@ -1934,13 +2095,21 @@ def fill_heading_contents(doc, genera, page_map) -> None:
 
     marker = TOC_MARK[0]
     entries = []
+    # the shallowest heading present is the contents' top level (a book whose first
+    # headings are level 2 must not indent every entry)
+    top = min((lv for lv, _ in TOC_ROWS if lv <= PROFILE.toc_depth), default=1)
     for i, (lv, tx) in enumerate(TOC_ROWS):
         if lv > PROFILE.toc_depth:
             continue
         pg = page_map.get(f"head:{i}")
-        entries.append(ContentsEntry(title=" ".join(tx.split()), level=lv - 1,
+        entries.append(ContentsEntry(title=" ".join(tx.split()), level=lv - top,
                                      output_page=str(pg) if pg else "0"))
     pars = render_contents(doc, entries, size=9.5, genera=genera, source_label=None)
+    _wrap_toc_field(pars, PROFILE.toc_depth)
+    if PROFILE.word_toc and not PROFILE.toc_headings and pars:
+        # break inside the last entry: a separate break paragraph would strand a blank page
+        # when the list exactly fills its page
+        pars[-1].add_run().add_break(WD_BREAK.PAGE)
     for p in pars:
         marker._p.addprevious(p._p)
     marker._p.getparent().remove(marker._p)
@@ -1961,13 +2130,17 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
             figs.setdefault(int(f["source_pdf_page"]), []).append(f)
     doc = Document()
     setup(doc)
-    set_header_footer(doc.sections[0], meta, doc)
+    if meta.folio_first_page > 1:
+        _blank_header_footer(doc.sections[0])
+    else:
+        set_header_footer(doc.sections[0], meta, doc)
+    _set_folio_start(doc.sections[0], meta.folio_start)
     TOC_ROWS.clear()
     TOC_MARK.clear()
     front_matter(doc, data, genera, page_map, meta, paths.translation)
     render_body(doc, data, genera, figs, page_map, meta, paths.figures_dir, key_breaks)
     out_docx.parent.mkdir(parents=True, exist_ok=True)
-    if PROFILE.toc_headings and TOC_MARK:
+    if (PROFILE.toc_headings or PROFILE.word_toc) and TOC_MARK:
         fill_heading_contents(doc, genera, page_map)
         out_docx.with_suffix(".toc.json").write_text(
             json.dumps([[lv, tx] for lv, tx in TOC_ROWS], ensure_ascii=False), encoding="utf-8")
@@ -2207,7 +2380,7 @@ def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
                     page_map["block:" + block_id] = i + 1
                     break
     toc = pdf.with_suffix(".toc.json")
-    if PROFILE.toc_headings and toc.exists():
+    if (PROFILE.toc_headings or PROFILE.word_toc) and toc.exists():
         rows = json.loads(toc.read_text(encoding="utf-8"))
         # contents pages carry dot leaders; body search starts after the last of them
         raw = [p.get_text("text") for p in doc]

@@ -69,7 +69,12 @@ JSON 字段（全部可省略）：
 | `authors_title`, `contributions_title`, `license_note` | 前置页标题与许可说明 |
 | `chapter_titles` | `{章节键: 目录显示名}` |
 | `body_start_page` | 正文起始源页 |
-| `folio_offset` | 源书印刷页码 = 源 PDF 页 − `folio_offset` |
+| `folio_offset` | 源书印刷页码 = 源 PDF 页 − `folio_offset`（Vol25：PDF 第 9 页印 12，故为 −3） |
+| `folio_start` | 成品第 1 页的印刷页码（写入首节 `w:pgNumType w:start`；Vol25 为 4） |
+| `folio_first_page` | 从这一源页起印页脚；之前的前页（扉页、版权页等）不印页脚，另起一节 |
+| `folio_bold` / `footer_italic` | 页码是否加粗、页脚文字是否整体斜体；`running_left/right` 也可用 `<i>…</i>` 标出局部斜体 |
+
+页脚检查（`footer_style: folio`，booklayout/folio.py）：qa 查前页无页脚、页码连续、奇偶页文字、左右贴版心；source-check 按位置读原书 OCR 页脚，对照页码差、奇数页文字、前页有无页脚，gate 拦截。qa 的目录/索引页码按页脚印刷页码查找；成品没印的页码（节选之外）跳过。LibreOffice 按物理页选奇偶页脚，Word 按印刷页码选；首页印偶数时 `_convert_pdf` 给 LibreOffice 换一份奇偶对调的副本，docx 本身按 Word 正确。
 | `skip_after_page` | 该源页及以后不排正文（封底、系列页） |
 | `index_chapter` | 索引章节键；正文阶段跳过，由索引渲染器统一输出 |
 | `index_intro_prefix` | 索引引言起始文字 |
@@ -372,3 +377,43 @@ python3 -m booklayout.keyrender book.pdf [--pages 3-6] [--report kr.json]   # �
 - `scripts/vl_to_aligned.py` 的 `merge_caption_columns`：以「Fig./Tabla/Lám. N」开头的图注被 VL 拆成多栏块时，按同一行 y0 并成一个图注；图内无标号的短 caption 文字丢弃；学名行不并入。
 - `fix_latex_superscripts` 同时处理 `$ ^{a} $` 与 `\textsuperscript{a}`。
 - 前言页末尾的页边界由人工核对后用 patch-blocks 设 `boundary_reviewed: true`。
+
+## 一条命令出成品：make，可编辑 HTML，Word 目录，ICZN（2026-11-25）
+
+```bash
+booklayout make --aligned aligned.json --figures figs/ --metadata meta.json --profile p.json \
+  --out-dir 成品/ --name Book --source-pdf 原书.pdf --pages 1-50 --accepted accepted.json --edit-html
+```
+
+- 一次跑完：build → map-pages → build → key-report（需要时再 build）→ qa/check/stylecheck/source-check 并行 → gate → HTML。各阶段耗时和判定写入 `<name>.make.json`，中间文件在 `<name>.work/`。Vol. 25 前 50 页实测约 80 s（source-check 占 70 s，并行），不含 source-check 约 13 s。不调用任何模型。
+- 可编辑 HTML：`booklayout edit-html --aligned --figures --out x.html`（`make --edit-html` 同样产出）。浏览器里直接改字体、字号、加粗、斜体、正体、换行（Shift+Enter），可加批注；"保存修改"下载 `*.edits.json`。回写：`booklayout apply-html-edits --aligned --edits x.edits.json --out new.json [--report r.json]`，再 `make` 一键重排。粗体、斜体、换行写回译文；字体、字号和批注只记录、报告，不改对齐数据。旧文本不符的修改会被拒绝（stale）。
+- Word 目录：profile 里 `word_toc: true`、`word_toc_after_page: 1`（封面之后）、`toc_depth`。目录是真正的 Word TOC 域（`TOC \o "1-N" \h \z \u`），缓存条目含页码；Heading1–4 带 outline 级别 0–3，Word 里可在导航窗格看到，右键"更新域"重建。目录最后的分页符放在最后一条目录里，避免整页满时多出空白页。
+- ICZN：科级及以下族群名（-oidea、-idae、-inae、-ini）一律正体，属、种保持斜体（`builder._roman_family_group`）。`qa` 新增 `italic_family_group`：PDF 里出现斜体科名即判失败（`booklayout/iczn.py`）。
+- figure_group 块：无图注的图（出版社徽标）。`{"role":"figure_group","figures":[{"crop":"相对 --figures 的路径","height_mm":16}],"gap_mm":14}`，并排居中。
+- source-check 条目 id 不再含输出词序号，加目录等改变输出长度时，已核准的 id 仍然有效。
+
+## 批量审核 source-check（review，2026-11-25）
+
+`booklayout make` 跑一次约 20–27 秒；慢的是此前由 Claude Code 会话逐项看裁图、写 accepted.json（Vol25 p1-50 累计 309 项，每项一次模型往返）。现在：
+
+- `booklayout make` 不给 `--accepted` 时，自动读 `aligned.json` 同目录的 `accepted.json`（以前漏传会把 67 个已判项重新打开）。
+- `booklayout make` 未通过时，自动生成 `<out-dir>/<name>.review.html`：所有未判项一页列出（原书裁图、原书 OCR、成品、上下文），逐项点「成品对 / 要改」，导出 `accepted.json`（已合并旧判定）和 `fixes.json`。不调用模型。
+- 单独运行：`booklayout review --source-check <work>/source_check.json --qa <work>/qa.json --accepted accepted.json --out review.html`。
+- `source-check` 新规则：原书 OCR 丢了上标序数（M→Mª、N→Nº）判为 Tesseract 噪声，不再报。
+
+## source-check 问题分类登记（2026-11-25）
+
+每个条目除 `type`（怎么对不上）外，还标 `category` 和 `blocking`。规则都是确定性的，不用模型：
+
+| category | 阻塞 | 判定 |
+|---|---|---|
+| figure_text | 否 | missing/moved 行与原书图区（`scanfigures.find_figures`，外扩 10 mm）相交：图内标注随图片保留 |
+| reading_order | 否 | moved：整行在成品相邻页找到，只是阅读或分栏顺序不同 |
+| name_ocr | 否 | 原书 OCR 词不是真词，成品词是 WoRMS 学名（含科、目、纲、门名列），两者相差不超过 2 个字符或只差重音：判成品对 |
+| ocr_noise | 否 | tess_noise；或 missing 行允许原书非真词差 ≤2 字符后，在成品近页连续找到（Amphbinomidae→Amphinomidae） |
+| name_replace | 是 | 成品学名疑似错字（name_suspect；或原书是 WoRMS 学名、成品不是且只差 ≤2 字符） |
+| text | 是 | 其他，需人工判定 |
+
+不阻塞的条目不会隐藏，全部写进 `<out>.issues.tsv`（每项一行，按类别排序）。学名类另汇总为 `<out>.name-fixes.tsv`，列为 kind、wrong、right、count、src_pages，供以后统一替换。kind=output_wrong 表示成品要改，kind=source_ocr_wrong 只作记录。
+Vol. 25 p1-50 实测：阻塞项从 75 降到 35，source-check 用时 2.3 s（OCR 已缓存）。剩下的 35 项是数字、页眉漏入正文、无学名依据的拼写差异，需人工判定。
+
