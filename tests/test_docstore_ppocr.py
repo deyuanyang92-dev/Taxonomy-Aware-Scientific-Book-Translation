@@ -80,3 +80,11 @@ def test_japanese_page_filters_junk():
     rows = [row(70, 100 + i * 60, 1800, 140 + i * 60, "体長25mm，体幅9mmからなる。前口葉は") for i in range(6)]
     rows.append(row(70, 600, 1800, 640, "斄🕠耮弚➠勖∩団鞯🌆赟珲墼ʭ毉✱鄻式"))
     assert len(rows_to_text(rows, W)[0].splitlines()) == 6
+
+
+def test_short_entry_number_box_kept():
+    # 2026-11-17：检索表条目号单独成框时（「2.」2 字、非纯数字）被 _keep 丢掉，
+    # 导致 Imajima 三卷部分检索表丢条目号（2007 p.5/6、p.176/177、p.317、p.340；2009 p.67、p.295）。
+    rows = [row(70, 100, 900, 140, "背鱗は18対"), row(60, 160, 130, 200, "2.", 0.9)]
+    text = rows_to_text(rows, W)[0]
+    assert "2." in text.splitlines()

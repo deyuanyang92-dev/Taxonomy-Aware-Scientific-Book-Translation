@@ -88,7 +88,9 @@ def term_table(con, text: str, domain: str = "*", scope: set[str] | None = None,
     max_chars：整表目标长度，只约束 SOFT 节；HARD 永不截断。"""
     fb = D.resolve_fallback(domain, fallback_domains)
     finder = default_finder() if usage is None else (None if usage is False else usage)
-    return render_table(con, find_terms(con, text, domain, fb), domain, scope, fb, finder, max_chars)
+    from .gloss import find_gaps, render_gaps
+    tbl = render_table(con, find_terms(con, text, domain, fb), domain, scope, fb, finder, max_chars)
+    return tbl + render_gaps(find_gaps(con, text), con=con)
 
 
 @dataclass

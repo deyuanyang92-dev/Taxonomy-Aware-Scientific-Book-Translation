@@ -43,7 +43,12 @@ import taxoformat as tf  # noqa: E402
 ITALIC = re.compile(r"(?<!\\)\*(?!\*)(?!\s)([^*\n]*?)(?<!\s)(?<!\\)\*(?!\*)")
 HAN = re.compile(r"[⺀-鿿豈-﫿＀-￯]")
 CAPTION = re.compile(
-    r"^\s*(?:\*\*)?(?:Figs?\.?|L[aá]ms?\.?|Tablas?|Tables?|Plates?|图|表)\s*[\dIVXivx]")
+    r"^\s*(?:\*\*)?(?:Figs?\.?|L[aá]ms?\.?|Tablas?|Tables?|Plates?|图|図|表)\s*[\dIVXivx]")
+# 图N + *学名*：学名斜体正确；roman 前缀仅图号时不算 caption.allitalic
+_CAPTION_FIG_ONLY_ROMAN = re.compile(
+    r"^\s*(?:\*\*)?(?:Figs?\.?|图|図)\s*\d+[a-zA-Z′']?\s*$",
+    re.I,
+)
 YEAR = re.compile(r"\b(?:1[89]|20)\d{2}[a-z]?\b")
 RANK = re.compile(r"\b(?:spp?|cf\.|aff\.|var\.|subsp\.|f\.|n\.\s*sp\.|gen\.\s*n\.|indet\.)")
 ABBR = re.compile(r"^[A-Z]\.\s+[a-z][a-z-]+")
@@ -143,7 +148,7 @@ def _name_rx(lex: tf.Lexicon) -> re.Pattern[str] | None:
     if not lex.genera:
         return None
     genera = "|".join(sorted((re.escape(g) for g in lex.genera), key=len, reverse=True))
-    return re.compile(rf"(?<![A-Za-z])({genera})(?:\s+([a-z][a-z-]{{2,}}))?")
+    return re.compile(rf"(?<![A-Za-z])({genera})(?![A-Za-z])(?:\s+([a-z][a-z-]{{2,}}))?")
 
 
 def _name_matches(text: str, lex: tf.Lexicon) -> list[tuple[int, int, str]]:
@@ -260,8 +265,12 @@ def check_markdown(name: str, text: str, caption_names: str = "italic",
             kind = classify(m.group(1), lex, is_caption, caption_names, refs)
             out.append(Finding(kind, f"{name}:{i}", m.group(0)))
         if is_caption:
+            roman = ITALIC.sub("", line).strip()
+            # 「图14 *Eunoe barbata*」：图号正体 + 学名斜体，不是整条误斜
+            if _CAPTION_FIG_ONLY_ROMAN.match(roman):
+                continue
             covered = sum(len(re.sub(r"\s", "", m.group(1))) for m in spans)
-            total = len(re.sub(r"\s", "", ITALIC.sub("", line))) + covered
+            total = len(re.sub(r"\s", "", roman)) + covered
             if total and covered / total >= 0.8:
                 out.append(Finding("caption.allitalic", f"{name}:{i}", line.strip()[:120]))
     return out
@@ -302,6 +311,10 @@ def check_docx(path: Path, caption_names: str = "italic", refs: Refs | None = No
         if is_caption:
             italic_chars = sum(len(t) for t, it in runs if it)
             total = sum(len(t) for t, _ in runs)
+            roman = "".join(t for t, it in runs if not it)
+            # 「图3」正体 + 学名斜体：与 markdown 路径同一豁免
+            if _CAPTION_FIG_ONLY_ROMAN.match(roman.strip()):
+                continue
             if total and italic_chars / total >= 0.9:
                 out.append(Finding("caption.allitalic", where, line[:120]))
     return out

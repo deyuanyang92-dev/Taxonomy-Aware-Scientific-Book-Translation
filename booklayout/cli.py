@@ -3,14 +3,22 @@
 
 Subcommands:
   build            aligned JSON + figure crops -> DOCX (optionally PDF)
+  preview          DRAFT HTML/Typst slice preview (not delivery)
   map-pages        rendered PDF + aligned JSON -> source/printed page map
   check            structural report for an aligned book package
-  qa               three deterministic reviews: structure, layout, text
+  qa               three deterministic reviews (default strict: PDF required)
+  verify           STRICT delivery: keys-check + qa + check + key-report + taxostyle + gate
+  audit            static key+text audit on aligned JSON (no PDF)
+  keys-check       strict identification-key format check
+  taxostyle        阶元体例审计（aligned 标记 + 可选 DOCX italic_check）
   normalize        deterministic block repairs
   key-align        re-cut identification-key pages from the translated markdown
   backfill-source  restore source text and geometry lost in a page patch
   patch-blocks     block-level translation/role edits by block_id
+  extract-blocks   pack block + source page image/OCR for model repair
   repair           replace selected pages from a declarative patch
+  restore          OCR line boxes -> vector PDF, original page geometry
+  gate             refuse delivery unless qa + check + key-report + taxostyle are clean
 """
 from __future__ import annotations
 
@@ -23,10 +31,12 @@ import sys
 import tempfile
 import unicodedata
 from pathlib import Path
+from typing import Any
 
 from .builder import BookMeta, BookPaths, build, load_aligned, make_page_map
 from .keyalign import align_document
 from .normalize import apply_block_edits, apply_page_patch, backfill_source, normalize_aligned
+from .preview import run_preview
 
 
 def _meta(args: argparse.Namespace) -> BookMeta:
@@ -111,7 +121,7 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
         b.get("block_id") or b.get("text", "")[:50]
         for b in blocks
         if b.get("role") == "caption"
-        and not re.match(r"^(?:Fig\b|L[aá]m\b|Tabla\b|Plate\b|图|図|表)",
+        and not re.match(r"^(?:Fig(?:ure)?\b|L[aá]m\b|Tabla\b|Table\b|Plate\b|图|図|表)",
                          (b.get("translation") or b.get("text") or "").strip(), re.I)
     ]
     body_blocks = [
@@ -214,6 +224,39 @@ def _require_figure_audit(figures_dir: Path) -> None:
         )
 
 
+def cmd_preview(args: argparse.Namespace) -> int:
+    """DRAFT page/chapter slice preview (HTML or Typst). Not a delivery path."""
+    if not args.pages and not args.chapter:
+        print("preview requires --pages N-M or --chapter KEY", file=sys.stderr)
+        return 2
+    try:
+        report = run_preview(
+            aligned=args.aligned,
+            figures=args.figures,
+            out=args.out,
+            engine=args.engine,
+            pages_spec=args.pages,
+            chapter=args.chapter,
+            title=getattr(args, "title", None) or "Preview",
+        )
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(
+        f"DRAFT preview engine={report['engine']} out={report['out']} "
+        f"pages={report['pages']} figures_embedded={report.get('figures_embedded', 0)} "
+        f"delivery=false"
+    )
+    if report.get("index"):
+        print(f"index={report['index']}")
+    if report.get("pdf"):
+        print(f"pdf={report['pdf']}")
+    return 0
+
+
 def cmd_build(args: argparse.Namespace) -> int:
     _require_figure_audit(args.figures)
     paths = BookPaths(
@@ -287,14 +330,40 @@ def _spacing_problems(words: list[tuple], width: float) -> tuple[list[dict], lis
     return tail, overflow
 
 
-_KEY_START = re.compile(r"^(?:•|\d{1,2}\.)$")
-_KEY_COUPLET = re.compile(r"^(?:•|\d{1,2}\.)")
+_KEY_START = re.compile(r"^(?:•|—|\d{1,3}\.)$")
+_KEY_COUPLET = re.compile(r"^(?:•|—|\d{1,3}\.)")
 _LEADER_TOKEN = re.compile(r"^[.…·]+$")
+# 同行 flush 检测仍用西语 (p. N)；换行目标另见 _is_key_target_line
 _TARGET_END = re.compile(r"\(p\.\s*\d+\)\s*$")
 _NUMBER_END = re.compile(r"(?:…|\.\s*\.)\s*\d{1,3}\s*$")
+# 点线独占一行时，下一行可为 (Fig./图) 或种名结论（今岛等）
+_WRAPPED_TARGET = re.compile(
+    r"(?:"
+    r"\(p\.\s*\d+\)\s*$"
+    r"|[（(](?:Fig|Figs?|図|图)[^)）]*[)）]\s*$"
+    r"|\*?[A-Z][a-z][A-Za-z-]*\*?"
+    r"(?:\s+\([A-Z][A-Za-z-]+\))?"
+    r"(?:\s+\*?[a-z][a-z-]+\*?){0,2}"
+    r"(?:\s+[A-Z][a-z]+)?"
+    r"(?:\s*[（(][^)）]*[)）]){0,2}"
+    r"\s*$"
+    r")"
+)
 MIN_KEY_LEADER_MM = 40.0
 MIN_KEY_LEADER_PT = MIN_KEY_LEADER_MM * 72 / 25.4
 _DOT_RUN = re.compile(r"(?:[.·…]\s*){2,}")
+
+
+def _is_key_target_line(text: str) -> bool:
+    """True when a PDF continuation line looks like a couplet target."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _WRAPPED_TARGET.search(t) or _NUMBER_END.search(t):
+        return True
+    if re.fullmatch(r"\d{1,3}['′ʹ]?", t):
+        return True
+    return False
 
 
 def _key_span_lines(page, clip) -> list[dict]:
@@ -330,7 +399,7 @@ def _key_short_leaders(page, clip) -> list[dict]:
     """Couplets whose rendered leader is shorter than MIN_KEY_LEADER_MM."""
     lines = _key_span_lines(page, clip)
     key_blocks = {line["block"] for line in lines
-                  if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
+                  if re.match(r"^(?:•|—|\d{1,3}\.)", line["text"])}
     problems: list[dict] = []
     for line in lines:
         if line["block"] not in key_blocks or not line["leaders"]:
@@ -388,6 +457,18 @@ def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
     for line in ordered:
         line.sort(key=lambda word: word[0])
     ordered.sort(key=lambda line: (line[0][5], line[0][6]))
+    # 点线和紧随其后的斜体目标（学名）在同一视觉行，PyMuPDF 却拆成两个 line：
+    # 只合并「纯点线片段 + 同块同基线、位于其右侧的片段」，不动其他行。
+    merged: list[list[tuple]] = []
+    for line in ordered:
+        prev = merged[-1] if merged else None
+        if (prev is not None and prev[0][5] == line[0][5]
+                and all(_LEADER_TOKEN.match(w[4]) or _DOT_RUN.fullmatch(w[4]) for w in prev)
+                and abs(prev[0][1] - line[0][1]) < 1.5 and line[0][0] >= prev[-1][2] - 1):
+            prev.extend(line)
+        else:
+            merged.append(list(line))
+    ordered = merged
 
     def text_of(line: list[tuple]) -> str:
         return " ".join(word[4] for word in line)
@@ -411,6 +492,10 @@ def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
         )
     ]
     if len(keyish) < 2:
+        return []
+    # 破折号行（—）也算偶句标记，但检索表页必有至少一条编号行（N.）；
+    # 只有破折号的页多半是种名索引（「— 种名 …… 页码」），不当检索表审。
+    if not any(re.match(r"\d{1,3}\.$", line[0][4]) for line in keyish):
         return []
     rights = [line[-1][2] for line in ordered
               if len(line) >= 3 and line[-1][2] > width * 0.5]
@@ -456,11 +541,25 @@ def _key_layout_problems(words: list[tuple], width: float) -> list[dict]:
         same_block = index + 1 < len(ordered) and ordered[index + 1][0][5] == line[0][5]
         following = ordered[index + 1] if same_block else None
         if has_leader(line) and _LEADER_TOKEN.match(line[-1][4]):
-            if following and _TARGET_END.search(text_of(following)):
+            if following and _is_key_target_line(text_of(following)):
                 continue  # wrapped target on its own leader line is legitimate
+            # 纯点/省略号行：换行填充或叙述省略，不是丢了检索表目标
+            if re.fullmatch(r"[.…·\s]+", text or ""):
+                continue
+            # 中文叙述省略号常独占一行，下一行仍是特征描写（无拉丁目标）→ 非制表符点线
+            if following:
+                nxt = text_of(following)
+                if re.search(r"[\u4e00-\u9fff\u3000-\u303f]", nxt) and not re.search(
+                    r"[A-Za-z]{4,}", nxt
+                ):
+                    continue
+                # 下一行只剩顿号/逗号等标点（PDF 把省略号与续行拆开）
+                if re.fullmatch(r"[\s、，,；;：:．.]+", nxt or ""):
+                    continue
             problems.append({"reason": "leader without target",
                              "x1": round(line[-1][2], 1), "line": text[:90]})
             continue
+        # 目标被拆：仍只认西语 (p. N)；今岛种名/Fig 换行由 leader-without-target 分支覆盖
         if following and _TARGET_END.search(text_of(following)) \
                 and not starts_leader(following) \
                 and not _DOT_RUN.search(text_of(following)):
@@ -617,258 +716,23 @@ def _reference_problems(pdf: Path, meta: BookMeta) -> dict:
 
 
 def _text_qa(data: dict, meta: BookMeta | None = None) -> dict:
-    """Third review: repeated or implausibly short translated paragraphs."""
-    from collections import Counter
+    """Third review: deep text-layout audit on every printable role."""
+    from .textaudit import audit_text
 
-    skip_after = meta.skip_after_page if meta is not None else None
-
-    def is_index_page(page: dict) -> bool:
-        chapter = page.get("chapter") or ""
-        if meta is not None and meta.index_chapter:
-            return chapter == meta.index_chapter
-        return page.get("kind") == "index" or "index" in chapter.lower()
-
-    # 三审覆盖 body + caption/entry/note（交付复盘 P1：原先只扫 body≈25%）
-    TEXT_ROLES = frozenset({"body", "caption", "entry", "note"})
-    blocks = [
-        (p["page"], b)
-        for p in data["pages"]
-        if (meta is None or p["page"] >= meta.body_start_page)
-        and not (skip_after is not None and p["page"] >= skip_after)
-        and not is_index_page(p)
-        for b in p["blocks"]
-        if b.get("role") in TEXT_ROLES and (b.get("translation") or "").strip()
-    ]
-    body_blocks = [(p, b) for p, b in blocks if b.get("role") == "body"]
-    by_role: dict[str, int] = {}
-    for _, b in blocks:
-        by_role[b.get("role") or "?"] = by_role.get(b.get("role") or "?", 0) + 1
-    # Only repeated body paragraphs on the same page are layout errors.
-    # Captions/entries often legitimately share short wording across a page.
-    normalized = [
-        (page, re.sub(r"\s+", " ", b["translation"]).strip())
-        for page, b in body_blocks
-    ]
-    counts = Counter((page, t) for page, t in normalized if len(t) >= 80)
-    duplicates = [
-        {"page": page, "count": count, "text": text[:160]}
-        for (page, text), count in counts.items() if count > 1
-    ]
-    short = []
-    for page, block in blocks:
-        source = re.sub(r"\s+", " ", block.get("text") or "").strip()
-        translation = re.sub(r"\s+", " ", block.get("translation") or "").strip()
-        role = block.get("role") or "body"
-        # Captions/notes are shorter; lower the source floor so they are checked.
-        floor = 40 if role in {"caption", "note"} else 120
-        if len(source) >= floor and len(translation) < 0.25 * len(source):
-            short.append({"page": page, "block_id": block.get("block_id"),
-                          "role": role,
-                          "source_chars": len(source), "translation_chars": len(translation)})
-    page_blocks: dict[int, list[dict]] = {}
-    for page in data["pages"]:
-        page_blocks.setdefault(page["page"], []).extend(page["blocks"])
-
-    def next_body(page: int, block: dict) -> dict | None:
-        """Next translated body block on the same page, if any."""
-        siblings = page_blocks.get(page, [])
-        try:
-            position = next(i for i, b in enumerate(siblings) if b is block)
-        except StopIteration:
-            return None
-        for later in siblings[position + 1:]:
-            if (later.get("translation") or "").strip() and later.get("role") == "body":
-                return later
-        return None
-
-    def split_mid_sentence(page: int, block: dict) -> bool:
-        """True when the next block on the page resumes the same sentence.
-
-        A block that is last on its page ends at the page boundary, where a
-        missing full stop is normal typography.  A colon usually introduces a
-        list or a citation, whose items may start with a capital letter.
-        """
-        later = next_body(page, block)
-        if later is None:
-            return False
-        ending = block["translation"].strip()
-        following = (later.get("translation") or "").strip()
-        if ending.endswith((",", ";")):
-            return bool(re.match(r"^[a-z(]", following))
-        if re.search(r"\b(?:and|or|of|the|to|with|in|by|for)$", ending, re.I):
-            return bool(re.match(r"^[a-z(]", following))
-        return False
-
-    truncated = [
-        {"page": page, "block_id": block.get("block_id"),
-         "ending": block["translation"].strip()[-40:]}
-        for page, block in body_blocks
-        if split_mid_sentence(page, block)
-    ]
-    # A citation or name entry must not absorb a morphological description.
-    # This is the failure mode behind the broken Dinophilus / Aberranta pages:
-    # the page translation was shifted by one block and a short citation block
-    # received the next paragraph.  Length alone does not catch it reliably, so
-    # look for descriptive vocabulary in roles that should only hold a name or
-    # a bibliographic reference.
-    descriptive = re.compile(
-        r"\b(?:Body|Prostomium|Peristomium|Pygidium|Setigers?|Parapodi\w*|"
-        r"Chaetae|Setae|Mandibles?|Maxillae|Antennae|Species|Distribution|Biology)\b"
-    )
-    key_in_body = []
-    for page, block in body_blocks:
-        source = re.sub(r"\s+", " ", block.get("text") or "")
-        translation = re.sub(r"\s+", " ", block.get("translation") or "").strip()
-        if re.search(r"…{4,}|\.{8,}", translation) or (
-                re.search(r"\bKey to (?:species|genera)\b", translation, re.I)
-                and not re.search(r"\bClave\b", source, re.I)):
-            key_in_body.append({"page": page, "block_id": block.get("block_id"),
-                                "text": translation[:160]})
-    role_suspects = []
-    for page in data["pages"]:
-        if meta is not None and page["page"] < meta.body_start_page:
-            continue
-        if skip_after is not None and page["page"] >= skip_after:
-            continue
-        for block in page["blocks"]:
-            role = block.get("role")
-            # caption/note 本应含形态词；可疑的是 citation/entry 吞进了描述段
-            if role not in {"citation", "entry"}:
-                continue
-            text = re.sub(r"\s+", " ", block.get("translation") or "").strip()
-            words = len(re.findall(r"[A-Za-zÀ-ÿ]{2,}", text))
-            if words >= 50 and descriptive.search(text):
-                role_suspects.append({
-                    "page": page["page"], "block_id": block.get("block_id"),
-                    "role": role, "words": words, "text": text[:160],
-                })
-    # Key text leaking into a non-key role is printed with the wrong style and
-    # almost always means the page translation was split at the wrong block
-    # boundary.  Dense key pages are one translation run, so this check is the
-    # cheapest way to catch a shifted key/citation boundary.
-    leaders = re.compile(r"…{4,}|(?:\.\s*){8,}")
-    key_outside = []
-    citation_no_year = []
-    entry_no_year = []
-    heading_mismatch = []
-    leading_punct = []
-    doubled_words = re.compile(
-        r"\b(in|of|to|for|by|with|on|at|the|and|a)\s+\1\b", re.I
-    )
-    stray_pair = re.compile(r"\b(?:in|of|to|for|by|on|at)\s+with\b", re.I)
-    # Spanish status formulas survive in the synonym list because the
-    # citation around them is language-neutral.  The phrase list is specific
-    # enough not to match Spanish proper names or bibliography titles.
-    spanish_phrase = re.compile(
-        r"\b(?:grafía(?: posterior| original| original alternativa)? incorrecta|"
-        r"nombre de reemplazo(?: injustificado)?|no disponible|no publicado|"
-        r"obra suprimida|colocado en la Lista|Nombres de Nivel|"
-        r"Lista Oficial de Nombres|Solo se incluyen|se incluyen las denominaciones|"
-        r"por designación presente|Especie Tipo|Clave de especies|"
-        r"suprimida ICZN)\b",
-        re.I,
-    )
-    function_word_pairs = []
-    spanish_residue = []
-    for page in data["pages"]:
-        if meta is not None and page["page"] < meta.body_start_page:
-            continue
-        if skip_after is not None and page["page"] >= skip_after:
-            continue
-        if is_index_page(page):
-            continue
-        for block in page["blocks"]:
-            role = block.get("role")
-            translation = re.sub(r"\s+", " ", block.get("translation") or "").strip()
-            source = re.sub(r"\s+", " ", block.get("text") or "").strip()
-            if not translation:
-                continue
-            if role != "key" and leaders.search(translation):
-                key_outside.append({
-                    "page": page["page"], "block_id": block.get("block_id"),
-                    "role": role, "text": translation[:160],
-                })
-            if role == "citation":
-                years = set(re.findall(r"\b(?:1[6-9]\d\d|20\d\d)\b", source))
-                if years and not any(y in translation for y in years):
-                    citation_no_year.append({
-                        "page": page["page"], "block_id": block.get("block_id"),
-                        "text": translation[:160],
-                    })
-            if role == "entry":
-                # A synonym-list entry is a citation: every year of the source
-                # line must survive.  A missing year means the aligner paired
-                # the entry with a neighbouring line.
-                entry_years = re.findall(r"\b(?:1[6-9]\d\d|20\d\d)\b", source)
-                missing = [year for year in entry_years if year not in translation]
-                if missing:
-                    entry_no_year.append({
-                        "page": page["page"], "block_id": block.get("block_id"),
-                        "missing": missing, "text": translation[:160],
-                    })
-            if role == "heading":
-                m = re.match(
-                    r"(?:G[eé]nero|Subg[eé]nero|Familia|Subfamilia|Especie)\s+"
-                    r"([A-Z][A-Za-z-]{2,})", source)
-                # "Especie Tipo:" / "Species Type:" is a field label, not a
-                # taxon name; the following block carries the real heading.
-                if m and m.group(1).lower() in {"tipo", "type", "especie", "species"}:
-                    m = None
-                if m and m.group(1).lower() not in translation.lower():
-                    heading_mismatch.append({
-                        "page": page["page"], "block_id": block.get("block_id"),
-                        "name": m.group(1), "text": translation[:160],
-                    })
-            if role == "body" and translation[:1] in ",;.:)]":
-                leading_punct.append({
-                    "page": page["page"], "block_id": block.get("block_id"),
-                    "text": translation[:160],
-                })
-            # A page-break join can duplicate or mis-pair a function word
-            # ("ending posteriorly in" + "with a short pointed end").  The
-            # result is ungrammatical and invisible to role and length checks.
-            pair = doubled_words.search(translation) or stray_pair.search(translation)
-            if pair is not None:
-                function_word_pairs.append({
-                    "page": page["page"], "block_id": block.get("block_id"),
-                    "pair": pair.group(0), "text": translation[:160],
-                })
-            # Only roles that print as running English prose are checked;
-            # reference titles may legitimately be in Spanish.
-            if role in {"body", "entry", "heading", "caption", "note"}:
-                residue = spanish_phrase.search(translation)
-                if residue is not None:
-                    spanish_residue.append({
-                        "page": page["page"], "block_id": block.get("block_id"),
-                        "role": role, "phrase": residue.group(0),
-                        "text": translation[:160],
-                    })
-    return {
-        "duplicate_paragraphs": duplicates,
-        "short_translations": short,
-        "truncated_endings": truncated,
-        "role_suspects": role_suspects,
-        "key_text_in_body": key_in_body,
-        "key_text_outside_key": key_outside,
-        "citation_year_missing": citation_no_year,
-        "entry_year_missing": entry_no_year,
-        "heading_name_missing": heading_mismatch,
-        "body_leading_punctuation": leading_punct,
-        "function_word_pairs": function_word_pairs,
-        "spanish_residue": spanish_residue,
-        "checked_body_blocks": len(body_blocks),
-        "checked_text_blocks": len(blocks),
-        "checked_by_role": by_role,
-        "text_roles": sorted(TEXT_ROLES),
-    }
+    return audit_text(data, meta)
 
 
 def cmd_qa(args: argparse.Namespace) -> int:
-    """Run the three deterministic reviews used before delivery."""
+    """Run the three deterministic reviews used before delivery.
+
+    默认严格：无 PDF 即失败。仅 ``--draft`` 允许跳过 PDF（不得称正式交付）。
+    """
+    strict = not getattr(args, "draft", False)
     _require_figure_audit(args.figures)
     data = load_aligned(args.aligned)
     meta = _meta(args)
     report = _report(data, args.figures, meta)
+    report["strict"] = strict
     structure_problems = []
     if report["untranslated_content_blocks"]:
         structure_problems.append(f"{report['untranslated_content_blocks']} content blocks have no translation")
@@ -885,6 +749,26 @@ def cmd_qa(args: argparse.Namespace) -> int:
     if report["empty_appendix_entries"]:
         structure_problems.append(
             f"{len(report['empty_appendix_entries'])} synonym-list entries have no text"
+        )
+
+    # 检索表：对齐数据静态审计（不需 PDF；串行/丢目标在排版前拦住）
+    from .keyaudit import audit_key_blocks
+
+    key_audit = audit_key_blocks(data)
+    report["key_audit"] = {
+        "ok": key_audit["ok"],
+        "format_ok": key_audit["format_ok"],
+        "key_blocks": key_audit["key_blocks"],
+        "couplet_blocks": key_audit.get("couplet_blocks"),
+        "by_reason": key_audit["by_reason"],
+        "defect_count": len(key_audit["defects"]),
+        "defects": key_audit["defects"][:200],  # 报告截断，全量见 keys-check / audit
+        "strict": key_audit.get("strict", True),
+    }
+    if key_audit["defects"]:
+        structure_problems.append(
+            f"{len(key_audit['defects'])} identification-key format defects "
+            f"({', '.join(f'{k}={v}' for k, v in sorted(key_audit['by_reason'].items()))})"
         )
 
     layout_problems = []
@@ -925,51 +809,32 @@ def cmd_qa(args: argparse.Namespace) -> int:
                     f"across lines")
             if report["fallback_fonts"]:
                 layout_problems.append(f"fallback fonts: {report['fallback_fonts']}")
+            # 严格模式：极端词距也拦（原先只记 audit 不失败）
+            if strict:
+                wide = [
+                    x for x in (report.get("body_spacing_tail") or [])
+                    if (x.get("gap_pt") or x.get("width") or 0) >= 12
+                    # 误挂成正文的检索表偶行：句末是跳转号，词距被拉开
+                    and not re.search(
+                        r"\b([1-9]|[1-9]\d)\s*$", (x.get("line") or "").rstrip()
+                    )
+                ]
+                if wide:
+                    layout_problems.append(
+                        f"{len(wide)} body word gaps ≥ 12 pt (strict)"
+                    )
         except Exception as exc:  # pragma: no cover - environment specific
             layout_problems.append(f"cannot read PDF: {exc}")
-    else:
-        layout_problems.append("no PDF supplied; layout review skipped")
+    elif strict:
+        layout_problems.append(
+            "no PDF supplied; strict QA requires --pdf (use --draft to skip)"
+        )
+    # --draft 且无 PDF：不记 layout 失败，只做结构+文字（不得称正式交付）
+
+    from .textaudit import text_problem_lines
 
     text = _text_qa(data, meta)
-    text_problems = []
-    if text["duplicate_paragraphs"]:
-        text_problems.append(f"{len(text['duplicate_paragraphs'])} paragraphs are repeated on the same page")
-    if text["role_suspects"]:
-        text_problems.append(
-            f"{len(text['role_suspects'])} citation/entry blocks contain descriptive prose"
-        )
-    if text["key_text_in_body"]:
-        text_problems.append(
-            f"{len(text['key_text_in_body'])} body blocks contain key text or leader dots"
-        )
-    if text["key_text_outside_key"]:
-        text_problems.append(
-            f"{len(text['key_text_outside_key'])} non-key blocks contain key text"
-        )
-    if text["citation_year_missing"]:
-        text_problems.append(
-            f"{len(text['citation_year_missing'])} citations lose the source year"
-        )
-    if text["entry_year_missing"]:
-        text_problems.append(
-            f"{len(text['entry_year_missing'])} synonym-list entries lose a source year"
-        )
-    if text["heading_name_missing"]:
-        text_problems.append(
-            f"{len(text['heading_name_missing'])} headings lose the source taxon name"
-        )
-    if text["body_leading_punctuation"]:
-        text_problems.append(
-            f"{len(text['body_leading_punctuation'])} body blocks start with a stray punctuation mark"
-        )
-    if text["function_word_pairs"]:
-        text_problems.append(
-            f"{len(text['function_word_pairs'])} blocks join a page break with a doubled or mispaired function word"
-        )
-    if text["spanish_residue"]:
-        text_problems.append(
-            f"{len(text['spanish_residue'])} blocks keep untranslated Spanish status text"
-        )
+    text_problems = text_problem_lines(text)
     report["three_reviews"] = {
         "review1_structure": {"ok": not structure_problems, "problems": structure_problems},
         "review2_layout": {"ok": not layout_problems, "problems": layout_problems},
@@ -982,6 +847,8 @@ def cmd_qa(args: argparse.Namespace) -> int:
     print(json.dumps({"ok": report["ok"], "stage1": len(structure_problems),
                       "stage2": len(layout_problems),
                       "stage3": len(text_problems),
+                      "coverage": (text.get("coverage") or {}).get("ok"),
+                      "by_role": text.get("checked_by_role"),
                       "duplicates": len(text["duplicate_paragraphs"]),
                       "role_suspects": len(text["role_suspects"]),
                       "key_outside": len(text["key_text_outside_key"]),
@@ -992,6 +859,9 @@ def cmd_qa(args: argparse.Namespace) -> int:
                       "function_pairs": len(text["function_word_pairs"]),
                       "spanish_residue": len(text["spanish_residue"]),
                       "short": len(text["short_translations"]),
+                      "oversized": len(text.get("oversized_translations") or []),
+                      "nbsp": len(text.get("bad_nbsp") or []),
+                      "orphan_hyphen": len(text.get("orphan_hyphen") or []),
                       "truncated": len(text["truncated_endings"])},
                      ensure_ascii=False))
     return 0 if report["ok"] else 1
@@ -1035,9 +905,12 @@ def _coverage_problems(
 
 def cmd_check(args: argparse.Namespace) -> int:
     problems: list[str] = []
+    # check 默认可只做结构；正式交付用 --strict（要 PDF + 检索表格式）
+    strict = bool(getattr(args, "strict", False))
     _require_figure_audit(args.figures)
     data = load_aligned(args.aligned)
     report = _report(data, args.figures, _meta(args))
+    report["strict"] = strict
     if report["untranslated_content_blocks"]:
         problems.append(f"{report['untranslated_content_blocks']} content blocks have no translation")
     if report["missing_crops"]:
@@ -1090,8 +963,30 @@ def cmd_check(args: argparse.Namespace) -> int:
                 problems.append(
                     f"{len(layout['caption_word_breaks'])} captions break a word "
                     f"across lines")
+            if layout.get("overflow_words"):
+                problems.append(
+                    f"{len(layout['overflow_words'])} words sit outside the text area")
+            if report.get("fallback_fonts"):
+                problems.append(f"fallback fonts: {report['fallback_fonts']}")
         except Exception as exc:  # pragma: no cover - environment specific
             problems.append(f"cannot read PDF: {exc}")
+    elif strict:
+        problems.append("no PDF supplied; --strict check requires --pdf")
+    if strict:
+        from .keyaudit import audit_key_blocks
+
+        key_audit = audit_key_blocks(data, strict=True)
+        report["key_audit"] = {
+            "ok": key_audit["ok"],
+            "format_ok": key_audit["format_ok"],
+            "defect_count": len(key_audit["defects"]),
+            "by_reason": key_audit["by_reason"],
+        }
+        if key_audit["defects"]:
+            problems.append(
+                f"{len(key_audit['defects'])} identification-key format defects "
+                f"({key_audit['by_reason']})"
+            )
     report["problems"] = problems
     report["ok"] = not problems
     _write_json(args.out, report)
@@ -1149,6 +1044,43 @@ def cmd_patch_blocks(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract_blocks(args: argparse.Namespace) -> int:
+    """Pack (source_text, bad translation, page image/OCR) for model re-translation."""
+    from .extract_blocks import extract_blocks
+
+    data = load_aligned(args.aligned)
+    ids: list[str] = []
+    if args.block_ids:
+        ids.extend(x.strip() for x in args.block_ids.split(",") if x.strip())
+    if args.blocks_file:
+        raw = json.loads(args.blocks_file.read_text(encoding="utf-8"))
+        if isinstance(raw, dict) and "block_ids" in raw:
+            ids.extend(str(x) for x in raw["block_ids"])
+        elif isinstance(raw, list):
+            ids.extend(str(x) for x in raw)
+    # de-dupe preserve order
+    seen: set[str] = set()
+    block_ids = []
+    for bid in ids:
+        if bid not in seen:
+            seen.add(bid)
+            block_ids.append(bid)
+    if not block_ids:
+        print(json.dumps({"ok": False, "error": "no block_ids"}, ensure_ascii=False))
+        return 2
+    report = extract_blocks(
+        data,
+        block_ids,
+        doc_key=args.doc_key,
+        pdf=args.pdf,
+        out_dir=args.out_dir,
+        render_if_missing=not args.no_render,
+        dpi=args.dpi,
+    )
+    print(json.dumps(report, ensure_ascii=False))
+    return 0 if not report.get("missing") else 1
+
+
 def cmd_repair(args: argparse.Namespace) -> int:
     data = load_aligned(args.aligned)
     patch = json.loads(args.patch.read_text(encoding="utf-8"))
@@ -1179,7 +1111,7 @@ def _key_breaks_from_lines(lines: list[dict],
     from .builder import key_signature
 
     key_blocks = {line["block"] for line in lines
-                  if re.match(r"^(?:•|\d{1,2}\.)", line["text"])}
+                  if re.match(r"^(?:•|—|\d{1,3}\.)", line["text"])}
     keyish = [
         line for line in lines
         if line["block"] in key_blocks and (
@@ -1201,7 +1133,7 @@ def _key_breaks_from_lines(lines: list[dict],
         if block not in key_blocks:
             continue
         text = line["text"]
-        if re.match(r"^(?:•|\d{1,2}\.)", text):
+        if re.match(r"^(?:•|—|\d{1,3}\.)", text):
             pending[block] = text
             wrapped.pop(block, None)
         elif block in pending:
@@ -1274,24 +1206,305 @@ def cmd_key_report(args: argparse.Namespace) -> int:
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
-    """Refuse delivery unless every deterministic review is clean."""
+    """Refuse delivery unless every deterministic review is clean.
+
+    正式交付：检索表格式（key_audit / keys-check）零缺陷；PDF key-report
+    零 breaks/defects；qa+check 均为 ok；阶元斜体审计（taxostyle）无
+    major/critical。任一格式错误 → 退出码 1。
+    """
     problems: list[str] = []
+    qa_payload: dict[str, Any] = {}
     for label, path in (("qa", args.qa), ("check", args.check)):
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if label == "qa":
+            qa_payload = payload
         if not payload.get("ok"):
             detail = payload.get("problems", [])
             problems.append(f"{label} not ok: {detail}")
+    # 即便旧版 qa.json 漏设 ok，gate 也要硬拦检索表与文字深检字段
+    key_audit = qa_payload.get("key_audit") or {}
+    if key_audit.get("defect_count") or (
+        key_audit.get("ok") is False
+    ) or (
+        key_audit.get("format_ok") is False
+    ):
+        n = key_audit.get("defect_count") or len(key_audit.get("defects") or [])
+        problems.append(f"qa key_audit: {n} identification-key format defects")
+    if getattr(args, "key_audit", None):
+        ka = json.loads(Path(args.key_audit).read_text(encoding="utf-8"))
+        if not ka.get("ok", True) or not ka.get("format_ok", True) or ka.get("defects"):
+            problems.append(
+                f"key-audit format defects: "
+                f"{len(ka.get('defects') or [])} ({ka.get('by_reason')})"
+            )
+    text_review = (qa_payload.get("three_reviews") or {}).get("review3_text") or {}
+    from .textaudit import text_problem_lines
+
+    for line in text_problem_lines(text_review):
+        problems.append(f"qa {line}")
     key = json.loads(args.key_report.read_text(encoding="utf-8"))
     if key.get("breaks"):
         problems.append(f"{len(key['breaks'])} key couplets still need a forced break")
     if key.get("defects"):
         problems.append(f"{len(key['defects'])} key leader defects remain")
-    report = {"ok": not problems, "problems": problems,
-              "files": {"qa": str(args.qa), "check": str(args.check),
-                        "key_report": str(args.key_report)}}
+    italic_path = getattr(args, "italic_audit", None)
+    if italic_path:
+        italic = json.loads(Path(italic_path).read_text(encoding="utf-8"))
+        if not italic.get("ok", True) or italic.get("major_or_critical"):
+            problems.append(
+                f"taxostyle italic defects: {italic.get('major_or_critical', 0)} "
+                f"({italic.get('by_kind')})"
+            )
+    # 去重：qa not ok 已含同类问题时保留明细即可
+    unique: list[str] = []
+    seen: set[str] = set()
+    for p in problems:
+        if p not in seen:
+            seen.add(p)
+            unique.append(p)
+    report = {
+        "ok": not unique,
+        "problems": unique,
+        "key_format_ok": not any("key" in p.lower() for p in unique),
+        "files": {
+            "qa": str(args.qa),
+            "check": str(args.check),
+            "key_report": str(args.key_report),
+            "key_audit": str(args.key_audit) if getattr(args, "key_audit", None) else None,
+            "italic_audit": str(italic_path) if italic_path else None,
+        },
+    }
     if args.out:
         _write_json(args.out, report)
     print(json.dumps(report, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
+def cmd_taxostyle(args: argparse.Namespace) -> int:
+    """阶元体例审计：aligned 标记 + 可选成品 DOCX。"""
+    from .taxostyle import audit_taxostyle, resolve_docx
+
+    docx = resolve_docx(getattr(args, "pdf", None), getattr(args, "docx", None))
+    report = audit_taxostyle(aligned=args.aligned, docx=docx)
+    if args.out:
+        _write_json(args.out, report)
+    print(json.dumps({
+        "ok": report["ok"],
+        "major_or_critical": report["major_or_critical"],
+        "by_kind": report["by_kind"],
+        "parts": [
+            {"source": p.get("source"), "major_or_critical": p.get("major_or_critical"),
+             "by_kind": p.get("by_kind")}
+            for p in report.get("parts") or []
+        ],
+    }, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
+def cmd_keys_check(args: argparse.Namespace) -> int:
+    """Strict identification-key format check (aligned JSON only)."""
+    from .keyaudit import audit_key_blocks
+
+    data = load_aligned(args.aligned)
+    report = audit_key_blocks(data, strict=not getattr(args, "lenient", False))
+    from .keyblocks import audit_couplets
+
+    couplets = audit_couplets(data)
+    if couplets["couplets"]:
+        report["ok"] = bool(report["ok"] and couplets["ok"])
+        report["couplet_audit"] = {"couplets": couplets["couplets"],
+                                   "by_reason": couplets["by_reason"],
+                                   "defects": couplets["defects"][:200]}
+    if args.out:
+        _write_json(args.out, report)
+    print(json.dumps({
+        "ok": report["ok"],
+        "format_ok": report["format_ok"],
+        "graph_ok": report.get("graph_ok", True),
+        "key_blocks": report["key_blocks"],
+        "couplet_blocks": report["couplet_blocks"],
+        "couplet_audit": (report.get("couplet_audit") or {}).get("by_reason"),
+        "defects": len(report["defects"]),
+        "by_reason": report["by_reason"],
+        "key_graph": {
+            "nodes": (report.get("key_graph") or {}).get("nodes"),
+            "runs": (report.get("key_graph") or {}).get("runs"),
+            "by_reason": (report.get("key_graph") or {}).get("by_reason"),
+        },
+    }, ensure_ascii=False))
+    return 0 if report["ok"] else 1
+
+
+def _load_names(path: Path | None) -> dict[str, str] | None:
+    """日文类群名 → 中文阶元名（TSV：日名、拉丁名、中文名…，取第 1 与第 3 列）。"""
+    if not path or not path.exists():
+        return None
+    out: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        cols = line.split("\t")
+        if len(cols) >= 3 and cols[0] and cols[2] and not line.startswith("#"):
+            out[cols[0].strip()] = cols[2].strip()
+    return out
+
+
+def cmd_apply_keys(args: argparse.Namespace) -> int:
+    """Replace identification-key pages of an aligned package with rebuilt couplet blocks.
+
+    keys.json comes from ``docstore keys extract``; the translation sidecar from
+    ``scripts/keys_translate.py collect``.  The command is deterministic and
+    idempotent: it overwrites the pages named in keys.json's layout and nothing else.
+    """
+    from . import keyblocks
+
+    data = load_aligned(args.aligned)
+    keys = json.loads(args.keys.read_text(encoding="utf-8"))
+    tr = (json.loads(args.tr.read_text(encoding="utf-8"))
+          if args.tr and args.tr.exists() else {"items": {}})
+    genera = keyblocks.known_genera(keys, data)
+    if args.genera:
+        genera |= {ln.strip() for ln in args.genera.read_text(encoding="utf-8").splitlines() if ln.strip()}
+    report = keyblocks.apply_keys(data, keys, tr, args.lang, genera=genera,
+                                  names=_load_names(args.names))
+    audit = keyblocks.audit_couplets(data)
+    report["audit"] = {"ok": audit["ok"], "by_reason": audit["by_reason"]}
+    if not args.dry:
+        _write_json(args.aligned, data)
+    if args.out:
+        _write_json(args.out, {**report, "defects": audit["defects"]})
+    print(json.dumps({k: (v if not isinstance(v, list) else len(v)) for k, v in report.items()},
+                     ensure_ascii=False))
+    return 0 if audit["ok"] or args.allow_defects else 1
+
+
+def cmd_repair_keys(args: argparse.Namespace) -> int:
+    """Deterministic key-role / marker / leader repairs on aligned JSON."""
+    from .keyaudit import audit_key_blocks
+    from .keyrepair import repair_key_blocks
+
+    data = load_aligned(args.aligned)
+    before = audit_key_blocks(data, strict=True)
+    report = repair_key_blocks(data)
+    for page in data.get("pages") or []:
+        page["blocks"] = [
+            b for b in (page.get("blocks") or []) if not b.get("_drop")
+        ]
+    after = audit_key_blocks(data, strict=True)
+    out = args.out or args.aligned
+    _write_json(out, data)
+    payload = {
+        "out": str(out),
+        "changed": report["changed"],
+        "by_action": report["by_action"],
+        "defects_before": len(before["defects"]),
+        "defects_after": len(after["defects"]),
+        "by_reason_after": after["by_reason"],
+        "format_ok": after["format_ok"],
+    }
+    if args.report:
+        _write_json(args.report, {**payload, "changes": report["changes"],
+                                  "defects": after["defects"][:200]})
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0 if after["ok"] else 1
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    """一键严格验收：keys-check + qa + check + key-report + taxostyle + gate.
+
+    全部通过才退出 0。正式交付唯一推荐入口。
+    """
+    from .taxostyle import resolve_docx
+
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    aligned, figures, pdf, meta = args.aligned, args.figures, args.pdf, args.metadata
+    keys_path = out_dir / "keys_check.json"
+    qa_path = out_dir / "qa.json"
+    check_path = out_dir / "check.json"
+    key_report_path = out_dir / "key_report.json"
+    italic_path = out_dir / "italic_audit.json"
+    gate_path = out_dir / "gate.json"
+    docx = resolve_docx(pdf, getattr(args, "docx", None))
+
+    steps: list[tuple[str, int]] = []
+    rc = cmd_keys_check(argparse.Namespace(
+        aligned=aligned, out=keys_path, lenient=False,
+    ))
+    steps.append(("keys-check", rc))
+
+    rc = cmd_qa(argparse.Namespace(
+        aligned=aligned, figures=figures, pdf=pdf, metadata=meta,
+        out=qa_path, title=getattr(args, "title", None), draft=False,
+    ))
+    steps.append(("qa", rc))
+
+    rc = cmd_check(argparse.Namespace(
+        aligned=aligned, figures=figures, pdf=pdf, metadata=meta,
+        source=getattr(args, "source", None), out=check_path,
+        title=getattr(args, "title", None), strict=True, draft=False,
+    ))
+    steps.append(("check", rc))
+
+    rc = cmd_key_report(argparse.Namespace(pdf=pdf, out=key_report_path))
+    steps.append(("key-report", rc))
+
+    rc = cmd_taxostyle(argparse.Namespace(
+        aligned=aligned, docx=docx, pdf=pdf, out=italic_path,
+    ))
+    steps.append(("taxostyle", rc))
+
+    rc = cmd_gate(argparse.Namespace(
+        qa=qa_path, check=check_path, key_report=key_report_path,
+        key_audit=keys_path, italic_audit=italic_path, out=gate_path,
+    ))
+    steps.append(("gate", rc))
+
+    ok = all(code == 0 for _, code in steps)
+    summary = {
+        "ok": ok,
+        "strict": True,
+        "steps": [{"name": n, "ok": c == 0} for n, c in steps],
+        "out_dir": str(out_dir),
+        "docx": str(docx) if docx else None,
+    }
+    _write_json(out_dir / "verify.json", summary)
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0 if ok else 1
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Static audit: keys + deep text on aligned JSON (no PDF required)."""
+    from .keyaudit import audit_key_blocks
+    from .textaudit import text_problem_lines
+
+    data = load_aligned(args.aligned)
+    meta = _meta(args)
+    key_audit = audit_key_blocks(data)
+    text = _text_qa(data, meta)
+    problems: list[str] = []
+    if key_audit["defects"]:
+        problems.append(
+            f"{len(key_audit['defects'])} key defects "
+            f"({', '.join(f'{k}={v}' for k, v in sorted(key_audit['by_reason'].items()))})"
+        )
+    problems.extend(text_problem_lines(text))
+    report = {
+        "ok": not problems,
+        "problems": problems,
+        "key_audit": key_audit,
+        "text": text,
+    }
+    _write_json(args.out, report)
+    print(json.dumps({
+        "ok": report["ok"],
+        "problems": len(problems),
+        "key_defects": len(key_audit["defects"]),
+        "coverage": (text.get("coverage") or {}).get("ok"),
+        "by_role": text.get("checked_by_role"),
+        "short": len(text.get("short_translations") or []),
+        "oversized": len(text.get("oversized_translations") or []),
+        "nbsp": len(text.get("bad_nbsp") or []),
+        "key_outside": len(text.get("key_text_outside_key") or []),
+    }, ensure_ascii=False))
     return 0 if report["ok"] else 1
 
 
@@ -1317,6 +1530,29 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--title", help="fallback title when --metadata is omitted")
     b.set_defaults(func=cmd_build)
 
+    pv = sub.add_parser(
+        "preview",
+        help="DRAFT HTML/Typst page slice (not delivery; browser or typst PDF)",
+    )
+    pv.add_argument("--aligned", type=Path, required=True)
+    pv.add_argument(
+        "--figures",
+        type=Path,
+        required=True,
+        help="figure directory (real crops via source_figure_audit.json)",
+    )
+    pv.add_argument("--pages", help="source page window N or N-M")
+    pv.add_argument("--chapter", help="chapter key filter (optional with --pages)")
+    pv.add_argument(
+        "--engine",
+        choices=["html", "typst"],
+        default="html",
+        help="html (default, always usable) or typst (needs typst binary)",
+    )
+    pv.add_argument("--out", type=Path, required=True, help="work/temp output directory")
+    pv.add_argument("--title", help="preview document title")
+    pv.set_defaults(func=cmd_preview)
+
     m = sub.add_parser("map-pages", help="map source printed pages to output PDF pages")
     m.add_argument("--pdf", type=Path, required=True)
     m.add_argument("--aligned", type=Path, required=True)
@@ -1330,6 +1566,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--figures", type=Path, required=True)
     c.add_argument("--pdf", type=Path)
     c.add_argument("--metadata", type=Path)
+    c.add_argument(
+        "--strict",
+        action="store_true",
+        help="formal delivery: require --pdf and fail on key format defects",
+    )
     c.add_argument(
         "--source",
         type=Path,
@@ -1346,7 +1587,30 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--metadata", type=Path)
     q.add_argument("--out", type=Path)
     q.add_argument("--title")
+    q.add_argument(
+        "--draft",
+        action="store_true",
+        help="allow missing PDF (not for formal delivery)",
+    )
     q.set_defaults(func=cmd_qa)
+
+    v = sub.add_parser(
+        "verify",
+        help="STRICT delivery verify: keys-check + qa + check + key-report + taxostyle + gate",
+    )
+    v.add_argument("--aligned", type=Path, required=True)
+    v.add_argument("--figures", type=Path, required=True)
+    v.add_argument("--pdf", type=Path, required=True)
+    v.add_argument(
+        "--docx",
+        type=Path,
+        help="交付 DOCX；缺省尝试与 PDF 同名的 .docx，供 italic_check 硬拦科名斜体",
+    )
+    v.add_argument("--metadata", type=Path)
+    v.add_argument("--source", type=Path)
+    v.add_argument("--out-dir", type=Path, required=True)
+    v.add_argument("--title")
+    v.set_defaults(func=cmd_verify)
 
     n = sub.add_parser("normalize", help="apply deterministic block repairs to aligned JSON")
     n.add_argument("--aligned", type=Path, required=True)
@@ -1384,6 +1648,34 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--report", type=Path)
     pb.set_defaults(func=cmd_patch_blocks)
 
+    eb = sub.add_parser(
+        "extract-blocks",
+        help="pack block + source page image/OCR for model repair (then patch-blocks)",
+    )
+    eb.add_argument("--aligned", type=Path, required=True)
+    eb.add_argument("--out-dir", type=Path, required=True)
+    eb.add_argument(
+        "--block-ids",
+        help="comma-separated block_id list",
+    )
+    eb.add_argument(
+        "--blocks-file",
+        type=Path,
+        help='JSON list of ids, or {"block_ids": [...]}',
+    )
+    eb.add_argument(
+        "--doc-key",
+        help="docstore key (e.g. Imajima2001) for PDF path + page images/OCR",
+    )
+    eb.add_argument("--pdf", type=Path, help="override source PDF path")
+    eb.add_argument(
+        "--no-render",
+        action="store_true",
+        help="do not render PDF page when docstore image missing",
+    )
+    eb.add_argument("--dpi", type=int, default=150)
+    eb.set_defaults(func=cmd_extract_blocks)
+
     r = sub.add_parser("repair", help="replace selected pages from a declarative patch")
     r.add_argument("--aligned", type=Path, required=True)
     r.add_argument("--patch", type=Path, required=True)
@@ -1398,13 +1690,112 @@ def build_parser() -> argparse.ArgumentParser:
     kr.add_argument("--out", type=Path, required=True)
     kr.set_defaults(func=cmd_key_report)
 
-    g = sub.add_parser("gate", help="delivery gate: qa + check + key report must all be clean")
+    g = sub.add_parser(
+        "gate",
+        help="delivery gate: qa + check + key-report + taxostyle must be clean",
+    )
     g.add_argument("--qa", type=Path, required=True)
     g.add_argument("--check", type=Path, required=True)
     g.add_argument("--key-report", type=Path, required=True)
+    g.add_argument(
+        "--key-audit",
+        type=Path,
+        help="keys-check / audit JSON; any format defect blocks delivery",
+    )
+    g.add_argument(
+        "--italic-audit",
+        type=Path,
+        help="taxostyle / italic_audit.json; major/critical blocks delivery (#33)",
+    )
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
+
+    ts = sub.add_parser(
+        "taxostyle",
+        help="阶元体例审计：aligned Markdown 斜体 + 可选 DOCX italic_check",
+    )
+    ts.add_argument("--aligned", type=Path, required=True)
+    ts.add_argument("--docx", type=Path, help="成品 DOCX（可与 --pdf 同名自动发现）")
+    ts.add_argument("--pdf", type=Path, help="用于推断同名 .docx")
+    ts.add_argument("--out", type=Path)
+    ts.set_defaults(func=cmd_taxostyle)
+
+    kc = sub.add_parser(
+        "keys-check",
+        help="strict identification-key format check on aligned JSON (delivery blocker)",
+    )
+    kc.add_argument("--aligned", type=Path, required=True)
+    kc.add_argument("--out", type=Path)
+    kc.add_argument(
+        "--lenient",
+        action="store_true",
+        help="only flag couplets that clearly need a tab (not for release)",
+    )
+    kc.set_defaults(func=cmd_keys_check)
+
+    ak = sub.add_parser(
+        "apply-keys",
+        help="rebuild identification-key pages from docstore keys.json as couplet blocks",
+    )
+    ak.add_argument("--aligned", type=Path, required=True)
+    ak.add_argument("--keys", type=Path, required=True, help="docstore keys extract output")
+    ak.add_argument("--tr", type=Path, help="translation sidecar (keys_translate.py collect)")
+    ak.add_argument("--lang", choices=["en", "zh"], required=True)
+    ak.add_argument("--names", type=Path, help="families.tsv: ja group, Latin, zh name")
+    ak.add_argument("--genera", type=Path,
+                    help="extra genus names (one per line) for splitting OCR-fused binomials")
+    ak.add_argument("--out", type=Path, help="write report + defects here")
+    ak.add_argument("--dry", action="store_true", help="do not write aligned.json")
+    ak.add_argument("--allow-defects", action="store_true", help="exit 0 even if the audit finds defects")
+    ak.set_defaults(func=cmd_apply_keys)
+
+    rk = sub.add_parser(
+        "repair-keys",
+        help="fix key roles/markers/leaders on aligned JSON (deterministic)",
+    )
+    rk.add_argument("--aligned", type=Path, required=True)
+    rk.add_argument("--out", type=Path, help="default: rewrite --aligned")
+    rk.add_argument("--report", type=Path)
+    rk.set_defaults(func=cmd_repair_keys)
+
+    rs = sub.add_parser(
+        "restore",
+        help="OCR line boxes -> vector PDF with original page geometry (1:1 restore)",
+    )
+    rs.add_argument("--pdf", type=Path, required=True, help="source scanned PDF")
+    rs.add_argument("--pages", default="1", help="e.g. 1-50 or 1,3,5-7 (1-based)")
+    rs.add_argument("--font", type=Path, help="TTF to use (default: built-in Times)")
+    rs.add_argument("--out", type=Path, required=True, help="output PDF (never overwritten)")
+    rs.add_argument("--cache-dpi", type=int, default=200, help="PP-OCR cache dpi")
+    rs.add_argument("--report", type=Path, help="write restore report JSON")
+    rs.set_defaults(func=cmd_restore)
+
+    au = sub.add_parser(
+        "audit",
+        help="static layout audit on aligned JSON only (keys + text roles; no PDF)",
+    )
+    au.add_argument("--aligned", type=Path, required=True)
+    au.add_argument("--metadata", type=Path)
+    au.add_argument("--out", type=Path, required=True)
+    au.add_argument("--title")
+    au.set_defaults(func=cmd_audit)
     return ap
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    import fitz
+
+    from .restore import parse_pages, restore_pdf
+
+    with fitz.open(str(args.pdf)) as d:
+        pages = parse_pages(args.pages, d.page_count)
+    rep = restore_pdf(
+        args.pdf, pages, args.out,
+        font=str(args.font) if args.font else None,
+        cache_dpi=args.cache_dpi, report=args.report,
+    )
+    print(json.dumps({k: rep[k] for k in ("out", "n_pages", "font")}, ensure_ascii=False))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

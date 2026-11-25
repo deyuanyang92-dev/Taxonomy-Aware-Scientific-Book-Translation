@@ -1,5 +1,7 @@
 # 分类学排版的斜体/正体规则（英文译稿）
 
+日本志书块结构（分布 ≠ 图注字母、Fig+种名+图注）见 [`monograph_layout_ja.md`](monograph_layout_ja.md)。
+
 用户 2026-11-16 指出：译文里属名没有斜体，检索表里也没有。根因不是模型译错，而是 OCR 只给字形、不保留斜体，Google/DeepSeek 也不会替原文补排版；`transqa` 原有的学名护栏只检查“原文斜体是否保留”，原文没有斜体标记时这条检查是空的。
 
 2026-11-17 用户再指出两类斜体错误：①作者名被排成斜体（`*Rouse and Fauchald*`、`*Rouse and* Fauchald`）；②整条图注全部斜体。核对原书：图注整体是 ITC Garamond Light Italic，学名正体（Vol. 45 p. 30）；但用户按出版惯例定：**图注正体、学名斜体**，不照搬原书的全斜体图注。
@@ -44,6 +46,22 @@
 - 三名法中第三个词若不在 WoRMS 亚种表，也按“属名 + 种加词 + 同名亚种加词”斜体；其他未知第三词只斜体前两词，避免把后面的普通形容词误当亚种。
 - OCR 把标题、作者、脚注并成一行时，脚注 `*` 可能被 Markdown 当成强调；属段落结构问题（issue #16），不是本脚本造成。
 - 本机 WoRMS 缓存只覆盖 Annelida；其他类群需换对应分类库或 `--genera` 补表。
+
+## 交付闸口：`booklayout taxostyle` + `gate --italic-audit`（#33）
+
+正式验收必须过阶元体例审计，不再只跑 qa/check：
+
+```bash
+python3 -m booklayout taxostyle --aligned aligned.json --docx book.docx --out italic_audit.json
+python3 -m booklayout verify --aligned … --figures … --pdf book.pdf [--docx book.docx] --out-dir verify_out/
+```
+
+`verify` 会：
+1. 扫 aligned 译文里的 Markdown `*…*`（排版前就能发现 `*Polynoidae*`）；
+2. 若有 `--docx` 或与 PDF 同名的 `.docx`，再跑 `italic_check` 成品审计；
+3. 把 `italic_audit.json` 交给 `gate`：`major`/`critical` 非零 → `ok: false`。
+
+完整「原文 PDF span ↔ 译文 run」逐 token 比对仍见 issue #34；当前薄实现先拦体例错误（科名斜体、作者名斜体、图注全斜体等），不依赖原文是否也斜体。
 
 ## 图注与斜体审计：`scripts/italic_check.py`
 

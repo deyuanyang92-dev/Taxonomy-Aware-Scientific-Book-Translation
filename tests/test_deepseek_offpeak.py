@@ -62,3 +62,16 @@ def test_legacy_night_window(monkeypatch):
     assert not d.is_peak(t(23)) and not d.is_peak(t(7, 59)) and d.is_peak(t(19)) and d.is_peak(t(10, day=15))
     monkeypatch.setenv("YZZ_DEEPSEEK_NIGHT", "0:30-8:30")
     assert not d.is_peak(t(0, 30)) and d.is_peak(t(0, 29))
+
+
+def test_no_stale_window_text_in_live_files():
+    """现行窗口：北京时间 18:00–次日 09:00 可用（用户 2026-11-17、11-19 确认）。
+    旧窗口「00:30–08:30」「22:00–08:00」不得再出现在现行脚本、技能文档、docs（docs/research 是历史记录，不查）。
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    stale = ("00:30–08:30", "00:30-08:30", "22:00–08:00", "22:00-08:00")
+    files = [*root.glob("scripts/*.py"), *root.glob("skill/**/*.md"), *root.glob("docs/*.md")]
+    bad = [f"{f.relative_to(root)}: {s}" for f in files if f.is_file()
+           for s in stale if s in f.read_text(encoding="utf8", errors="ignore")]
+    assert not bad, bad

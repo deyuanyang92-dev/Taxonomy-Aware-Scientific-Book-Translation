@@ -91,6 +91,8 @@ def _keep(r: Any) -> bool:
     t = str(r[1]).strip()
     if re.fullmatch(r"[.．…・\s]*\d{1,3}", t):  # 检索表的「点线+跳转号」（Imajima2009 p.66 的 ...17 曾被误删）
         return True
+    if re.fullmatch(r"\d{1,3}[.．。'’\"”′″]", t):  # 检索表条目号单独成框（「2.」）：2 字、非纯数字，原规则丢号
+        return True
     good = sum(c.isalnum() for c in t)  # 汉字、假名也算 isalnum
     return (good >= 0.5 * len(t) and (len(t) > 2 or t.isdigit() or any(ord(c) > 0x2FFF for c in t))
             and not junk_line(t) and float(r[2]) >= 0.5)

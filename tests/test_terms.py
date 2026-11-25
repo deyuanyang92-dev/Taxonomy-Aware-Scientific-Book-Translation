@@ -23,6 +23,14 @@ def test_source_anchor_keeps_original_usage():
     assert out == "Body short; setae as in Fauvel's usage." and log == []
 
 
+def test_empty_source_applies_mt_variants_globally():
+    """mine_corrections 挖出的 en→en 异写（源列为空）应对整段 Google 稿生效。"""
+    lib = [Term("", "chaetae", {"bristles": "chaetae", "setae": "chaetae"})]
+    out, log = normalize("Körper lang.", "Body long with many bristles.", lib)
+    assert "chaetae" in out and "bristles" not in out.lower()
+    assert log
+
+
 def test_italics_and_translator_notes_untouched():
     src = "четинки"
     out, _ = normalize(src, "*Setae* sp. and setae [TN: printed setae]", LIB)

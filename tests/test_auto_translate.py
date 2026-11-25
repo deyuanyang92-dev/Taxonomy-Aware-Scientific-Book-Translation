@@ -85,6 +85,17 @@ def test_apply_edits_rules():
     assert "过长" in res[2] and "无此页" in res[3] and "引入" in res[4]
 
 
+def test_apply_edits_rejects_uncertain_and_no_fix_edits():
+    tgt = "<!-- PDF p.1 -->\nNo ventral cirri.\nIt is absent.\n"
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nKeine Ventralcirren.\n", tgt, [
+        {"pdf_page": 1, "old": "No ventral cirri.", "new": "No ventral cirri mentioned.",
+         "reason": "no fix needed"}])
+    assert "无需修改" in log[0]["result"]
+    _, log = at.apply_edits("<!-- PDF p.1 -->\nEs fehlt.\n", tgt, [
+        {"pdf_page": 1, "old": "It is absent.", "new": "It is absent [?].", "reason": "uncertain"}])
+    assert "不确定" in log[0]["result"]
+
+
 def test_parse_json_array_tolerates_wrapping():
     assert at.parse_json_array('Here:\n```json\n[{"pdf_page": 1, "old": "a", "new": "b"}]\n```') == [
         {"pdf_page": 1, "old": "a", "new": "b"}]

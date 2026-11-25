@@ -46,7 +46,13 @@ def _stem(w: str) -> str:
 
 
 def source_has(src: str, term: str) -> bool:
-    """原文段是否出现该源术语（容忍屈折：每个实词去掉词尾 2 字母后出现即可）。"""
+    """原文段是否出现该源术语（容忍屈折：每个实词去掉词尾 2 字母后出现即可）。
+
+    源术语为空或 ``*``：视为「机翻异写」全局规则（Google 系统性错，不依赖原文锚），
+    用于 mine_corrections 挖出的 en→en 替换（如 bristles→chaetae）。
+    """
+    if not (term or "").strip() or term.strip() == "*":
+        return True
     low = src.lower()
     words = [w for w in re.split(r'[\s/(),;.]+', term) if len(w) > 2]
     return bool(words) and all(_stem(w) in low for w in words)

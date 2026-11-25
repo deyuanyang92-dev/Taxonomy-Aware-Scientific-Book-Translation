@@ -120,6 +120,18 @@ def test_docx_caption_roman_with_italic_name_passes(tmp_path) -> None:
     assert [f for f in ic.check_docx(path) if f.level in ("critical", "major")] == []
 
 
+def test_docx_fig_number_roman_species_italic_not_allitalic(tmp_path) -> None:
+    """图N 正体 + 学名斜体：不得报 caption.allitalic。"""
+    doc = Document()
+    cap = doc.add_paragraph()
+    cap.add_run("图3 ")
+    cap.add_run("Australaugeneria michaelseni").italic = True
+    path = tmp_path / "fig.docx"
+    doc.save(path)
+    kinds = [f.kind for f in ic.check_docx(path) if f.level in ("critical", "major")]
+    assert "caption.allitalic" not in kinds
+
+
 def test_fix_docx_makes_caption_roman_and_names_italic(tmp_path) -> None:
     doc = Document()
     doc.add_paragraph("Nereis pelagica Smith, 1900.")
@@ -132,3 +144,10 @@ def test_fix_docx_makes_caption_roman_and_names_italic(tmp_path) -> None:
     runs = [(r.text, bool(r.italic)) for r in Document(out).paragraphs[1].runs if r.text.strip()]
     assert ("Nereis pelagica", True) in runs
     assert any("Atlantic" in t and not it for t, it in runs)
+
+
+def test_genus_prefix_of_family_name_is_not_a_name() -> None:
+    """Spio 是属名，Spionidae 是科名；属名匹配不得咬进科名（2009 en 图 5 误报）。"""
+    lex = tf.Lexicon(frozenset({"Spio"}), frozenset(), frozenset(), frozenset())
+    assert ic._names_in("Fig. 5 Body parts of Spionidae", lex) == []
+    assert ic._names_in("Fig. 5 Spio filicornis", lex) == ["Spio filicornis"]

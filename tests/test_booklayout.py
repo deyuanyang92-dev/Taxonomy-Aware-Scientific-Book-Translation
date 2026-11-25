@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from pathlib import Path
 
 import fitz
@@ -17,8 +18,10 @@ from booklayout.builder import (
     index_fixes,
     build,
     build_genus_set,
+    good_key_target,
     index_entry_key,
     caption,
+    is_wa_name_line,
     key_para,
     key_signature,
     make_page_map,
@@ -27,7 +30,10 @@ from booklayout.builder import (
     para,
     remap_refs,
     setup,
+    split_key_couplet,
 )
+from booklayout.keyaudit import audit_key_blocks
+from booklayout.keyrepair import looks_like_species_desc_key, repair_key_blocks
 from booklayout.cli import (
     _key_breaks_from_lines,
     _key_layout_problems,
@@ -39,6 +45,7 @@ from booklayout.cli import (
     main,
 )
 from booklayout.keyalign import align_page, key_groups, page_text, source_anchor
+from booklayout.textaudit import PRINT_ROLES, audit_text, text_problem_lines
 from booklayout.normalize import (
     apply_block_edits,
     apply_page_patch,
@@ -222,6 +229,39 @@ def test_make_page_map_ignores_chapter_titles_in_front_matter(tmp_path: Path) ->
     doc.new_page().insert_text((72, 72), "Introduction")
     doc.new_page().insert_text((72, 72), "FAMILY TESTIDAE")
     doc.new_page().insert_text((72, 200), "Second chapter body text long enough to match a page.")
+    doc.save(pdf)
+    page_map = make_page_map(pdf, data, meta)
+    assert page_map["1"] == 5
+    assert page_map["2"] == 6
+
+
+def test_make_page_map_matches_cleaned_cjk_latin_chapter_heading(tmp_path: Path) -> None:
+    """2001 en：aligned 的章名是脏的（「…Subfamily Harmothoinae Horst」），PDF 标题行里中文与拉丁
+    之间的空格被抽文本时吞掉。目录页码必须按清洗后的标题、忽略 CJK 旁空格去匹配，
+    不能退回正文片段（会差一页，4 个亚科目录页码落空）。"""
+    shared = "Shared sentence that is long enough to appear on two neighbouring pages."
+    data = {"pages": [
+        {"page": 1, "chapter": "Subfamily Previnae Aaa, 1900", "kind": "chapter", "blocks": [
+            {"role": "heading", "level": 1, "translation": "Subfamily Previnae Aaa, 1900"},
+            {"role": "body", "translation": shared},
+        ]},
+        {"page": 2, "chapter": "哈鳞虫亚科 Harmothoinae Subfamily Harmothoinae Horst, 1917", "kind": "chapter",
+         "blocks": [
+             {"role": "heading", "level": 1, "translation": "哈鳞虫亚科 Harmothoinae Horst, 1917"},
+             {"role": "body", "translation": shared},
+         ]},
+    ]}
+    meta = BookMeta(title="T", body_start_page=1, folio_offset=0, include_front_matter=False)
+    pdf = tmp_path / "book.pdf"
+    doc = fitz.open()
+    for _ in range(4):
+        doc.new_page().insert_text((72, 72), "Front matter filler")
+    old = doc.new_page()
+    old.insert_text((72, 72), "SUBFAMILY PREVINAE AAA, 1900")
+    old.insert_text((72, 200), shared)
+    new = doc.new_page()
+    new.insert_text((72, 72), "哈鳞虫亚科HARMOTHOINAE HORST, 1917", fontname="china-s")
+    new.insert_text((72, 200), shared)
     doc.save(pdf)
     page_map = make_page_map(pdf, data, meta)
     assert page_map["1"] == 5
@@ -670,6 +710,216 @@ def test_translator_preface_chinese_name_gets_eastasia_hint(tmp_path: Path) -> N
     assert hints and all(hint == "eastAsia" for hint in hints)
 
 
+def test_scrub_imajima_dup_title_and_ocr_prefix() -> None:
+    """图4 种名行重复双名+沙蚕目；C00000 a：残片；空日名；顿号残段拼接。"""
+    from booklayout.normalize import normalize_aligned
+
+    data = {
+        "pages": [
+            {
+                "page": 16,
+                "chapter": "Acholoinae",
+                "kind": "chapter",
+                "blocks": [
+                    {
+                        "block_id": "t",
+                        "role": "heading",
+                        "level": 3,
+                        "translation": (
+                            "图4 *Australaugeneria rutilans* (沙蚕目, 1878) "
+                            "*Australaugeneria rutilans* (沙蚕目 Grube, 1878) "
+                            "*Australaugeneria rutilans* (沙蚕"
+                        ),
+                    },
+                    {
+                        "block_id": "t43",
+                        "role": "heading",
+                        "level": 3,
+                        "translation": (
+                            "图43 日名「」 饭冢脆鳞虫 *Lepidasthenia izukai* "
+                            "Imajima & Hartman, 1964"
+                        ),
+                    },
+                    {
+                        "block_id": "junk",
+                        "role": "body",
+                        "translation": "C00000 a：体前部背面，b：背鳞",
+                    },
+                    {
+                        "block_id": "leg",
+                        "role": "legend",
+                        "translation": (
+                            "a：体前部背面，b：背刚毛。"
+                            " *Australaugeneria rutilans* (沙蚕目 Grube, 1878)"
+                        ),
+                    },
+                    {
+                        "block_id": "b1",
+                        "role": "body",
+                        "translation": "体长7mm。背鳞15对，位于第2、4、5、7……23",
+                    },
+                    {
+                        "block_id": "b2",
+                        "role": "body",
+                        "translation": "、26、29、32体节；背鳞薄而透明。",
+                    },
+                ],
+            }
+        ]
+    }
+    normalize_aligned(data)
+    blocks = [b for b in data["pages"][0]["blocks"] if not b.get("_drop")]
+    title = next(b for b in blocks if (b.get("translation") or "").startswith("图4"))
+    assert "沙蚕目" not in (title.get("translation") or "")
+    assert (title.get("translation") or "").count("Australaugeneria") == 1
+    assert "rutilans" in (title.get("translation") or "")
+    t43 = next(b for b in blocks if (b.get("translation") or "").startswith("图43"))
+    assert "日名「」" not in (t43.get("translation") or "")
+    assert "饭冢脆鳞虫" in (t43.get("translation") or "")
+    junk = next(
+        b
+        for b in blocks
+        if "体前部背面" in (b.get("translation") or "") and b.get("role") == "legend"
+    )
+    assert not (junk.get("translation") or "").startswith("C00000")
+    leg = next(
+        b
+        for b in blocks
+        if b.get("block_id") == "leg"
+        or (b.get("role") == "legend" and "背刚毛" in (b.get("translation") or ""))
+    )
+    assert "Australaugeneria" not in (leg.get("translation") or "")
+    joined = next(b for b in blocks if "体长7mm" in (b.get("translation") or ""))
+    assert "、26、29、32体节" in (joined.get("translation") or "")
+    assert not any(
+        (b.get("translation") or "").startswith("、26") for b in blocks
+    )
+
+
+def test_imajima_species_order_genus_title_waname_then_figure() -> None:
+    """硬序：属→图N→日名→文献→描述→分布→图版→图注（Paradyte）。"""
+    from booklayout.normalize import normalize_aligned
+
+    data = {
+        "pages": [
+            {
+                "page": 21,
+                "chapter": "Arctonoinae",
+                "kind": "chapter",
+                "blocks": [
+                    {
+                        "block_id": "g",
+                        "role": "heading",
+                        "level": 2,
+                        "translation": "*Paradyte* Pettibone, 1969",
+                    },
+                    {
+                        "block_id": "dup",
+                        "role": "body",
+                        "translation": "*Paradyte levis* (Marenzeller, 1902)",
+                    },
+                    {
+                        "block_id": "cap",
+                        "role": "caption",
+                        "translation": "图7 *Paradyte levis* (Marenzeller, 1902)",
+                    },
+                    {
+                        "block_id": "leg",
+                        "role": "legend",
+                        "translation": "a：体前部背面，b：背鳞，c：第14疣足后面",
+                    },
+                    {
+                        "block_id": "wa",
+                        "role": "heading",
+                        "translation": '日名「ウミトサカウロコムシ」',
+                    },
+                    {
+                        "block_id": "ref",
+                        "role": "ref",
+                        "translation": "Paradyte levis : Imajima, 1997c, pp. 6-9.",
+                    },
+                    {
+                        "block_id": "desc",
+                        "role": "body",
+                        "translation": "体长25mm，体宽6.5mm，由55体节组成。",
+                    },
+                    {
+                        "block_id": "dist",
+                        "role": "body",
+                        "translation": "分布—本州中部至九州；黄海。",
+                    },
+                ],
+            }
+        ]
+    }
+    normalize_aligned(data)
+    blocks = [b for b in data["pages"][0]["blocks"] if not b.get("_drop")]
+    fig_i = next(i for i, b in enumerate(blocks) if b.get("_figure_only"))
+    leg_i = next(i for i, b in enumerate(blocks) if b.get("role") == "legend")
+    genus_i = next(
+        i
+        for i, b in enumerate(blocks)
+        if b.get("role") == "heading"
+        and "Paradyte" in (b.get("translation") or "")
+        and "levis" not in (b.get("translation") or "")
+    )
+    title_i = next(
+        i
+        for i, b in enumerate(blocks)
+        if (b.get("translation") or "").startswith("图7")
+        and "levis" in (b.get("translation") or "")
+    )
+    wa_i = next(i for i, b in enumerate(blocks) if "日名" in (b.get("translation") or ""))
+    ref_i = next(i for i, b in enumerate(blocks) if b.get("role") == "ref")
+    desc_i = next(
+        i for i, b in enumerate(blocks) if "体长" in (b.get("translation") or "")
+    )
+    dist_i = next(i for i, b in enumerate(blocks) if "分布" in (b.get("translation") or ""))
+    assert genus_i < title_i < wa_i < ref_i < desc_i < dist_i < fig_i < leg_i
+
+
+def test_is_wa_name_line_only_short_vernacular() -> None:
+    assert is_wa_name_line('日名「イバラコガネウロコムシ」(新称)')
+    assert is_wa_name_line("イバラコガネウロコムシ（新称）")
+    assert not is_wa_name_line(
+        "日名「コガネウロコムシ」科迄今尚无全面的分类学修订。该科最早的种由Linné描述"
+    )
+    assert not is_wa_name_line("◆分布 — 日本。")
+
+
+def test_imajima_caption_and_wa_name_are_bold_centered(tmp_path: Path) -> None:
+    aligned, figs, meta = make_book(tmp_path)
+    data = json.loads(aligned.read_text(encoding="utf-8"))
+    data["pages"][0]["blocks"] = [
+        {"role": "caption", "translation": "图1 *Aphrodita aculeata* Linnaeus, 1758", "y0": 40},
+        {"role": "body", "translation": '日名「イバラコガネウロコムシ」(新称)', "y0": 60},
+        # aligned 常把和名误标为 heading；也应加粗居中，不当章标题
+        {"role": "heading", "level": 2, "translation": '日名「オロチウロコムシ」', "y0": 70},
+        {"role": "citation", "translation": "Aphrodita aculeata: Hartmann-Schröder, 1971.", "y0": 80},
+        {
+            "role": "body",
+            "translation": "日名「コガネウロコムシ」科迄今尚无全面的分类学修订。",
+            "y0": 100,
+        },
+    ]
+    aligned.write_text(json.dumps(data), encoding="utf-8")
+    out = tmp_path / "bold.docx"
+    build(out, {}, BookPaths(aligned=aligned, figures_dir=figs), meta)
+    paras = [p for p in Document(out).paragraphs if p.text.strip()]
+    cap = next(p for p in paras if p.text.startswith("图1") and "Aphrodita" in p.text)
+    wa = next(p for p in paras if p.text.startswith("日名「イバラ"))
+    wa_h = next(p for p in paras if p.text.startswith("日名「オロチ"))
+    prose = next(p for p in paras if "迄今尚无" in p.text)
+    assert cap.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert any(r.bold for r in cap.runs if r.text.strip())
+    assert wa.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert any(r.bold for r in wa.runs if r.text.strip())
+    assert wa_h.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert any(r.bold for r in wa_h.runs if r.text.strip())
+    assert prose.alignment != WD_ALIGN_PARAGRAPH.CENTER
+    assert not any(r.bold for r in prose.runs if r.text.strip())
+
+
 def test_caption_has_space_above_it() -> None:
     doc = Document()
     p = caption(doc, "Fig. 1. A caption.", None)
@@ -783,6 +1033,251 @@ def test_key_para_recovers_target_without_a_leader() -> None:
     assert first.runs[-2].text == "\t"
     assert second.runs[-1].text.replace(" ", " ") == "L. collaris (p. 136)"
     assert second.runs[-2].text == "\t"
+
+
+def test_key_para_uses_source_when_translation_lost_leader() -> None:
+    """源文有目标、译文丢了点线：仍拆成左栏+制表符+右目标。"""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "1. Gills present from setiger 1 2",
+        set(),
+        source="1. Branquias presentes desde el setígero 1 …… 2",
+    )
+    paragraph = doc.paragraphs[0]
+    assert paragraph.runs[-2].text == "\t"
+    assert paragraph.runs[-1].text == "2"
+    assert split_key_couplet(
+        "1. Gills present from setiger 1 2",
+        source="1. Branquias presentes desde el setígero 1 …… 2",
+    ) == ("1. Gills present from setiger 1", "2")
+
+
+def test_key_para_splits_imajima_species_target_without_leader() -> None:
+    """今岛式：无点线、行末种名/亚科名，仍走右对齐制表符。"""
+    doc = Document()
+    setup(doc)
+    key_para(
+        doc,
+        "13. Neurochaetae with unidentate falcate chaetae only "
+        "*Hololepidella commensalis* (Fig. 34)",
+        set(),
+    )
+    key_para(
+        doc,
+        "— Lateral antennae arising from the anterior end ……7",
+        set(),
+    )
+    key_para(
+        doc,
+        "5. Lateral antennae with a small basal segment ……Subfamily Harmothoinae",
+        set(),
+    )
+    a, b, c = doc.paragraphs
+
+    def has_tab(p) -> bool:
+        return any(r.text == "\t" for r in p.runs)
+
+    assert has_tab(a)
+    assert "commensalis" in "".join(r.text for r in a.runs).replace(" ", " ")
+    assert has_tab(b)
+    assert b.runs[-1].text == "7"
+    assert has_tab(c)
+    assert "Harmothoinae" in "".join(r.text for r in c.runs)
+
+
+def test_key_audit_flags_only_when_not_tabbable() -> None:
+    data = {"pages": [{"page": 1, "blocks": [
+        {"block_id": "ok", "role": "key",
+         "text": "1. Foo …… 2",
+         "translation": "1. Foo 2"},  # 无点线，但能按源文拆
+        {"block_id": "bad", "role": "key",
+         "text": "3. Bar …… 4",
+         "translation": "completely unrelated prose without the target"},
+    ]}]}
+    report = audit_key_blocks(data)
+    reasons = {d["block_id"]: d["reason"] for d in report["defects"]}
+    assert "ok" not in reasons
+    assert reasons["bad"] == "not_tabbable"
+    assert report["format_ok"] is False
+
+
+def test_good_key_target_accepts_chinese_taxon() -> None:
+    assert good_key_target("自裂虫亚科")
+    assert good_key_target("埃刺梳鳞虫 Ehlersileanira incisa（沙蚕目）（图20）")
+    assert split_key_couplet("1. 疣足缺腹须，背须平滑。……自裂虫亚科") == (
+        "1. 疣足缺腹须，背须平滑。",
+        "自裂虫亚科",
+    )
+
+
+def test_split_keeps_zh_before_latin_with_page() -> None:
+    """中文名在拉丁名前，且与页码同在右栏（勿拆成 中文……拉丁 ……页码）。"""
+    left, right = split_key_couplet(
+        "34. 背刚毛较腹刚毛粗，边缘具少数突起……伪囊鳞虫属 *Paradyte* ……35"
+    )
+    assert left.startswith("34.")
+    assert "伪囊" not in left
+    assert right.startswith("伪囊鳞虫属")
+    assert "Paradyte" in right
+    assert right.endswith("35")
+    # 中文与拉丁之间不得再夹点线
+    assert not re.search(r"伪囊鳞虫属\s*(?:…+|\.{2,})\s*\*?Paradyte", right)
+
+
+def test_split_does_not_swallow_prose_before_genus_jump() -> None:
+    """特征句末「黑色 *Augeneria* ……19」不得把「黑色」吞进右栏。"""
+    left, right = split_key_couplet(
+        "18. 下颚呈长略大于宽的X型；上颚第Ⅳ齿板为近四方形的大板，中央部白色，"
+        "边缘黑色 *Augeneria* ……19"
+    )
+    assert "黑色" in left
+    assert "Augeneria" in left or "Augeneria" in right
+    assert "黑色" not in right
+    assert right.strip().endswith("19") or right.strip() == "19"
+
+
+def test_absorb_zh_into_key_target_joins_split_name() -> None:
+    from booklayout.builder import absorb_zh_into_key_target
+
+    left, right = absorb_zh_into_key_target(
+        "34. 特征 …… 伪囊鳞虫属",
+        "Paradyte …… 35",
+    )
+    assert left == "34. 特征"
+    assert right.startswith("伪囊鳞虫属 Paradyte")
+
+
+def test_heal_zh_latin_order_and_dedupe_lead() -> None:
+    from booklayout.keyrepair import heal_zh_latin_order, repair_key_blocks
+
+    assert heal_zh_latin_order("……伪囊鳞虫属.........................Paradyte") == (
+        "……伪囊鳞虫属 Paradyte"
+    )
+    assert heal_zh_latin_order("*Paradyte* 伪囊鳞虫属") == "伪囊鳞虫属 *Paradyte*"
+    data = {"pages": [{"page": 10, "blocks": [
+        {"block_id": "d", "role": "key",
+         "text": "60. Foo …… Bar",
+         "translation": "60. 60. 背刚毛粗……伪囊鳞虫属.........................Paradyte ……35"},
+    ]}]}
+    repair_key_blocks(data)
+    t = data["pages"][0]["blocks"][0]["translation"]
+    assert not t.startswith("60. 60.")
+    assert "伪囊鳞虫属" in t and "Paradyte" in t
+    assert not re.search(r"伪囊鳞虫属\s*(?:…+|\.{2,})\s*\*?Paradyte", t)
+
+
+def test_repair_demotes_elytra_segment_list_false_key() -> None:
+    text = (
+        "较大个体体长53mm，含疣足体宽25mm，40体节。背鳞15对，位于第2、4、5、7……25"
+    )
+    assert looks_like_species_desc_key(text)
+    data = {"pages": [{"page": 9, "blocks": [
+        {"block_id": "p009_b07", "role": "key", "text": text, "translation": text},
+        {"block_id": "k1", "role": "key",
+         "text": "1. 疣足缺腹须 …… 自裂虫亚科",
+         "translation": "1. 疣足缺腹须，背须平滑。……自裂虫亚科"},
+    ]}]}
+    report = repair_key_blocks(data)
+    assert data["pages"][0]["blocks"][0]["role"] == "body"
+    assert data["pages"][0]["blocks"][1]["role"] == "key"
+    assert "species_desc_key_to_body" in report["by_action"]
+    audited = audit_key_blocks(data)
+    assert audited["format_ok"] is True
+    assert not any(d.get("block_id") == "p009_b07" for d in audited["defects"])
+
+
+def test_keys_check_blocks_delivery_on_format_error(tmp_path: Path) -> None:
+    """正式交付：keys-check 有格式缺陷必须失败。"""
+    aligned = tmp_path / "aligned.json"
+    aligned.write_text(json.dumps({"pages": [{"page": 1, "chapter": "Keys", "blocks": [
+        {"block_id": "k0", "role": "key",
+         "text": "1. Branquias …… 2",
+         "translation": "Gills present but no couplet marker or target"},
+    ]}]}), encoding="utf-8")
+    out = tmp_path / "keys.json"
+    rc = main(["keys-check", "--aligned", str(aligned), "--out", str(out)])
+    assert rc == 1
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert report["format_ok"] is False
+    assert report["defects"]
+
+    # 干净完整小表可通过（跳转目标须存在，否则 graph 失败）
+    aligned.write_text(json.dumps({"pages": [{"page": 1, "chapter": "Keys", "blocks": [
+        {"block_id": "k0", "role": "key",
+         "text": "1. Branquias …… 2",
+         "translation": "1. Gills present …… 2"},
+        {"block_id": "k1", "role": "key",
+         "text": "— Sin branquias …… X",
+         "translation": "— Without gills …… *Foo bar*"},
+        {"block_id": "k2", "role": "key",
+         "text": "2. Ojos …… Y",
+         "translation": "2. Eyes present …… *Baz qux*"},
+        {"block_id": "k3", "role": "key",
+         "text": "— Sin ojos …… Z",
+         "translation": "— Eyes absent …… *Qux baz*"},
+    ]}]}), encoding="utf-8")
+    rc2 = main(["keys-check", "--aligned", str(aligned), "--out", str(out)])
+    assert rc2 == 0
+    assert json.loads(out.read_text(encoding="utf-8"))["format_ok"] is True
+
+
+def test_qa_strict_requires_pdf(tmp_path: Path) -> None:
+    """严格 QA：无 PDF 必须失败。"""
+    figs = tmp_path / "figures"
+    figs.mkdir()
+    (figs / "source_figure_audit.json").write_text(
+        json.dumps({"figures": []}), encoding="utf-8"
+    )
+    aligned = tmp_path / "aligned.json"
+    aligned.write_text(json.dumps({"pages": [{"page": 1, "chapter": "Ch", "blocks": [
+        {"block_id": "b0", "role": "body", "text": "ok", "translation": "Body elongate."},
+    ]}]}), encoding="utf-8")
+    out = tmp_path / "qa.json"
+    rc = main(["qa", "--aligned", str(aligned), "--figures", str(figs), "--out", str(out)])
+    assert rc == 1
+    assert "pdf" in " ".join(json.loads(out.read_text(encoding="utf-8"))["problems"]).lower()
+
+
+def test_qa_fails_on_short_caption_and_key_audit(tmp_path: Path) -> None:
+    """短图注与不可拆检索表必须让 qa/gate 失败。"""
+    figs = tmp_path / "figures"
+    figs.mkdir()
+    (figs / "source_figure_audit.json").write_text(
+        json.dumps({"figures": []}), encoding="utf-8"
+    )
+    aligned = tmp_path / "aligned.json"
+    long_src = "Figura de la especie mostrando el prostomio y los parapodios " * 3
+    aligned.write_text(json.dumps({"pages": [{"page": 1, "chapter": "Keys", "blocks": [
+        {"block_id": "c0", "role": "caption", "text": long_src, "translation": "Fig. 1."},
+        {"block_id": "k0", "role": "key",
+         "text": "1. Branquias …… 2",
+         "translation": "no target here at all"},
+    ]}]}), encoding="utf-8")
+    out = tmp_path / "qa.json"
+    rc = main([
+        "qa", "--aligned", str(aligned), "--figures", str(figs),
+        "--draft", "--out", str(out),
+    ])
+    assert rc == 1
+    report = json.loads(out.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert report["key_audit"]["defect_count"] >= 1
+    assert any("short" in p for p in report["problems"])
+
+    gate_out = tmp_path / "gate.json"
+    check = tmp_path / "check.json"
+    check.write_text(json.dumps({"ok": True, "problems": []}), encoding="utf-8")
+    key_report = tmp_path / "key_report.json"
+    key_report.write_text(json.dumps({"breaks": [], "defects": []}), encoding="utf-8")
+    rc2 = main([
+        "gate", "--qa", str(out), "--check", str(check),
+        "--key-report", str(key_report), "--out", str(gate_out),
+    ])
+    assert rc2 == 1
+    assert json.loads(gate_out.read_text(encoding="utf-8"))["ok"] is False
 
 
 def test_key_para_accepts_single_dot_before_couplet_number() -> None:
@@ -1565,6 +2060,30 @@ def test_text_qa_checks_caption_and_entry_short_translations() -> None:
     assert "entry" in roles
     assert report["checked_by_role"].get("caption", 0) >= 1
     assert report["checked_text_blocks"] >= 3
+    assert set(report["text_roles"]) == set(PRINT_ROLES)
+    assert report["coverage"]["ok"] is True
+
+
+def test_text_deep_audit_flags_nbsp_oversized_and_orphan_hyphen() -> None:
+    """文字排版深检：坏空白、过长合并、行末孤儿连字符必须失败。"""
+    src = "Cuerpo alargado con parapodios bien desarrollados en todos los setígeros. " * 2
+    data = {"pages": [{"page": 1, "blocks": [
+        {"block_id": "nbsp", "role": "body", "text": src,
+         "translation": "Body\u00a0elongate with well developed parapodia on all setigers."},
+        {"block_id": "big", "role": "body", "text": src,
+         "translation": ("Body elongate. " * 40)},
+        {"block_id": "hy", "role": "caption",
+         "text": "Figura de la especie mostrando el prostomio completo",
+         "translation": "Fig. 1. Anterior end of the speci-"},
+    ]}]}
+    report = audit_text(data)
+    assert report["bad_nbsp"]
+    assert report["oversized_translations"]
+    assert report["orphan_hyphen"]
+    lines = text_problem_lines(report)
+    assert any("nbsp" in line for line in lines)
+    assert any("longer" in line for line in lines)
+    assert any("orphan hyphen" in line for line in lines)
 
 
 def test_text_qa_flags_entry_that_loses_a_source_year() -> None:
@@ -1849,3 +2368,101 @@ def test_running_header_chinese_gets_eastasia_hint() -> None:
             for r in doc.sections[0].header.paragraphs[0].runs if r.text]
     assert ("环节动物 多毛类", "eastAsia") in runs
     assert ("\t2007", None) in runs
+
+
+def test_key_layout_ignores_dash_only_index_pages() -> None:
+    # 种名索引行以「—」开头并以「…… 页码」结尾；没有编号行，不是检索表页。
+    words = []
+    for i, y in enumerate((100, 120, 140)):
+        words += [
+            (50, y, 60, y + 12, "—", i, i, 0),
+            (65, y, 150, y + 12, "Eunoe", i, i, 1),
+            (200, y, 203, y + 12, "……", i, i, 2),
+            (260, y, 275, y + 12, "29", i, i, 3),
+        ]
+    assert _key_layout_problems(words, width=520) == []
+
+
+def test_key_layout_joins_italic_name_split_from_leader_line() -> None:
+    # 点线与斜体学名在 PDF 里是同一视觉行的两个 line；合并后目标贴右边，不报「不齐右」。
+    words = [
+        (50, 100, 62, 112, "1.", 0, 0, 0),
+        (65, 100, 150, 112, "Gills", 0, 0, 1),
+        (160, 100, 330, 112, "...........................", 0, 0, 2),
+        (335, 100, 450, 112, "Aus", 0, 1, 0),
+        (452, 100, 480, 112, "(Fig.", 0, 1, 1),
+        (482, 100, 500, 112, "1)", 0, 1, 2),
+        (50, 130, 62, 142, "—", 1, 2, 0),
+        (65, 130, 150, 142, "Gills", 1, 2, 1),
+        (160, 130, 470, 142, "...........................", 1, 2, 2),
+        (482, 130, 500, 142, "2", 1, 2, 3),
+    ]
+    assert not [p for p in _key_layout_problems(words, width=520) if p["reason"] == "target not flush right"]
+
+
+def test_normalize_repairs_ocr_box_glyph_for_kanji_kou() -> None:
+    from booklayout.normalize import _box_glyph_to_kou
+
+    blocks = [
+        {"block_id": "b0", "role": "body", "text": "□節触糸 基□触糸", "translation": "□节触须 触须基部□ 触须"},
+        {"block_id": "b1", "role": "body", "text": "記号 □ のみ", "translation": "a lone □ stays"},
+    ]
+    changed: list[dict] = []
+    _box_glyph_to_kou(blocks, changed)
+    assert blocks[0]["text"] == "口節触糸 基口触糸" and blocks[0]["translation"] == "口节触须 触须基部口 触须"
+    assert "□" in blocks[1]["text"] and "□" in blocks[1]["translation"]
+    assert [c["field"] for c in changed] == ["text", "translation"]
+    data = {"pages": [{"page": 1, "kind": "body", "blocks": [blocks[0] | {"text": "□節触糸"}]}]}
+    normalize_aligned(data)
+    assert data["pages"][0]["blocks"][0]["text"] == "口節触糸"
+
+
+def test_ref_italics_skip_family_names_and_title_words() -> None:
+    """文献题名里的 Marine polychaete / Aphroditidae through 不是属种双名（2001 en 门禁误报）。"""
+    from booklayout import normalize as n
+
+    blocks = [{"role": "ref", "block_id": "r1", "translation": (
+        "Pettibone, M. H., 1963. Marine polychaete worms of the New England Region. "
+        "I. Aphroditidae through Trochochaetidae. Eunice japonica Fauchald, 1992.")}]
+    n._italicize_ref_citation_binomia(blocks, {"page": 1}, [])
+    t = blocks[0]["translation"]
+    assert "*Marine" not in t and "*Aphroditidae" not in t
+    assert "*Eunice japonica*" in t
+
+
+def test_long_body_paragraph_with_tn_colon_is_not_species_citation() -> None:
+    """长段正文中的「[TN: ...]」+ 年份不得被 species_citation_role_ref 升成 ref（2009 p249）。"""
+    from booklayout import normalize as n
+
+    long_body = (
+        "As the family name well indicates, the body of Maldanidae is cylindrical with each segment "
+        "of nearly the same thickness, shaped just like a bamboo joint. Maldanidae was first established "
+        "by Malmgren (1867), and later Arwidsson (1906) divided it into 5 subfamilies. Imajima & Shiraki "
+        "(1982a), in their monograph, [TN: the following is a list of morphological terms:] Prostomial margin 1982"
+    )
+    blocks = [{"role": "body", "block_id": "b1", "text": "x", "translation": long_body}]
+    n._prefer_source_for_bibliography(blocks, {"page": 1}, [])
+    assert blocks[0]["role"] == "body"
+    cit = [{"role": "body", "block_id": "b2", "text": "y",
+            "translation": "Nereis pelagica : Imajima, 1972, p. 5"}]
+    n._prefer_source_for_bibliography(cit, {"page": 1}, [])
+    assert cit[0]["role"] == "ref"
+
+
+def test_japanese_description_with_embedded_author_year_keeps_translation() -> None:
+    """日文描述段里嵌的「Fauchald, 1974」不是书目：译文不得被回退成日文原文（2001 p139、2009 p167）。"""
+    from booklayout import normalize as n
+
+    src = ("体長4mm，体幅約1mm，32剛毛節からなる．体は白く弓なりになって太く，昆虫の幼虫の感がする．"
+           "Clavodorum属で大形突起が8列のものはインド，マドラスから報告されたC. bengalorum "
+           "Fauchald, 1974 だけである．研究 報告．")
+    tr = "Body length 4 mm, width about 1 mm, with 32 chaetigers. Only C. bengalorum Fauchald, 1974 has 8 rows."
+    blocks = [{"role": "body", "block_id": "p139_b04", "text": src, "translation": tr}]
+    changed: list[dict] = []
+    n._prefer_source_for_bibliography(blocks, {"page": 139}, changed)
+    assert blocks[0]["translation"] == tr and blocks[0]["role"] == "body" and not changed
+    # 真书目（作者名紧跟年份）仍回退源文、升 ref
+    bib = [{"role": "body", "block_id": "r", "text": "内田紘臣, 1975-1987. 紀州産多毛類Ⅰ–Ⅸ. 南紀生物.",
+            "translation": "内田 纮臣, 1975-1987. 纪州产多毛类Ⅰ-Ⅸ. 南纪生物."}]
+    n._prefer_source_for_bibliography(bib, {"page": 12}, [])
+    assert bib[0]["role"] == "ref" and "紘" in bib[0]["translation"]

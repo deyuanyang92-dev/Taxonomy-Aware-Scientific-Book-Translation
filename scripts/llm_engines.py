@@ -32,7 +32,8 @@ import time
 from typing import Any
 
 from deepseek_offpeak import is_peak, seconds_to_offpeak, wait_offpeak
-from token_economy import BudgetExceeded, check_budget, out_budget, record_usage, system_blocks
+from token_economy import (BudgetExceeded, budget_cny, check_budget, out_budget, record_usage, release_cny,
+                           reserve_cny, system_blocks, worst_case_cny)
 
 _USAGE_LOCK = threading.Lock()
 
@@ -271,6 +272,27 @@ def call(engine: str, system: str, user: str, *, max_tokens: int | None = None,
     if max_tokens is None:
         max_tokens = out_budget(profile, user)
     max_tokens = min(int(max_tokens), MAX_TOKENS)
+    cap = budget_cny()
+    reserved = 0.0
+    key = str(usage_path(usage_file))
+    if cap is not None:
+        worst = worst_case_cny(engine, system, user, max_tokens)
+        if worst is None:
+            raise BudgetExceeded(
+                f"引擎 {engine} 没有人民币单价，¥{cap:g} 预算闸无法核算，不发请求。"
+                f"本项目批量翻译只用 deepseek-flash；确需别的引擎设 YZZ_BUDGET_CNY=off。")
+        reserve_cny(key, worst, cap)
+        reserved = worst
+    try:
+        return _call_engine(engine, system, user, max_tokens=max_tokens, profile=profile, tag=tag,
+                            usage_file=usage_file, offpeak=offpeak)
+    finally:
+        if reserved:
+            release_cny(key, reserved)
+
+
+def _call_engine(engine: str, system: str, user: str, *, max_tokens: int, profile: str, tag: str,
+                 usage_file: str | os.PathLike[str] | None, offpeak: bool) -> tuple[str, dict[str, Any]]:
     t0 = time.time()
     if engine in DEEPSEEK_ENGINES and os.environ.get("YZZ_DISABLE_DEEPSEEK"):
         raise EngineError("DeepSeek 已被 YZZ_DISABLE_DEEPSEEK 禁用")

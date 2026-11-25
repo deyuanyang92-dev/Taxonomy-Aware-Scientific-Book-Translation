@@ -35,8 +35,9 @@ from booklayout.english import (
     worms_higher_taxa,
 )
 
-BODY_FONT = "Garamond"
-# 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
+# 英文默认 Garamond；中文版由 build 设 BOOKLAYOUT_BODY_FONT=Times New Roman。
+BODY_FONT = os.environ.get("BOOKLAYOUT_BODY_FONT", "Garamond")
+# 中文版把 eastAsia 字体设为宋体（拉丁字体无汉字，Word 会随机回落）；英文版保持不变。
 CJK_FONT = os.environ.get("BOOKLAYOUT_CJK_FONT", BODY_FONT)
 _CJK = re.compile(r"[⺀-鿿＀-￯]")
 # 中英共用的标点（点线、破折号、弯引号等）：只有所在段落含中文时才按东亚字体排。
@@ -68,12 +69,88 @@ SPANISH_STOP = {"los", "las", "el", "la", "un", "una", "unos", "unas", "del", "a
 # being pulled to the right margin with leaders.
 LEADER_RE = re.compile(r"\s*(?:(?:\.\s*){2,}|…+|�+)\s*")
 # OCR sometimes leaves a single dot before a couplet number ("... setigers . 8").
-_SINGLE_DOT_TARGET = re.compile(r"\s+\.\s+(?=\d{1,3}\s*$)")
+# Do not treat "Fig. 12" / "p. 3" as a leader.
+_SINGLE_DOT_TARGET = re.compile(r"(?<![A-Za-z])\s+\.\s+(?=\d{1,3}\s*$)")
 # Some translated key lines lost their leader entirely and end with a plain
-# species/family target such as "L. collaris (p. 136)".
+# species/family target such as "L. collaris (p. 136)" or Imajima-style
+# "*Hololepidella commensalis* (Fig. 34)" / "Subfamily Harmothoinae".
 _TARGET_SUFFIX = re.compile(
     r"\s+((?:[A-Z][A-Za-z.-]*)(?:\s+[a-z][a-z.-]*)?\s*\(p\.\s*\d+\))\s*$"
 )
+# 3. / 3' / 11" / — / •  （数字后必须有点号或撇号，避免把「10 mm」当条目号）
+_KEY_START = re.compile(
+    r"^(?:—|–|-|•|\d{1,3}(?:['′ʹ\"]+|[.)]))\s+"
+)
+# 种名结论：可带亚属、种加词、亚种、命名人、(Fig./図/图)、亚科名；用于无点线拆栏。
+# 允许紧接中文句号/分号，以及点线后残留的「. *Genus」。
+_TAXON_TARGET = re.compile(
+    r"(?:^|(?<=[\s。．；;…]))\s*\.?\s*"
+    r"("
+    r"(?:Sub(?:family|genus)|Family|Genus|亜科|亞科|科|属|屬)\s+\*?[A-Za-z][A-Za-z-].*"
+    r"|"
+    # 中文属/科（可无拉丁）；可带（图N）
+    r"[\u4e00-\u9fff]{2,20}(?:亚科|亞科|科|属|屬)"
+    r"(?:\s+\*?[A-Z][a-z][A-Za-z-]*\*?(?:\s*\*?[a-z][a-z-]+\*?){0,2})?"
+    r"(?:\s*[（(][^)）]*[)）]){0,3}"
+    r"|"
+    # 可选中文和名须带虫/属/种等后缀，勿吞「两侧触手基部愈合 Genus」
+    r"(?:[\u4e00-\u9fff]{2,16}(?:虫|螺|贝|虾|蟹|蛭|蚓|属|種|种|亚种|科|亞科|亚科)\s+)?"
+    r"\*?"
+    r"[A-Z][a-z][A-Za-z-]*\*?"  # Genus / *Genus*
+    r"(?:\s*[（(]\*?[A-Z][A-Za-z-]+\*?[）)])?"  # (Subgenus) / （*Subgenus*）
+    r"(?:\s*\*?[a-z][a-z-]+\*?){0,2}"  # epithet [subspecies]；）后可无空格
+    r"(?:\s+[A-Z][a-z]+)?"  # 命名人姓
+    # ASCII / 全角括号：(McIntosh)（图35）(O.F. Müller)（沙蚕目）
+    r"(?:\s*[（(][^)）]*[)）]){0,3}"
+    r")"
+    r"\s*$"
+)
+_GOOD_TARGET = re.compile(
+    r"^(?:"
+    r"\d{1,3}['′ʹ]?"
+    r"|(?:Sub(?:family|genus)|Family|Genus|亜科|亞科|科|属|屬)\b.+"
+    r"|[\u4e00-\u9fff]{2,20}(?:亚科|亞科|科|属|屬)"  # 中文亚科/科/属结论
+    r"|(?:[\u4e00-\u9fff]{1,20}\s+)?\*?[A-Z][A-Za-z.]*\b.*"  # 和名+学名 / Genus
+    r"|\(.*p\.\s*\d+.*"
+    r")$"
+)
+
+
+def good_key_target(right: str) -> bool:
+    """True when the right-hand couplet target is a number/taxon/page."""
+    return bool(_GOOD_TARGET.match((right or "").strip()))
+
+
+# 中文名紧挨拉丁名：拆栏时二者必须同在右栏（中文在前、拉丁在后）
+# 后缀「属/科/种」必填，避免把「…背鳞边缘 覆瓦哈鳞虫 Genus」里的叙述汉语吞进目标
+_CJK_BEFORE_LATIN = re.compile(
+    r"([\u4e00-\u9fff]{2,24}(?:属|亚属|亚科|亞科|科|种|虫))\s*$"
+)
+
+
+def _strip_trailing_leaders(text: str) -> str:
+    return re.sub(r"(?:\s*(?:(?:\.\s*){2,}|…+|�+))+\s*$", "", text or "").rstrip()
+
+
+def absorb_zh_into_key_target(left: str, right: str) -> tuple[str, str]:
+    """若点线误劈在「中文名|*Genus」之间，把中文名并回右栏目标。"""
+    left = (left or "").rstrip()
+    right = (right or "").lstrip()
+    if not left or not right:
+        return left, right
+    if not re.match(r"^\*?[A-Z]", right):
+        return left, right
+    m = _CJK_BEFORE_LATIN.search(left)
+    if not m:
+        return left, right
+    zh = m.group(1)
+    new_left = _strip_trailing_leaders(left[: m.start()])
+    # 右栏已有同一中文名则不重复
+    if right.startswith(zh):
+        return new_left, right
+    return new_left, f"{zh} {right}"
+
+
 _STRAY_DOT = re.compile(
     r"\s+\.(?=[A-Z][A-Za-z.-]*(?:\s+[a-z][a-z.-]*)?\s*\(p\.\s*\d+\)\s*$)"
 )
@@ -84,7 +161,7 @@ _STRAY_DOT = re.compile(
 # right-aligned target, leaving a 1 mm leader and the second couplet glued to
 # the first.  Split it here so stale aligned data cannot reproduce the defect.
 _MERGED_COUPLET = re.compile(r"(?:[.…]\s*)+(?P<num>\d{1,3})\s+(?=\d{1,3}[.)]\s)")
-FIG_RE = re.compile(r"\bFig(?:s)?\.\s*(\d+[′']?)")
+FIG_RE = re.compile(r"(?:\bFig(?:s)?\.\s*|图\s*|図\s*)(\d+[′']?)", re.I)
 
 
 @dataclass
@@ -165,6 +242,144 @@ def clean_text(s: str) -> str:
     s = s.replace('\u3000', ' ').replace('\xa0', ' ')
     s = re.sub(r'[ \t]+', ' ', s)
     return s.strip()
+
+
+_TOC_RANK_LATIN = re.compile(
+    r"\b([A-Z][a-z]*(?:inae|idae|oidea|acea))\b"
+)
+_TOC_VERN_RANK = re.compile(
+    r"^[\u4e00-\u9fff]{2,20}(?:亚科|亞科|总科|科)"
+)
+_TOC_BARE_RANK = re.compile(r"^(?:亚科|亞科|総科|总科|科)\s+")
+
+
+def _toc_zh_to_latin() -> dict[str, str]:
+    """yiku 中文阶元名 → 拉丁（仅科级后缀；一对多时取先出现项）。"""
+    try:
+        from booklayout.taxonzh import load_higher_taxon_zh
+    except Exception:  # pragma: no cover
+        return {}
+    out: dict[str, str] = {}
+    for en, zh in load_higher_taxon_zh().items():
+        if not en.endswith(("inae", "idae", "oidea", "acea")):
+            continue
+        if zh and zh not in out:
+            out[zh] = en
+    return out
+
+
+def _latin_from_source(source: str) -> str | None:
+    m = _TOC_RANK_LATIN.search(source or "")
+    return m.group(1) if m else None
+
+
+def clean_toc_title(title: str, *, source: str = "") -> str:
+    """清洗目录条目标题，并落实「中文+拉丁；无合适中文则空着」。
+
+    - 去种名/图号/省略号尾巴与误粘页码
+    - 有 yiku 中文：``中文阶元名 Latin [命名人, 年]``
+    - 无中文：只留拉丁（及命名人），不用光秃「亚科」冒充中文名
+    - 中文在、拉丁丢了：从 ``source`` 或 yiku 反查补回
+    """
+    t = clean_text(title or "")
+    if not t:
+        return t
+    # 正文式省略号后的种名/图号/跳转 → 丢掉
+    t = re.split(r"\s*(?:…+|\.{2,})\s*", t, maxsplit=1)[0].strip()
+    # 尾随图号（无省略号时）
+    t = re.sub(
+        r"\s*[（(]?\s*(?:图|図|Fig\.?)\s*\d+[a-zA-Z]?[)）]?\s*$",
+        "",
+        t,
+        flags=re.I,
+    ).strip()
+    # 尾随裸页码/跳转号：Lepidastheniinae 60
+    t = re.sub(r"\s+\d{1,3}\s*$", "", t).strip()
+    # 全角逗号
+    t = t.replace("，", ", ")
+    t = re.sub(r"\s+,", ",", t)
+    t = re.sub(r",\s*", ", ", t)
+    # 拉丁/命名人后重复「亚科」
+    m = re.match(
+        r"^(?P<head>.*?\*?[A-Za-z][A-Za-z-]{2,}\*?"
+        r"(?:\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'\-&]*)*"
+        r"(?:,\s*\d{4}[a-z]?)?)"
+        r"\s*亚科\s*$",
+        t,
+    )
+    if m:
+        head = m.group("head").strip()
+        if "亚科" in head or re.match(r"^[\u4e00-\u9fff]{0,8}科", head):
+            t = head
+        else:
+            t = f"亚科 {head}"
+    # Acholoinae亚科Pettibone → 亚科 Acholoinae Pettibone
+    m = re.match(
+        r"^(?P<lat>\*?[A-Z][A-Za-z-]{2,}\*?)\s*亚科\s*(?P<rest>.*)$",
+        t,
+    )
+    if m:
+        rest = m.group("rest").strip()
+        t = f"亚科 {m.group('lat')}" + (f" {rest}" if rest else "")
+    # 亚科Acholoinae → 亚科 Acholoinae
+    t = re.sub(r"^(亚科|亞科)(?=\*?[A-Za-z])", r"\1 ", t)
+    # 中文名与拉丁/命名人粘连
+    t = re.sub(
+        r"([\u4e00-\u9fff](?:科|亚科|亞科))(?=\*?[A-Za-z])",
+        r"\1 ",
+        t,
+    )
+    t = re.sub(r"\s{2,}", " ", t).strip(" ，,;；")
+
+    # —— 中文+拉丁 / 无中文空着 ——
+    zh_to_lat = _toc_zh_to_latin()
+    vern_m = re.match(
+        r"^([\u4e00-\u9fff]{2,20}(?:亚科|亞科|总科|科))",
+        t,
+    )
+    vern_zh = vern_m.group(1) if vern_m else None
+    lat_in_title = _TOC_RANK_LATIN.search(t)
+    lat_name = lat_in_title.group(1) if lat_in_title else _latin_from_source(source)
+
+    def _zh_for_latin(name: str) -> str | None:
+        try:
+            from booklayout.taxonzh import load_higher_taxon_zh
+
+            return load_higher_taxon_zh().get(name)
+        except Exception:  # pragma: no cover
+            return None
+
+    if vern_zh and not _TOC_RANK_LATIN.search(t):
+        fill = _latin_from_source(source) or zh_to_lat.get(vern_zh)
+        if fill:
+            rest = t[len(vern_zh) :].strip()
+            t = f"{vern_zh} {fill}" + (f" {rest}" if rest else "")
+    elif _TOC_BARE_RANK.match(t) and lat_name:
+        yiku_zh = _zh_for_latin(lat_name)
+        rest = _TOC_BARE_RANK.sub("", t).strip()
+        if yiku_zh:
+            rest2 = re.sub(
+                rf"^\*?{re.escape(lat_name)}\*?\s*",
+                "",
+                rest,
+            ).strip()
+            t = f"{yiku_zh} {lat_name}" + (f" {rest2}" if rest2 else "")
+        else:
+            t = rest
+    elif lat_name and not re.search(r"[\u4e00-\u9fff]", t):
+        # 纯拉丁（+命名人）：有 yiku/覆盖表中文则套上；无则保持拉丁
+        yiku_zh = _zh_for_latin(lat_name)
+        if yiku_zh:
+            rest2 = re.sub(
+                rf"^\*?{re.escape(lat_name)}\*?\s*",
+                "",
+                t,
+            ).strip()
+            t = f"{yiku_zh} {lat_name}" + (f" {rest2}" if rest2 else "")
+
+    t = re.sub(r"\s{2,}", " ", t).strip(" ，,;；")
+    return t
+
 
 
 def load_aligned(path: Path) -> dict:
@@ -278,7 +493,7 @@ def _family_roman(chunk: str) -> list[tuple[str, bool]]:
 
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None,
-             invert: bool = False):
+             invert: bool = False, para_cjk: bool | None = None):
     """Emit runs.  ``invert`` sets the taxon names opposite to the base style
     (kept for styles that print captions in italic); the Fauna Ibérica
     delivery uses roman captions with italic names, see ``caption``.
@@ -342,8 +557,8 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
         else:
             final.append((chunk, ital))
     pieces = final
-    para_text = ''.join(r.text for r in par.runs) + text
-    para_cjk = bool(_CJK.search(para_text))
+    if para_cjk is None:
+        para_cjk = bool(_CJK.search(''.join(r.text for r in par.runs) + text))
     for chunk, ital in pieces:
         # 点线「……」单独成 run：它需要 eastAsia hint，但同一 run 里的拉丁文
         # 若也带 hint，Word 会把其中的 , . ( ) 显示成全角（yzz zh check 报
@@ -464,6 +679,43 @@ def page_break(doc) -> None:
     doc.add_page_break()
 
 
+# 属首次标题：纯拉丁或「中文属 *Genus* Author, year」（与√样例同居中）
+_GENUS_HEADING_LINE = re.compile(
+    r"^(?:[\u4e00-\u9fff]{2,24}(?:属|亞属|亚属|屬)?\s+)?"
+    r"\*?[A-Z][a-z]{2,}\*?"
+    r"(?:\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]*)+(?:,\s*\d{4}[a-z]?)?\s*$"
+)
+# 亚科/科标题：无中文名时「亚科 BRANCHINOTOGLUMINAE …」或拉丁科名+命名人
+_RANK_HEADING_LINE = re.compile(
+    r"^(?:(?:亚科|亞科|总科|科|族|属|屬)\s+)?"
+    r"\*?[A-Z][A-Za-z-]{3,}\*?"
+    r"(?:\s+[A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÿ.'-]*)*(?:,\s*\d{4}[a-z]?)?\s*$"
+)
+# 今岛种名行「図/图 N …」
+_FIG_SPECIES_HEADING = re.compile(r"^(?:图|図)\s*\d+")
+
+
+def is_genus_heading_line(text: str) -> bool:
+    """True when a short line is a genus title (Latin or Chinese+Latin)."""
+    return bool(_GENUS_HEADING_LINE.match((text or "").strip()))
+
+
+def is_rank_heading_line(text: str) -> bool:
+    """属/亚科/科短标题（含无中文名的「亚科 LATIN」）。"""
+    t = (text or "").strip()
+    return bool(_GENUS_HEADING_LINE.match(t) or _RANK_HEADING_LINE.match(t))
+
+
+def is_fig_species_heading_line(text: str) -> bool:
+    """True for 図/图N species-title lines (not panel legends)."""
+    t = (text or "").strip()
+    if not _FIG_SPECIES_HEADING.match(t):
+        return False
+    if re.search(r"[a-zA-Zａ-ｚ][:：]", t):
+        return False
+    return len(t) <= 120
+
+
 def heading(doc, text, level, genera, chapter_start=False):
     sizes = {1: 15, 2: 12, 3: 10.8}
     before = {1: 0, 2: 14, 3: 10}[level]
@@ -478,6 +730,12 @@ def heading(doc, text, level, genera, chapter_start=False):
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for r in p.runs:
             r.font.small_caps = True
+    elif is_fig_species_heading_line(text or ""):
+        # 今岛种名行「図/图N *种名*」居中加粗（任意 level）
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    elif level in (2, 3) and is_rank_heading_line(text or ""):
+        # 属/亚科标题居中（√：*Pottsiscalisetosus*…；亦：伪囊鳞虫属 *Paradyte*…）
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     return p
 
 
@@ -499,6 +757,9 @@ def _atomic_target(p, start: int) -> None:
             # in Word and is rejected by the workspace zh-check gate, while
             # U+202F passes it and renders as an ordinary space.
             run.text = run.text.replace(" ", " ")
+    # CJK text breaks between any two characters, so "鳞虫亚科" could still
+    # split across lines (2001 zh p4).  U+2060 WORD JOINER glues them.
+    run.text = re.sub("(?<=[\u3400-\u9fff])(?=[\u3400-\u9fff])", "\u2060", run.text)
 
 
 def tabbed(doc, left, right, size, left_indent=4.0, genera=None, bold_left=False,
@@ -521,7 +782,8 @@ def tabbed(doc, left, right, size, left_indent=4.0, genera=None, bold_left=False
     pf.tab_stops.add_tab_stop(
         Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS
     )
-    add_runs(p, left, size, bold=bold_left, genera=genera)
+    both = bool(_CJK.search(left + right))
+    add_runs(p, left, size, bold=bold_left, genera=genera, para_cjk=both)
     if force_break:
         # A couplet whose leader would be shorter than MIN_KEY_LEADER_MM gets
         # the same treatment as an over-long target: the whole address moves
@@ -529,8 +791,80 @@ def tabbed(doc, left, right, size, left_indent=4.0, genera=None, bold_left=False
         p.add_run().add_break()
     p.add_run('\t')
     target_start = len(p.runs)
-    add_runs(p, right, size, genera=genera)
+    add_runs(p, right, size, genera=genera, para_cjk=both)
     _atomic_target(p, target_start)
+    _suppress_hyphenation(p)
+    return p
+
+
+COUPLET_MARKER_MM = 9.0   # marker column; wrapped description lines hang under the text
+COUPLET_NUM_MM = 13.0     # width of the number column when a couplet has name + number
+
+
+def couplet_signature(block: dict) -> str | None:
+    """Break signature of a single-target couplet, as ``_key_breaks_from_lines`` builds it.
+
+    Two-column couplets (name + number) are never forced: their name column has a
+    fixed position, so the leader before it cannot collapse the way a floating
+    target's does.
+    """
+    c = block.get("couplet") or {}
+    target = c.get("target")
+    if not target or c.get("name"):
+        return None
+    text = clean_text(block.get("translation") or "")
+    return key_signature(f"{c.get('marker', '')} {text}".strip(), clean_text(target))
+
+
+def couplet_para(doc, block: dict, genera=None, key_breaks: set[str] | None = None,
+                 space_before: float = 0.0, size: float = 9.5):
+    """One identification-key couplet in four slots (issue #35).
+
+    marker | description | [name] | target
+    The marker ("25." or "—") sits at the left margin, the description hangs at
+    ``COUPLET_MARKER_MM``, the target is flush right behind dot leaders.  A couplet
+    with a name and a number puts the name in a right-aligned column ending
+    ``COUPLET_NUM_MM`` before the margin and the number at the margin, both led by
+    dots, so every number lines up whatever the name length.
+    """
+    c = block["couplet"]
+    text = clean_text(block.get("translation") or "")
+    name, target = c.get("name"), c.get("target")
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.left_indent = Mm(COUPLET_MARKER_MM)
+    pf.first_line_indent = Mm(-COUPLET_MARKER_MM)
+    pf.space_before, pf.space_after = Pt(space_before), Pt(0)
+    pf.line_spacing = 1.0
+    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf.keep_together = True
+    pf.tab_stops.add_tab_stop(Mm(COUPLET_MARKER_MM), WD_TAB_ALIGNMENT.LEFT)
+    if target and name:
+        pf.tab_stops.add_tab_stop(Mm(TEXT_W - COUPLET_NUM_MM), WD_TAB_ALIGNMENT.RIGHT,
+                                  WD_TAB_LEADER.DOTS)
+    if target:
+        pf.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+    # 标记「—」排在描述之前，段内当时还没有汉字；整段是否中文要按整条偶句判断，
+    # 否则中文版的破折号缺 eastAsia hint（yzz zh check 报 211 处）。
+    cjk = bool(_CJK.search(text + (name or "") + (target or "")))
+    add_runs(p, c["marker"], size, genera=genera, para_cjk=cjk)
+    p.add_run("\t")
+    add_runs(p, text, size, genera=genera, para_cjk=cjk)
+    if target:
+        if key_breaks is not None and couplet_signature(block) in key_breaks:
+            p.add_run().add_break()
+        if name:
+            # 描述顶到名称栏时，制表符前没有间隔，名称会贴在描述末字上（「…lobePapilliodorvillea」）。
+            p.add_run(" ")
+        p.add_run("\t")
+        start = len(p.runs)
+        if name:
+            add_runs(p, name, size, genera=genera, para_cjk=cjk)
+            _atomic_target(p, start)
+            p.add_run("\t")
+            start = len(p.runs)
+        add_runs(p, target, size, genera=genera, para_cjk=cjk)
+        _atomic_target(p, start)
     _suppress_hyphenation(p)
     return p
 
@@ -547,34 +881,172 @@ def key_signature(left: str, right: str) -> str:
     return norm(left) + "\t" + norm(right)
 
 
-def key_para(doc, text, genera, key_breaks: set[str] | None = None):
-    text = re.sub(r'\ufffd+', ' …… ', text)
+def split_key_couplet(text: str, source: str | None = None) -> tuple[str, str] | None:
+    """Split one couplet into (left, right) for a right-aligned tab + dot leader.
+
+    检索表排版只有这一件事：左栏特征 + 制表符 + 右栏目标。译文丢了点线时，
+    用源文末尾目标（页码/条号/种名）在译文里定位，再强制拆开。
+    多处省略号时取**最后一个**能得到合法目标的拆分（避免「…23, 25 体节」误拆）。
+    """
+    text = re.sub(r"\ufffd+", " …… ", text or "")
+    text = clean_text(text)
+    text = _STRAY_DOT.sub(" ", text)
+    # 点线后残留「. *Genus」或「.Genus」→ 正常空格
+    text = re.sub(r"((?:…+|\.{2,}))\s*\.\s*(\*?[A-Z])", r"\1 \2", text)
+    text = re.sub(r"((?:…+|\.{2,}))\s*\.([A-Z])", r"\1 \2", text)
+    if not text:
+        return None
+    # 源文备选行「— …」译文丢破折号时补上，便于标记与拆栏一致
+    if source:
+        src = clean_text(source)
+        if re.match(r"^[—–\-]\s+", src) and not re.match(r"^[—–\-•]\s+", text):
+            if not re.match(r"^\d{1,3}['′ʹ]?[.)]\s+", text):
+                text = "— " + text.lstrip()
+
+    # ……[中文名] Genus ……N  （属检索表短行；中文与拉丁同右栏）
+    short_genus = re.match(
+        r"^(?:…+|\.{2,})\s*"
+        r"(?P<taxon>(?:[\u4e00-\u9fff]{2,24}(?:属|亚属|亚科|亞科|科|种)\s+)?"
+        r"\*?[A-Z][A-Za-z-]+\*?(?:\s*\*?[a-z][a-z-]+\*?){0,2})\s*"
+        r"(?:…+|\.{2,})\s*(?P<page>\d{1,3})\s*$",
+        text,
+    )
+    if short_genus:
+        return short_genus.group("taxon"), short_genus.group("page")
+
+    # 特征 …… 中文名? *Genus* …… 页码 → 右栏「中文名 Genus …… 页码」
+    # （勿把页码单独拆到右栏，否则中文/拉丁留在左栏点线里）
+    # 必须含中文名或 *斜体* 学名，避免把英文特征句「Median antenna short ……8」
+    # 误当成种名+页码。
+    # 中文前缀必须带阶元后缀（属/科/种）：否则「边缘黑色 *Augeneria* ……19」
+    # 会把「黑色 *Augeneria*」误收进右栏。
+    taxon_page = re.search(
+        r"(?P<taxon>(?:[\u4e00-\u9fff]{2,24}(?:属|亚属|亚科|亞科|科|种)\s+)?"
+        r"\*?[A-Z][a-z][A-Za-z-]*\*?"
+        r"(?:\s*\*?[a-z][a-z-]+\*?){0,2}"
+        r"(?:\s*[（(][^)）]*[)）]){0,2})"
+        r"\s*(?:…+|\.{2,}|�+)\s*"
+        r"(?P<page>\d{1,3})\s*$",
+        text,
+    )
+    if taxon_page is not None:
+        taxon = taxon_page.group("taxon")
+        if re.search(r"[\u4e00-\u9fff]", taxon) or "*" in taxon:
+            left = _strip_trailing_leaders(text[: taxon_page.start("taxon")].strip())
+            right = f"{taxon} …… {taxon_page.group('page')}"
+            if left and good_key_target(right):
+                return left, right
+
+    leaders = list(LEADER_RE.finditer(text))
+    for m in reversed(leaders):
+        left = text[: m.start()].strip()
+        right = text[m.end() :].strip()
+        # 右侧若仍以点线开头，再剥一层
+        right = LEADER_RE.sub("", right, count=1).strip() if LEADER_RE.match(right) else right
+        left, right = absorb_zh_into_key_target(left, right)
+        if left and right and good_key_target(right):
+            return left, right
+    m = _SINGLE_DOT_TARGET.search(text)
+    if m is not None:
+        left, right = text[: m.start()].strip(), text[m.end() :].strip()
+        left, right = absorb_zh_into_key_target(left, right)
+        if left and right and good_key_target(right):
+            return left, right
+    m = _TARGET_SUFFIX.search(text)
+    if m is not None:
+        left, right = text[: m.start()].strip(), m.group(1).strip()
+        left, right = absorb_zh_into_key_target(left, right)
+        if left and right:
+            return left, right
+    # 无引导点但仍以条号结尾： "1. Gills present 2" / "— … 3"
+    numbered = re.match(
+        r"^(?P<left>(?:—|–|-|•|\d{1,3}(?:['′ʹ\"]+|[.)]))\s+\S.*?)\s+"
+        r"(?P<right>\d{1,3}(?:['′ʹ\"]+)?)\s*$",
+        text,
+    )
+    if numbered is not None:
+        return numbered.group("left"), numbered.group("right")
+    # 无点线，行末种名/亚科（可带命名人与 Fig.）；中文名算进右栏
+    if _KEY_START.match(text) or (source and _KEY_START.match(clean_text(source))):
+        taxon = _TAXON_TARGET.search(text)
+        if taxon is not None:
+            start = taxon.start(1)
+            pre = text[:start]
+            mzh = _CJK_BEFORE_LATIN.search(pre)
+            if mzh:
+                start = mzh.start(1)
+            left = text[:start].strip().rstrip("。．.;；.")
+            right = text[start:].strip()
+            if left and right and len(left) >= 8 and good_key_target(right):
+                return left, right
+    if source:
+        from .keyalign import source_anchor
+
+        anchor = source_anchor(source)
+        if anchor is not None:
+            hits = list(anchor.finditer(text))
+            if hits:
+                hit = hits[-1]
+                left = LEADER_RE.sub(" ", text[: hit.start()]).strip(" .…")
+                right = text[hit.start() :].strip()
+                if left and right and good_key_target(right):
+                    return left, right
+    return None
+
+
+def key_para(
+    doc,
+    text,
+    genera,
+    key_breaks: set[str] | None = None,
+    source: str | None = None,
+    *,
+    space_before: float = 0.0,
+):
+    text = re.sub(r"\ufffd+", " …… ", text or "")
     text = clean_text(text)
     text = _STRAY_DOT.sub(" ", text)
     merged = _MERGED_COUPLET.search(text)
     if merged:
         first = text[: merged.end("num")].strip()
-        rest = text[merged.end():].strip()
+        rest = text[merged.end() :].strip()
         if first and rest:
-            key_para(doc, first, genera, key_breaks)
-            return key_para(doc, rest, genera, key_breaks)
-    m = LEADER_RE.search(text)
-    if m is None:
-        m = _SINGLE_DOT_TARGET.search(text)
-    if m is None:
-        m = _TARGET_SUFFIX.search(text)
-    if m:
-        left = text[:m.start()].strip()
-        right = m.group(1).strip() if m.re is _TARGET_SUFFIX else text[m.end():].strip()
-        if left and right:
-            force = key_breaks is not None and key_signature(left, right) in key_breaks
-            return tabbed(doc, left, right, 9.5, 4.0, genera, force_break=force)
+            key_para(
+                doc, first, genera, key_breaks, source=None, space_before=space_before
+            )
+            return key_para(doc, rest, genera, key_breaks, source=None)
+    pair = split_key_couplet(text, source=source)
+    if pair is not None:
+        left, right = pair
+        # 「描述。 *Platynereis* …… 9」：属名应在右栏目标，勿折到点线行首
+        if re.match(r"^\d{1,3}(?:['′ʹ\"]+)?\s*$", right):
+            moved = re.search(
+                r"^(?P<head>.*?)[,，。．.\s]+"
+                r"(?P<taxon>\*?[A-Z][A-Za-z-]+(?:\s+\*?[a-z][a-z-]*)?\*?)\s*$",
+                left,
+            )
+            if moved and len(moved.group("head")) >= 8:
+                left = moved.group("head").rstrip("，,。．. ")
+                right = f"{moved.group('taxon')} …… {right.strip()}"
+        force = key_breaks is not None and key_signature(left, right) in key_breaks
+        p = tabbed(doc, left, right, 9.5, 4.0, genera, force_break=force)
+        if space_before:
+            p.paragraph_format.space_before = Pt(space_before)
+        return p
     # Headings, introductory notes and footnotes inside a key carry no target:
     # set them ragged-right like the source, with the same 4 mm first-line
     # indent as a couplet marker.  Justifying them would reintroduce the wide
     # word gaps the keys are meant to avoid.
-    return para(doc, text, size=9.5, first=4.0, line=1.0,
-                align=WD_ALIGN_PARAGRAPH.LEFT, genera=genera)
+    return para(
+        doc,
+        text,
+        size=9.5,
+        first=4.0,
+        before=space_before,
+        line=1.0,
+        align=WD_ALIGN_PARAGRAPH.LEFT,
+        genera=genera,
+    )
 
 
 def image_para(doc, path: Path, max_w=118.0, max_h=150.0):
@@ -623,20 +1095,52 @@ def _suppress_hyphenation(p) -> None:
     )
 
 
+# 今岛种记述下的和名/日名行（短行）；正文里提到「日名」的长句不算。
+_WA_NAME_LINE = re.compile(
+    r"^(?:"
+    r"日名[「『].{1,40}?[」』](?:\s*[（(]新称[）)])?"
+    r"|和名.{0,36}"
+    r"|[ァ-ヶー・\u30FB\s]{3,36}(?:[（(]新称[）)])?"
+    r")\s*$"
+)
+
+
+def is_wa_name_line(text: str) -> bool:
+    """True for short centered Japanese vernacular name lines only."""
+    t = (text or "").strip()
+    if not t or len(t) > 48:
+        return False
+    if re.match(r"^(?:◆?分布|Fig\.|图|检索)", t):
+        return False
+    return bool(_WA_NAME_LINE.match(t))
+
+
 def caption(doc, text, genera):
-    # 出版惯例（用户 2026-11-17 定）：图注正体，学名斜体。原书把整条图注排成
-    # ITC Garamond Light Italic（Vol. 45 p. 30），照搬后图注与学名同色同体、没有层次。
-    # 9.5 pt：8.8 pt 在 Word/LibreOffice 里明显偏小。
-    # The Spanish original sets captions ragged-right beside the figure.  A
-    # justified caption has to hyphenate long words ("Re-drawn") to fill the
-    # measure; ragged-right keeps the caption readable and avoids those
-    # accidental-looking hyphens in the printed book.
-    p = para(doc, text, size=9.5, italic=False, align=WD_ALIGN_PARAGRAPH.LEFT,
-             before=12, after=7, line=1.05, genera=genera)
-    # A caption that splits over a page break reads as two unrelated fragments.
+    # 今岛原书：短图题「図 N *种名* Author」居中加粗；长字母说明另段左齐。
+    # Fauna 系图注仍左齐（含 Re-drawn 等）。学名斜体、图注正文正体。
+    text = clean_text(text)
+    has_panel = bool(re.search(r"[a-zA-Zａ-ｚ][:：]", text or ""))
+    is_fig_title = bool(re.match(r"^(?:Fig\.?\s*|图\s*)\d+", text or "", re.I))
+    center = is_fig_title and not has_panel and len(text or "") <= 120
+    align = WD_ALIGN_PARAGRAPH.CENTER if center else WD_ALIGN_PARAGRAPH.LEFT
+    p = para(
+        doc,
+        text,
+        size=10.5 if center else 9.5,
+        bold=center,
+        italic=False,
+        align=align,
+        before=12,
+        after=8 if center else 14,
+        line=1.05,
+        genera=genera,
+    )
     p.paragraph_format.keep_together = True
     _suppress_hyphenation(p)
     return p
+
+
+_KEY_TITLE = re.compile(r"检索\s*$")
 
 
 def raw_pages(translation: Path) -> dict[int, str]:
@@ -667,11 +1171,27 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
         if meta.subtitle:
             para(doc, meta.subtitle, size=24, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=12, genera=genera)
         if meta.edition:
-            para(doc, meta.edition, size=13, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=40)
+            # 中文扉页说明勿整段斜体（italic_check: italic.cjk）
+            ed_italic = not bool(_CJK.search(meta.edition))
+            para(
+                doc,
+                meta.edition,
+                size=13,
+                italic=ed_italic,
+                align=WD_ALIGN_PARAGRAPH.CENTER,
+                after=40,
+            )
         if meta.publisher:
             para(doc, meta.publisher, size=10, align=WD_ALIGN_PARAGRAPH.CENTER, after=30)
         if meta.notes:
-            para(doc, meta.notes, size=8.5, italic=True, align=WD_ALIGN_PARAGRAPH.CENTER)
+            notes_italic = not bool(_CJK.search(meta.notes))
+            para(
+                doc,
+                meta.notes,
+                size=8.5,
+                italic=notes_italic,
+                align=WD_ALIGN_PARAGRAPH.CENTER,
+            )
         page_break(doc)
 
     if meta.translator:
@@ -725,7 +1245,9 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
             continue
         seen.add(p["chapter"])
         source_title = chapter_title(p, meta)
-        title = meta.display(p["chapter"], source_title)
+        title = clean_toc_title(meta.display(p["chapter"], source_title))
+        if not title:
+            continue
         printed = p["page"] - meta.folio_offset
         out_page = page_map.get(str(printed), "")
         rows.append((p, title, out_page))
@@ -734,7 +1256,9 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
     rows.sort(key=lambda row: _is_index_chapter(row[0]["chapter"], meta))
     for p, title, out_page in rows:
         par = doc.add_paragraph()
-        par.paragraph_format.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        par.paragraph_format.tab_stops.add_tab_stop(
+            Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS
+        )
         par.paragraph_format.space_before = Pt(3)
         add_runs(par, title, 10.5, bold=True, genera=genera)
         par.add_run("\t")
@@ -744,8 +1268,10 @@ def front_matter(doc, data, genera, page_map, meta: BookMeta, translation: Path 
 def chapter_title(page: dict, meta: BookMeta) -> str:
     for b in page["blocks"]:
         if b["role"] == "heading" and b.get("level") == 1 and b.get("translation"):
-            return clean_text(b["translation"])
-    return page["chapter"]
+            return clean_toc_title(
+                b["translation"], source=b.get("text") or ""
+            )
+    return clean_toc_title(page["chapter"])
 
 
 def _is_index_chapter(chapter: str, meta: BookMeta) -> bool:
@@ -797,15 +1323,28 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     heading(doc, title, 1, genera, chapter_start=True)
                     synthetic_heading = True
         page_figs = figs.get(p["page"], [])
-        caps = [b for b in p["blocks"] if b["role"] == "caption"]
-        first_y = min([b.get("y0", 999) for b in p["blocks"] if b["role"] != "caption"], default=999)
-        cap_first = any(b.get("y0", 999) < first_y for b in caps)
+        # 今岛：图N种名是标题不是页首插图；仅非 _figure_only 且确在页首的 caption 才提前出图
+        caps = [
+            b for b in p["blocks"]
+            if b["role"] == "caption" and not b.get("_figure_only")
+        ]
+
+        def _y0(block: dict) -> float:
+            y = block.get("y0")
+            return float(y) if y is not None else 999.0
+
+        first_y = min(
+            (_y0(b) for b in p["blocks"] if b["role"] != "caption"),
+            default=999.0,
+        )
+        cap_first = any(_y0(b) < first_y for b in caps)
         placed: set[int] = set()
         if cap_first:
             for b in caps:
                 place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
                 placed.add(id(b))
         prev_body = None
+        prev_role: str | None = None
         for b in p["blocks"]:
             role = b["role"]
             text = clean_text(b.get("translation") or "")
@@ -813,15 +1352,49 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 heading(doc, title, 1, genera, chapter_start=True)
                 synthetic_heading = True
                 prev_body = None
+                prev_role = "heading"
                 continue
             if role == "caption":
                 if id(b) not in placed:
                     place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
                 prev_body = None
+                prev_role = "caption"
                 continue
             if not text:
                 continue
             if p["kind"] == "index" and text.upper().startswith("ALPHABETICAL INDEX"):
+                continue
+            # 今岛：和名/日名短行（aligned 常误标 heading）加粗居中
+            if is_wa_name_line(text):
+                para(
+                    doc,
+                    text,
+                    size=10.5,
+                    bold=True,
+                    align=WD_ALIGN_PARAGRAPH.CENTER,
+                    before=0,
+                    after=10,
+                    genera=genera,
+                    keep=True,
+                )
+                prev_body = None
+                prev_role = "wa_name"
+                continue
+            # 日名下中文俗名行（yiku；与学名行阶元中文名分层；仅认标记，防误居中正文）
+            if b.get("_zh_vernacular"):
+                para(
+                    doc,
+                    text,
+                    size=10.5,
+                    bold=True,
+                    align=WD_ALIGN_PARAGRAPH.CENTER,
+                    before=0,
+                    after=8,
+                    genera=genera,
+                    keep=True,
+                )
+                prev_body = None
+                prev_role = "zh_vernacular"
                 continue
             if role in {"heading", "body"}:
                 ack = re.match(r'^(Acknowledg(?:e)?ments)\b[\s.:\-—]*(.*)$',
@@ -832,7 +1405,14 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     role = "body"
                     if not text:
                         prev_body = None
+                        prev_role = "heading"
                         continue
+            # 「…检索」短行：当小标题，与上文空一行
+            if role == "body" and _KEY_TITLE.search(text) and len(text) <= 40:
+                heading(doc, text, 2, genera)
+                prev_body = None
+                prev_role = "heading"
+                continue
             if role == "heading":
                 skip = first_page and synthetic_heading and (
                     clean_text(text).lower() in {clean_text(title).lower(), clean_text(source_title).lower()}
@@ -860,6 +1440,18 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                      align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
                      before=4, after=4, genera=genera)
                 prev_body = None
+            elif role == "legend":
+                # 未被并入 caption 的残留图注字母行；段后空一行
+                para(
+                    doc,
+                    text,
+                    size=9.0,
+                    align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+                    before=2,
+                    after=14,
+                    genera=genera,
+                )
+                prev_body = None
             elif role == "body":
                 # merge a page-split sentence
                 if prev_body is not None and can_join(prev_body[0], text):
@@ -878,11 +1470,24 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             elif role == "citation":
                 para(doc, text, size=9.2, left=4, first=-4, before=1, line=1.0, genera=genera)
                 prev_body = None
+            elif role == "couplet":
+                couplet_para(doc, b, genera, key_breaks,
+                             space_before=8.0 if prev_role != "couplet" else 0.0)
+                prev_body = None
             elif role == "key":
-                key_para(doc, text, genera, key_breaks)
+                # 检索表与上一段之间空一行（仅第一条偶行）
+                before = 14.0 if prev_role != "key" else 0.0
+                key_para(
+                    doc,
+                    text,
+                    genera,
+                    key_breaks,
+                    source=b.get("text"),
+                    space_before=before,
+                )
                 prev_body = None
             elif role == "ref":
-                para(doc, text, size=8.8, left=4, first=-4, after=2.5, line=0.98, genera=genera)
+                para(doc, text, size=8.8, left=4, first=-4, after=2.5, line=0.98, genera=genera, keep=True)
                 prev_body = None
             elif role == "entry":
                 for prefix in meta.entry_prefixes:
@@ -895,6 +1500,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             elif role == "index":
                 continue
             prev_body = prev_body if role == "body" else None
+            prev_role = role
     render_index(doc, data, genera, page_map, meta)
 
 
@@ -903,7 +1509,10 @@ def can_join(a: str, b: str) -> bool:
         return False
     if a.endswith('-'):
         return b[:1].islower()
-    if re.search(r'[.!?:;”’)]$', a):
+    # 中文句末标点；图注字母行（a：体前部）不与上段拼接
+    if re.search(r'[.!?:;”’)。．！？]$', a):
+        return False
+    if re.match(r'[a-zA-Zａ-ｚ][:：]', b):
         return False
     return b[:1].islower() or b[:1] in '([“‘'
 
@@ -924,6 +1533,8 @@ def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
     m = FIG_RE.search(text)
     if m:
         label = m.group(1).replace('’', '′')
+    # 今岛：种名行已作 heading，「图N」占位只出插图，不再重复印种名
+    figure_only = bool(cap_block.get("_figure_only"))
     fig = None
     for f in page_figs:
         if label and f['source_label'].replace('’', '′') == label:
@@ -932,10 +1543,17 @@ def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
     if fig is None and page_figs:
         fig = page_figs[0]
     if fig:
+        # 同一源页可有多个条目各带 caption：每张裁图整本书只排一次，否则重复出图
+        done = doc.__dict__.setdefault('_placed_crops', set())
+        for pre in fig.get('pre_crops', []):
+            if (figs_dir / pre).exists() and pre not in done:
+                done.add(pre)
+                image_para(doc, figs_dir / pre)
         path = figs_dir / fig['crop']
-        if path.exists():
+        if path.exists() and fig['crop'] not in done:
+            done.add(fig['crop'])
             image_para(doc, path)
-    if text:
+    if text and not figure_only:
         caption(doc, text, genera)
 
 
@@ -1036,11 +1654,12 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
                 p.paragraph_format.space_before = p.paragraph_format.space_after = Pt(0)
                 p.paragraph_format.line_spacing = 1.0
                 p.paragraph_format.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-                add_runs(p, left, 8.6, genera=genera)
+                both = bool(_CJK.search(left + right))
+                add_runs(p, left, 8.6, genera=genera, para_cjk=both)
                 if fixed:
                     p.add_run('†')
                 p.add_run('\t')
-                add_runs(p, right, 8.6)
+                add_runs(p, right, 8.6, para_cjk=both)
                 continue
         if m:
             left = text[:m.start()].strip()
@@ -1053,11 +1672,12 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
             pf.space_before, pf.space_after = Pt(0), Pt(0)
             pf.line_spacing = 1.0
             pf.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-            add_runs(p, left, 8.6, genera=genera)
+            both = bool(_CJK.search(left + right))
+            add_runs(p, left, 8.6, genera=genera, para_cjk=both)
             if fixed:
                 p.add_run('†')
             p.add_run('\t')
-            add_runs(p, right, 8.6)
+            add_runs(p, right, 8.6, para_cjk=both)
         else:
             para(doc, text + ('†' if fixed else ''), size=8.6, line=1.0,
                  genera=genera)
@@ -1173,6 +1793,12 @@ def match_text(t: str) -> str:
     return re.sub(r"\s+", " ", t).strip().lower()
 
 
+def _cjk_tight(text: str) -> str:
+    """去掉汉字与相邻字符之间的空白：PDF 抽文本会吞掉中文与拉丁名之间的空格，
+    而 aligned 里写作「哈鳞虫亚科 Harmothoinae」。比较前两边都收紧。"""
+    return re.sub(r"(?<=[\u3400-\u9fff])\s+|\s+(?=[\u3400-\u9fff])", "", text)
+
+
 def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
     import fitz
 
@@ -1257,11 +1883,13 @@ def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
             (p["page"], p["page"] - meta.folio_offset,
              page_map.get(str(p["page"] - meta.folio_offset)))
         )
-        title = meta.index_title if p["chapter"] == meta.index_chapter else meta.display(
-            p["chapter"], p["chapter"]
+        # 与目录渲染同一个标题（chapter_title 取一级标题块并清洗）：aligned 的章名可能带重复
+        # 的「Subfamily X」脏尾巴，直接拿来匹配 PDF 标题行会落空，退回正文片段后差一页。
+        title = meta.index_title if p["chapter"] == meta.index_chapter else clean_toc_title(
+            meta.display(p["chapter"], chapter_title(p, meta))
         )
-        keys = [title.upper()[:34]]
-        short = re.split(r"[（(]", title.upper())[0].strip()[:34]
+        keys = [_cjk_tight(title.upper())[:34]]
+        short = _cjk_tight(re.split(r"[（(]", title.upper())[0].strip())[:34]
         if short and short not in keys:
             keys.append(short)
         for i in range(4, len(lines)):
@@ -1274,7 +1902,7 @@ def make_page_map(pdf: Path, data: dict, meta: BookMeta) -> dict[str, int]:
                 # chapter heading; a heading continues with a space or is exact.
                 return len(line) == len(key) or line[len(key)] not in ".,;:"
 
-            if any(heading_match(line, key) for key in keys for line in lines[i][:4]):
+            if any(heading_match(_cjk_tight(line), key) for key in keys for line in lines[i][:4]):
                 page_map[str(p["page"] - meta.folio_offset)] = i + 1
                 break
     # A body snippet can also occur in the appendix, which maps a later page of

@@ -169,3 +169,85 @@ def check_budget() -> None:
     limit = budget_limit()
     if limit is not None and spent() > limit:
         raise BudgetExceeded(f"token 预算已超：累计约 {spent()} > YZZ_TOKEN_BUDGET={limit}")
+
+
+# ───────── 人民币预算闸：一本书（一个工作目录的 usage.tsv）默认最多 ¥2 ─────────
+# 依据：2026-11-20 用户定「一本书最多 2 块」；Imajima 三卷×英/中实测每个语种版本 ¥2.5–6.2，
+# 其中全文改写（revise）约占 69%，见 docs/research/2026-11-20-book-cost-cap.md。
+DS_PRICE = {'in': 0.15, 'cache': 0.003, 'out': 0.6}   # deepseek-flash 闲时 USD/1M（官方定价页 2026-11-14）
+PRICED_ENGINES = frozenset({'deepseek-flash'})        # 只有这个有人民币单价；其余引擎无法核算，预算开启时拒绝
+DEFAULT_BUDGET_CNY = 2.0
+
+_cny_lock = threading.Lock()
+_reserved: dict[str, float] = {}
+
+
+def usd_cny() -> float:
+    return float(os.environ.get('YZZ_USD_CNY', '7.2'))
+
+
+def budget_cny() -> float | None:
+    """每本书的人民币上限。YZZ_BUDGET_CNY=数字 改上限；off 关闭（返回 None）。默认 ¥2。"""
+    raw = os.environ.get('YZZ_BUDGET_CNY', '').strip().lower()
+    if not raw:
+        return DEFAULT_BUDGET_CNY
+    if raw in ('off', 'none', 'unlimited'):
+        return None
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f'YZZ_BUDGET_CNY={raw!r} 不是数字，也不是 off') from exc
+
+
+def cost_cny(engine: str, input_tokens: Any, output_tokens: Any, cache_tokens: Any) -> float | None:
+    """按官方价折算人民币；无单价的引擎返回 None。"""
+    if engine not in PRICED_ENGINES:
+        return None
+
+    def n(v: Any) -> int:
+        try:
+            return int(v or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    usd = (n(input_tokens) * DS_PRICE['in'] + n(cache_tokens) * DS_PRICE['cache']
+           + n(output_tokens) * DS_PRICE['out']) / 1e6
+    return usd * usd_cny()
+
+
+def spent_cny(usage_file: Any) -> float:
+    """该书 usage.tsv 里已花的人民币（跨多次续跑累计）。文件不存在为 0。"""
+    from pathlib import Path
+    p = Path(str(usage_file))
+    if not p.exists():
+        return 0.0
+    total = 0.0
+    for line in p.read_text(encoding='utf-8').splitlines()[1:]:
+        f = line.split('\t')
+        if len(f) < 6:
+            continue
+        total += cost_cny(f[1], f[3], f[4], f[5]) or 0.0
+    return total
+
+
+def worst_case_cny(engine: str, system: str, user: str, max_tokens: int) -> float | None:
+    """这一次请求的花费上界：输入全按未缓存价、输出打满 max_tokens。"""
+    return cost_cny(engine, estimate_tokens(system) + estimate_tokens(user), max_tokens, 0)
+
+
+def reserve_cny(usage_file: Any, amount: float, cap: float) -> None:
+    """发请求前预留最坏花费；已花 + 在途预留 + 本次最坏 > cap 则拒绝。并行请求共用一个预留表。"""
+    key = str(usage_file)
+    with _cny_lock:
+        used = spent_cny(key) + _reserved.get(key, 0.0)
+        if used + amount > cap:
+            raise BudgetExceeded(
+                f'预算闸：这本书已花 ¥{used:.3f}，本次最坏还要 ¥{amount:.3f}，会超过上限 ¥{cap:g}'
+                f'（YZZ_BUDGET_CNY）。不发请求。')
+        _reserved[key] = _reserved.get(key, 0.0) + amount
+
+
+def release_cny(usage_file: Any, amount: float) -> None:
+    key = str(usage_file)
+    with _cny_lock:
+        _reserved[key] = max(0.0, _reserved.get(key, 0.0) - amount)

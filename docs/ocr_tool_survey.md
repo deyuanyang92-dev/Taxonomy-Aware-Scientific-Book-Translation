@@ -62,3 +62,27 @@ Accepted output becomes primary without upgrading verification level; rejected o
 Both outcomes prevent repeat processing. `_audit/proofread_KEY.jsonl` records decisions, author, metadata,
 and up to 200 word-diff spans; rejections also go to `_audit/proofread_rejects_KEY.jsonl`.
 Failures remain retryable, and each completed attempt prints a flushed progress line.
+
+## Latin-script (Spanish) benchmark, FAUNA IBERICA scans (2026-11-21)
+
+20 random pages from 4 volumes (300 dpi), gold = Sonnet transcription (120 half-page files, may contain errors).
+Metric: bag-of-words recall/precision, order-independent, hyphen-joined (`work/ocr_bench2/score.py`).
+
+| Engine | Recall | Precision | Verdict |
+|---|---|---|---|
+| Datalab accurate + keep_pageheader, synthetic image captions stripped | 98.98 | 99.40 | best; external API |
+| Datalab accurate / balanced (no header) | 98.00 / 97.80 | 99.4 | |
+| Tesseract spa+eng psm3 | 97.19 | 97.01 | best local, free |
+| PP-OCRv5 server det + latin mobile rec | 97.07 | 97.24 | |
+| pp_latin variants (det thresh/unclip/side) and PP-OCRv6 medium | 96.75-97.22 | 97.19-97.34 | no gain, within noise |
+| OvisOCR2 half-page + dedup | 98.07 | 88.63 | loops, invents text |
+| OvisOCR2 + RepStop | 91.49 | 97.73 | truncates, v21/v25 ~82 |
+| PaddleOCR-VL-1.6 (transformers, half page) | 48.4 (2 pages) | 94.9 | 355-1696 s/page, degenerates |
+
+Caveats: Datalab emits English synthetic image descriptions that inflate raw recall (99.47 raw); `--disable_image_captions`
+did not remove them, so they were stripped by an English/Spanish function-word heuristic. Gold includes running headers,
+so the keep_pageheader gain is partly header text. PaddleOCR-VL remote code fails on transformers 5.23
+(`rope_parameters`); use the native class. Paddle CPU needs `enable_mkldnn=False` (oneDNN PIR bug, 3.3.1).
+
+## 日文横评（2026-11-21，Imajima 14 页）
+PP-OCRv6_medium@200 最佳（页均 CER 0.057，1.68 s/页）；PP-OCRv5 server/mobile 0.065；YomiToku 0.085；Tesseract jpn 0.27+；RapidOCR/EasyOCR >0.33。300dpi 不优于 200dpi。详见 日本-imajima/AGENTS.md 与 yanjie/work/jp_bench/jp_result.md。金标为 Sonnet 转录，未人工校。

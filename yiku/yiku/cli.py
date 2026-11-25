@@ -12,6 +12,7 @@ from pathlib import Path
 from . import db as D
 from . import decide as DC
 from . import extract as X
+from . import gloss as G
 from . import ingest as I
 from . import match as M
 
@@ -49,6 +50,20 @@ def cmd_source(a, con):
         for r in con.execute("SELECT s.*, (SELECT count(*) FROM terms t WHERE t.source=s.key) n "
                              "FROM sources s ORDER BY tier, year DESC, key"):
             print(f"{r['tier']}\t{r['key']}\t{r['year'] or '-'}\t{r['kind']}\t{r['domain']}\t{r['n']}条\t{r['title']}")
+
+
+def cmd_gloss(a, con):
+    if a.action == "import":
+        new, old = G.import_tsv(con, a.arg, a.source)
+        print(f"英文术语清单：新增 {new}，已存在 {old}（来源 {a.source}）")
+    elif a.action == "lookup":
+        rows = con.execute("SELECT * FROM en_glossary WHERE en_norm=?", (D.norm(a.arg),)).fetchall()
+        for r in rows or []:
+            print(f"{r['en']}\t{r['applicable']}\t{r['abbr']}\t{r['source']}\n  {r['definition']}")
+        if not rows:
+            print("清单中无此术语")
+    else:  # gaps
+        print(G.render_gaps(G.find_gaps(con, Path(a.arg).read_text(encoding="utf8")), con=con) or "无未定名术语")
 
 
 def cmd_import(a, con):
@@ -351,6 +366,11 @@ def build_parser():
     s.add_argument("terms", nargs="+")
     s.add_argument("--taxon", action="store_true", help="按学名(P225)查")
     s.add_argument("--domain", default="*")
+
+    s = sub.add_parser("gloss", help="英文术语清单（无中文译名）：import / lookup / gaps")
+    s.add_argument("action", choices=["import", "lookup", "gaps"])
+    s.add_argument("arg", help="import: TSV；lookup: 英文术语；gaps: 原文文件")
+    s.add_argument("--source", default="", help="import 时必填：来源 key")
 
     sub.add_parser("stats", help="统计与冲突")
     return p

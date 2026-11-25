@@ -67,6 +67,15 @@ def source_anchor(source: str) -> re.Pattern[str] | None:
     match = re.search(r"([A-Za-z][A-Za-z.-]*)\s*\(\s*(\d{4})\s*\)\s*$", text)
     if match:
         return re.compile(re.escape(match.group(1)) + r"\s*\(\s*" + match.group(2) + r"\s*\)")
+    # Imajima: "Genus species (図34)" / "(Fig. 12)" — anchor on the Latin epithet.
+    match = re.search(
+        r"([A-Z][a-z][A-Za-z-]*)(?:\s+\(?([a-z][a-z-]+)\)?)?\s*"
+        r"[\(（]\s*(?:Fig\.?|Figs?\.?|図|图)\s*[^)）]*[\)）]\s*$",
+        text,
+    )
+    if match:
+        epithet = match.group(2) or match.group(1)
+        return re.compile(r"(?<!\w)" + re.escape(epithet) + r"(?!\w)")
     match = re.search(r"(?<![A-Za-z])(\d{1,2})\s*$", text)
     if match:
         return re.compile(r"(?:[.…�]\s*){2,}" + match.group(1) + r"\b")

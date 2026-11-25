@@ -42,6 +42,8 @@
 ### 2.0 思路定案（Cursor 2026-11-17）：分章 · 两档质控 · 分体裁文风
 
 **分类学如何更准更高效（操作口诀）：** [`docs/TAXONOMY_TRANSLATION_PLAYBOOK.md`](TAXONOMY_TRANSLATION_PLAYBOOK.md)。  
+今岛等日本志书版式：先对照原书看几页（大模型可辅助认块），再写 `booklayout` 规则；见 [`monograph_layout_ja.md`](monograph_layout_ja.md)。
+
 对照主流后的定案见 [`docs/plans/2026-11-17-translation-approach-optimization.md`](plans/2026-11-17-translation-approach-optimization.md)：
 
 1. **分章**：交付与并行以章为单元（`fast_book chapters` / `run_batches --chapters`）；样章通过再铺开。
@@ -312,7 +314,7 @@
 - [ ] 索引（原书有索引；译本是否需要中文索引，待用户定）。
 - [x] ANNiKEY 术语表下载与抽取（518 条英文定义）；MQM + 分类学专项写入 PROMPTS.md；`term_impact.py`（2026-11-10）。
 - [ ] **基准测试**：选一篇 15–30 页、含物种描述、比较表、二歧检索表、图注的分类学论文（建议用户自己的已发表论文，便于专家判对错），用本流程全程跑一遍，按覆盖率、术语一致、分类学准确（计数/性状/比较）、检索表正确、学名保真、可追溯、成品质量 7 项打分；不用 BLEU 或模型自评。
-- [ ] 检索表校验脚本：解析编号、分支、跳转目标，查缺号与断链（Handbook 必需）。
+- [x] 检索表跳转图：`booklayout.keygraph` / `keys-check`（悬空、缺对偶、成环；按章分段）。特征语义编表仍不做。
 - [ ] 志书总论笔记已完成（`参考库/志书分类表述/分类学基础_志书总论.md`，277 条）；**「零命中」类结论须回原页核对**（已证「稃」为 OCR 漏字）；核过的并入领域包。
 - [ ] paleae 用字：卷54 帚毛虫科「稃片刚毛」，他科待按原页核。（子代理进行中）→ 主会话核对 → 并入领域包。
 - [ ] 文风笔记 6–8 节（限定语、图注、其他）。

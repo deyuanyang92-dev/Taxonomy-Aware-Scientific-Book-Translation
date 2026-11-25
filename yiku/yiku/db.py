@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS terms(
   created TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   UNIQUE(en_norm, zh, domain, scope, source));
 CREATE INDEX IF NOT EXISTS terms_en ON terms(en_norm);
+CREATE TABLE IF NOT EXISTS en_glossary(
+  id INTEGER PRIMARY KEY, en TEXT NOT NULL, en_norm TEXT NOT NULL, definition TEXT,
+  applicable TEXT, abbr TEXT, source TEXT NOT NULL, ref TEXT,
+  created TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(en_norm, source));
+CREATE INDEX IF NOT EXISTS en_glossary_en ON en_glossary(en_norm);
 """
 
 

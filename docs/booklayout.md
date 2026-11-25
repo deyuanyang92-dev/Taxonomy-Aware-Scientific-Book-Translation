@@ -11,6 +11,36 @@ booklayout --help
 
 依赖：`python-docx`（DOCX）、`pymupdf`（页映射和检查）、LibreOffice（只在 `--pdf` 时调用）。
 
+可选 preview 依赖：`pip install 'weasyprint>=62'`（HTML→可选 DRAFT PDF）；Typst 引擎需本机 `typst` 二进制（未装时请用 `--engine html`，HTML 小样不依赖 typst）。
+
+## preview（非交付）与三阶段工作流
+
+成书必须走：**小样排版 → 大模型核验 + 用户核验 → 通过后才正式批量排版/交付**。短说明见 [`docs/preview_workflow.md`](preview_workflow.md)。
+
+| 阶段 | 做什么 | 产物落点 |
+|------|--------|----------|
+| **A 小样** | `booklayout preview`（`html`\|`typst`，真图，标 **DRAFT**）；按小样改对齐 JSON | 仅 `work/` 临时目录 |
+| **B 核验** | 模型：`audit` / `keys-check` / `layout_invariants` + 对照原 PDF 抽查乱码；**用户看小样确认** | 报告/问题单；仍不交付 |
+| **C 正式** | 仅当 `booklayout verify` **全绿** 才 `build` 全书 Word/PDF 并拷入交付目录 | 交付目录 |
+
+硬约束：迭代期**禁止**往交付目录刷半成品；小样只在 `work/` 临时目录。`preview` **不算交付**，不替代 `verify` / `build --pdf`。正式成书仍走 DOCX→LibreOffice；`verify` 未绿仍禁止正式 PDF/DOCX。
+
+```bash
+# HTML（默认；浏览器打开 index.html）
+booklayout preview \
+  --aligned aligned.json --figures figures/ \
+  --pages 129 --engine html \
+  --out work/tmp_preview_p129/
+
+# 可选 Typst（需已安装 typst；失败则改用 html）
+booklayout preview \
+  --aligned aligned.json --figures figures/ \
+  --pages 5-6 --engine typst \
+  --out work/tmp_preview_keys/
+```
+
+切片写入 `aligned_slice.json`；HTML 用真实 `figures/` crop（经 `source_figure_audit.json`），检索表复用 `split_key_couplet`（中文|拉丁同右栏）。产物含 `DRAFT` 横幅与 `preview_meta.json`（`delivery: false`）。
+
 ## 输入
 
 ### 1. 对齐 JSON（`--aligned`）
@@ -142,6 +172,14 @@ booklayout patch-blocks --aligned aligned.json --patch edits.json --out aligned_
 
 格式：`{"edits": [{"block_id": "p277_b00", "translation": "..."}, {"block_id": "p277_b01", "remove": true}]}`。
 
+乱码/坏段对照原书页修块：先 `extract-blocks` 抽出（源文、坏译文、docstore 页图或 PDF 渲染、OCR），模型改完再用 `patch-blocks` 写回：
+
+```bash
+booklayout extract-blocks --aligned aligned.json --doc-key Imajima2001 \
+  --block-ids p326_b08,p010_b13 --out-dir garble_packs/
+booklayout patch-blocks --aligned aligned.json --patch edits.json
+```
+
 ## 检索表页重切（key-align）
 
 检索表页没有标题、引文、条目这些锚点，一行错位就会让整页每对条目都错，而字数覆盖率查不出来（文字没丢，只是串位）。`key-align` 从译文 markdown 的整页文本按源文行末的页码/条目号重切：
@@ -152,6 +190,24 @@ booklayout key-align --aligned aligned.json \
 ```
 
 判据：每条源文行以 `(p. N)`、`Author (Year)`、条目号或末词结尾，译文对应位置也应出现同一锚点；行首丢失的 `•` 在上一行锚点之后补找；行尾脚注按脚注号重切，最后一条脚注用后文标题/引文锚点截断，避免吞并下一节。未能重切的页在报告里给 `anchor not found`，不猜。
+
+检索表**文字也要排版**：每条须能 `split_key_couplet` → `tabbed`（左栏特征 + 点线 + 右栏目标）。拆不开就只是左对齐散文。越改越差的原因与作业规程见 `docs/keys_layout_lessons.md`；根目录一次性 `tmp_*keys*` 已归档，勿再当正式入口。
+
+## 检索表偶句重建（OCR 行框 → keys.json → apply-keys，issue #38）
+
+日文等无法靠译文对位的检索表，不从译文反推结构，而从原书 OCR 的行框重建：条目号框、正文框、右栏终点框的位置本身就说明了谁是条目号、谁是跳转号或学名。三步，全部是脚本，零 token：
+
+```bash
+# 1. 行框 → 偶句（语法 G1–G9 在 docstore/rules/keys.toml；终点缺失、续页、插图版打断等见 docstore/keys.py）
+docstore keys extract --cache <行框缓存目录> --last <页数> --out keys_auto.json --fix keys_fix.json
+# 2. 偶句描述抽成侧表，翻译（Google 初稿 + DeepSeek 核译，术语表和学名表注入），回收到 keys_<语言>.json
+python3 scripts/keys_translate.py prepare keys_auto.json --out-dir keys_tr
+python3 scripts/keys_translate.py collect --items keys_tr/items.json --tr keys_tr/<语言>/checked.md --lang <语言> --out keys_tr/keys_<语言>.json
+# 3. 用偶句块重建检索表页，审计后排版（审计有缺陷时退出码 1；--allow-defects 放行并写入 keys_apply.json）
+booklayout apply-keys --aligned aligned.json --keys keys_auto.json --tr keys_tr/keys_<语言>.json --lang <语言>
+```
+
+`docstore keys check` 按表检查自洽：条目号连续、每个跳转号都落在本表的某个条目、每个条目有终点、每个条目号有备择条目。OCR 本身丢框（终点数字漏掉、横线框漏掉、图号少一位）的残留缺陷，只能对照页面图像人工核对后写进 `keys_fix.json`（`set`/`drop`/`add`，每条必须写 `why`，匹配必须恰好一条，提取器改进后旧补丁失效会报错而不是静默套错位置）。`apply-keys` 每次都从 `keys.json` 重建整页，重复运行结果不变。
 
 ## 其他确定性修版规则
 
@@ -172,19 +228,56 @@ booklayout qa \
 
 | 审次 | 检查内容 | 失败示例 |
 |---|---|---|
-| 一审 结构 | 未译内容块、缺裁剪图、图注无图号、超长标题、缩写表混入正文、全大写正文 | `untranslated_content_blocks > 0` |
+| 一审 结构 | 未译内容块、缺裁剪图、图注无图号、超长标题、缩写表混入正文、全大写正文、**严格检索表格式**（必须可拆左栏+右目标、禁并条、禁丢标记、目标合法） | `key_audit.format_ok == false`、`keys-check` 退出码 1 |
 | 二审 版式 | PDF 空白页、图注贴图、回退字体、两端对齐造成的超宽词距、文字越出版心、目录/索引页码指错页、检索表目标未右对齐/目标被拆行、图注把一个词拆到下一行 | `wide_spacing`、`overflow_words`、`wrong_page_refs`、`key_layout`、`caption_word_breaks` |
-| 三审 文字 | 同页重复 **body** 段、引文/条目吞描述、**caption/entry/note/body** 译文过短、句末截断、缺年份、西语残留；报告含 `checked_by_role` | `role_suspects`、`short_translations`、`truncated_endings`、`entry_year_missing`、`spanish_residue` |
+| 三审 文字 | **强制深检**全可印角色（`body/caption/entry/note/heading/citation/key/ref`）；覆盖率不足即失败；短译/过长合并/截断/串角色/U+00A0/行末孤儿连字符/缺年份/西语残留 | `coverage`、`short_translations`、`oversized_translations`、`bad_nbsp`、`orphan_hyphen`、`key_text_outside_key`、`spanish_residue` |
 
-三校对应三次确定性关口：一校对齐数据（`normalize` 报告逐条复核）；二校 PDF 版式（`qa` 二审）；三校文字（`qa` 三审）。任一审不为 `ok`，先修数据再重排，不直接改 DOCX/PDF。
+无 PDF 时也可先跑静态审计（检索表 + 各角色文字）：
 
+```bash
+booklayout audit --aligned aligned.json --metadata metadata.json --out final/audit.json
+```
+
+**正式交付唯一推荐入口（严格，缺一不可）：**
+
+```bash
+booklayout verify \
+  --aligned aligned.json --figures figures/ --pdf book.pdf \
+  --metadata metadata.json --out-dir final/verify/
+# 退出码 0 且 verify.json ok=true 才算过关
+```
+
+内部依次跑：`keys-check` → `qa`（必须有 PDF）→ `check --strict` → `key-report` → `gate`。
+任一步失败即整单失败。试译可用 `qa --draft` / 不带 `--strict` 的 check，**不得称正式交付**。
+
+另：`delivery_gate.py --tier release` 默认硬拦 `check_failed` 未清空，且必须提供 qa/check/key-report + key-audit（或 aligned）。
+
+### 模型问题 → 脚本闭环（强制）
+
+大模型/核译/人工发现问题后，**不得只改这一本书的 aligned 就完事**。先跑：
+
+```bash
+python3 scripts/mine_script_gaps.py \
+  --audit final/audit.json --check final/check.json \
+  --qa-issues work/en/qa_issues.json \
+  --revise-issues work/en/revise_issues.json \
+  --aligned final/aligned.json \
+  --out-dir final/script_gaps
+```
+
+产物：`gaps.json`（归因）、`backlog.md`（P0 漏检 / P1 已检出待修）、`fixtures/`（最小回归样例）。
+`uncovered`（模型报了排版类问题、当前检测器却扫不到）退出码为 1：先改 `booklayout`/`transqa` 并补测试，再重建。
+
+三校对应三次确定性关口：一校对齐数据（`normalize` 报告逐条复核 + `audit`/`qa` 一审的 `key_audit`）；二校 PDF 版式（`qa` 二审）；三校文字（`qa` 三审）。
 一审把"会印进书里的页"上缺译的图注判为内容缺失：构建器遇到空译图注会省略图注、只印图，因此这种图注不能按语言中性块放行。`body_start_page` 之前的前置页、`skip_after_page` 之后和索引章不印，空图注不计。文献引证（`citation`）一般语言中性，原样保留；若引证以大写西班牙语字段名开头（如 `ESPECIE TIPO:`），字段名仍需翻译，一审同样判缺失。
 
 排版本身已固定：正文 10.5 pt 两端对齐，启用 `w:autoHyphenation`、`w:consecutiveHyphenLimit=2`、`w:hyphenationZone=357`，并写入 `w:proofState spelling="clean" grammar="clean"`。LibreOffice 需要 `hyphen-en-us` 词典；缺词典时 PDF 会出现超宽词距，二审会报 `wide_spacing`。二审以 9 pt 为词距上限（10.5 pt 字号、134 mm 版心中约 3.5 个正常空格），超过才判失败；8–9 pt 属正常两端对齐伸缩，不阻断交付。
 
-检索表单独排版：编号/圆点缩进 4 mm，行末用右对齐点线制表位把目标（下一条目号、种名或页码）拉到版心右缘；过长的条目把目标整体移到下一行，仍右对齐，不再把目标留在省略号后面。图注改为左对齐（与原书一致）并禁止自动断词，避免 `Re-drawn` 一类把单词拆到下一行。`qa` 的 `key_layout` 逐行核对检索表目标是否贴右缘、是否出现只有引导点没有目标的行；`caption_word_breaks` 只报短前缀（自动断词）造成的小写续行，`narrow-hooded` 这类原有连字符不算错误。两项都在 `check` 中再次执行。
+检索表排版规则：左栏 + `\t` + 右目标（`split_key_couplet` → `tabbed`，右缘点线制表位）。编号/圆点缩进 4 mm；译文丢点线时用源文末尾目标强制拆栏。过长条目目标整行右移，不把目标粘在省略号后。图注左对齐、禁断词。`qa`/`audit` 拦拆不开的 couplet 与 PDF 未贴右缘；短译文/串行同样失败。
 
-阶元体例：只有属名、种名、亚种名（含亚属名）斜体；科、亚科、族、总科（-idae/-inae/-ini/-oidea）和目、纲、门等科级以上阶元正体，命名人、年份、`sp./spp./cf./aff.` 也正体。原书把科名排斜体（Vol. 45 p. 7 作者名单），英文版不照搬：`build_genus_set` 不再收科名，`add_runs` 把译者星号圈住的科名和斜体底段落（作者名单页）里的科名改正体，`scripts/italic_check.py` 的 `italic.higher_taxon` 为 `major` 并可用 `--fix` 更正。
+检索表跳转图（`booklayout/keygraph.py`，并入 `keys-check`）：按章/「回到 1」分段，检查悬空跳转、缺对偶（含 `1.`/`—`/`一`/无标记备选与 `19.`/`20.` 顺号对）、欧式 `1(2)` 对偶缺失、跳转成环。`format_ok` = 能否拆栏；`graph_ok` = 跳转图；严格模式 `ok` 二者都要。不编表、不判特征语义。
+
+阶元体例：只有属名、种名、亚种名（含亚属名）斜体；科、亚科、族、总科（-idae/-inae/-ini/-oidea）和目、纲、门等科级以上阶元正体，命名人、年份、`sp./spp./cf./aff.` 也正体。原书把科名排斜体（Vol. 45 p. 7 作者名单），英文版不照搬：`build_genus_set` 不再收科名，`add_runs` 把译者星号圈住的科名和斜体底段落（作者名单页）里的科名改正体，`scripts/italic_check.py` 的 `italic.higher_taxon` 为 `major` 并可用 `--fix` 更正。`booklayout verify` 含 `taxostyle` 步并写入 `italic_audit.json`；`gate --italic-audit` 对 major/critical 硬拦（#33）。细则见 `docs/taxonomic_typography.md`。
 
 原书索引偶尔排错：属名写错（`arietina, Apomatus` 实际是 *Ditrupa arietina*）、漏字母（`cristaventalis` 实际是 *cristaventralis*）、大小写变体（`(LEICHONINI)` 实际是 Leiochonini）。这类条目用元数据 `index_entry_fixes` 声明改正，索引按改正后的名字重映射页码并接受 `qa` 核对；改正后重复的行只印一次。原书正文的连字（`ﬂ`）由 `match_text` 做 NFKC 折叠，斜体标记 `*...*` 在页映射前去掉，否则带斜体的条目会漏掉块页码。
 
@@ -213,4 +306,4 @@ booklayout qa \
 
 ## 交付复盘（2026-11-17）
 
-三卷交付后的根因复盘见 `docs/research/2026-11-17/booklayout-delivery-postmortem.md`。结论：`gate.json` 只覆盖 qa/check/key-report；三审文本检查仅针对 `role == "body"`（约 25% 的块），不含 caption/entry/citation 译文，也不含 `zh check`。在 gate 扩展与覆盖率闸口落地前，`ok: true` 不能当作“全书无翻译错误”的证据。
+三卷交付后的根因复盘见 `docs/research/2026-11-17/booklayout-delivery-postmortem.md`。已落地：三审覆盖 `body/caption/entry/note`；短译文与截断计入失败；`key_audit` 在对齐 JSON 上静态拦检索表；`gate` 硬读这些字段。`zh check` 仍须另外运行；`ok: true` 仍不覆盖语义对错，只证明排版可控缺陷已清。
