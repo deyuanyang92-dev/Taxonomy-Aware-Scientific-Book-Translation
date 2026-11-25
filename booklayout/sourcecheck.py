@@ -430,7 +430,9 @@ CATEGORIES: dict[str, tuple[bool, str]] = {
     "reading_order": (False, "文字在成品相邻页找到，仅阅读顺序/分栏顺序不同"),
     "name_ocr": (False, "原书 OCR 把学名读错，成品写法是 WoRMS 学名，判成品对"),
     "name_replace": (True, "成品学名疑似错字，有 WoRMS 候选，进统一替换表"),
-    "ocr_noise": (False, "Tesseract 自身误读（成品是真词）"),
+    "ocr_noise": (False, "Tesseract 自身误读（成品是真词）；含页码被读成字母、书眉粘连"),
+    "ocr_near_miss": (False, "原书 OCR 词与成品词只差重音、或 1-2 个易混字符（单词、非数字），判成品对；含年份字母后缀（1988a）"),
+    "faithful": (False, "成品与原书写法一致（忽略重音/大小写），原书本身如此，不是错误"),
     "text": (True, "其他文字差异，需人工判定"),
 }
 
@@ -445,6 +447,55 @@ def _lev(a: str, b: str, cap: int = 3) -> int:
             cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
         prev = cur
     return prev[-1]
+
+
+_SUP = str.maketrans("", "", "¹²³⁰⁴⁵⁶⁷⁸⁹")
+
+
+def _core(w: str) -> str:
+    """去上标数字与首尾标点后折叠。"""
+    return fold(re.sub(r"^\W+|\W+$", "", w.strip().translate(_SUP)))
+
+
+def near_miss(src: str, out: str) -> bool:
+    """单词 OCR 近似：折叠相同，或 lev≤1（较短词≥3）/ lev≤2（两词≥5）；含 ASCII 数字的词不算（34D→34I 仍阻塞）。"""
+    if " " in src.strip() or " " in out.strip():
+        return False
+    s, o = _core(src), _core(out)
+    if not s or not o or s == "" or any(c.isdigit() for c in s + o):
+        return False
+    if s == o:
+        return True
+    short = min(len(s), len(o))
+    d = _lev(s, o)
+    return (short >= 3 and d <= 1) or (short >= 5 and d <= 2)
+
+
+def year_suffix(src: str, out: str) -> bool:
+    s, o = src.strip().translate(_SUP), out.strip().translate(_SUP)
+    return bool(re.match(r"\d{4}", s) and re.match(r"\d{4}", o) and s != o and _lev(s, o) <= 1)
+
+
+def page_number_noise(src: str, out: str, lex: Lexicon) -> bool:
+    s, o = src.strip(), out.strip()
+    return bool(o) and o.isdigit() and not any(c.isdigit() for c in s) and len(s) <= 3 and (len(s) <= 2 or not lex.real(s))
+
+
+def head_glue(src: str, out: str, furniture: list[re.Pattern[str]] | None) -> bool:
+    """source 去掉书眉文字后与 output 折叠相同（'lleANNELIDA POLYCHAETA 1'→'lle'）。书眉末尾的页码/罗马数字 OCR 常读错，故不要求。"""
+    o = fold(out.strip())
+    if not furniture or not o or " " in out.strip() or fold(src.strip()) == o:
+        return False
+    for p in furniture:
+        lit = p.pattern.replace(r"(\d{1,4}\s+)?", "").replace(r"(\s+\d{1,4})?", "").strip("^$")
+        lit = re.sub(r"\\(.)", r"\1", lit)
+        lit = re.sub(r"\s+[IVXl1|]$", "", lit).strip()
+        if len(lit) < 6 or lit not in src:
+            continue
+        rest = re.sub(r"\s*[IVXl1|\d]{0,4}\s*$", "", src.replace(lit, "", 1)).strip()
+        if rest and fold(rest) == o:
+            return True
+    return False
 
 
 def name_fix_of(src: str, out: str, lex: Lexicon) -> bool:
@@ -501,7 +552,8 @@ def figure_boxes(page_png: Path, dpi: int) -> list[tuple[int, int, int, int]]:
 
 
 def categorize(items: list[dict[str, Any]], lex: Lexicon,
-               figs: dict[int, list[tuple[int, int, int, int]]] | None = None, dpi: int = 300) -> None:
+               figs: dict[int, list[tuple[int, int, int, int]]] | None = None, dpi: int = 300,
+               furniture: list[re.Pattern[str]] | None = None) -> None:
     figs = figs or {}
     margin = int(FIG_MARGIN_MM * dpi / 25.4)
     for it in items:
@@ -514,6 +566,8 @@ def categorize(items: list[dict[str, Any]], lex: Lexicon,
             cat = "reading_order"
         elif t == "tess_noise":
             cat = "ocr_noise"
+        elif t == "name_suspect" and fold(it["source"].strip()) == fold(it["output"].strip()):
+            cat = "faithful"
         elif t == "name_suspect":
             cat = "name_replace"
         elif t in ("review", "output_error", "conflict") and " " not in it["source"].strip() \
@@ -523,6 +577,17 @@ def categorize(items: list[dict[str, Any]], lex: Lexicon,
                 and fold(it["output"]) not in lex.names and _lev(fold(it["source"]), fold(it["output"])) <= 2:
             cat = "name_replace"
             it.setdefault("suggest", it["source"])
+        elif t == "review" and near_miss(it["source"], it["output"]):
+            cat = "ocr_near_miss"
+        elif t in ("review", "conflict") and year_suffix(it["source"], it["output"]):
+            cat = "ocr_near_miss"
+        elif t == "conflict" and " " not in it["source"].strip() and len(_core(it["source"])) == 1 \
+                and _core(it["source"]) == _core(it["output"]):
+            cat = "ocr_near_miss"
+        elif t in ("review", "conflict", "output_error") and page_number_noise(it["source"], it["output"], lex):
+            cat = "ocr_noise"
+        elif t in ("review", "conflict") and head_glue(it["source"], it["output"], furniture):
+            cat = "ocr_noise"
         else:
             cat = "text"
         it["category"] = cat
@@ -634,10 +699,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     else:
         words, opages = output_tokens(args.pdf, furn_out)
     lex = Lexicon(load_spanish(args.dict_lang), load_names(args.worms, _extra_names(args.names)))
+    if getattr(args, "translated", False):
+        rep = translated_report(toks, lines, words, lex, args.min_conf)
+        rep.update({"pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf)})
+        return rep
     report = compare(toks, lines, words, opages, lex, args.min_conf, refs)
     fig_pages = {it["src_page"] for it in report["items"] if it["type"] in ("missing", "moved")}
     figs = {p: figure_boxes(cache / f"p{p:04d}.png", args.dpi) for p in sorted(fig_pages)}
-    categorize(report["items"], lex, figs, args.dpi)
+    categorize(report["items"], lex, figs, args.dpi, furn_out)
     if not args.no_crops:
         crop_items(args.source_pdf, report["items"], work / "crops", args.dpi, cache)
     accepted = set(json.loads(Path(args.accepted).read_text(encoding="utf-8"))) if args.accepted else set()
@@ -663,6 +732,49 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
+def translated_report(toks: list[SrcTok], lines: list[SrcLine], words: list[str], lex: Lexicon,
+                      min_conf: float) -> dict[str, Any]:
+    """Translated edition: prose differs by design, so only language-independent tokens are checked
+    (numbers, years, figure/page refs and Latin names). A source token whose count exceeds its count in
+    the output is reported missing. Weaker than the same-language check: no word order, no prose."""
+    from collections import Counter
+
+    def kind(w: str) -> str | None:
+        c = _core(w)
+        if not c:
+            return None
+        if any(ch.isdigit() for ch in c):
+            return "number"
+        if w[:1].isupper() and c in lex.names and c not in lex.words and len(c) >= 4:
+            return "name"
+        return None
+
+    pages_of: dict[str, set[int]] = {}
+    for ln in lines:  # running heads: the same short line (digits ignored) on many pages
+        pages_of.setdefault(re.sub(r"[\d\W]+", "", fold(ln.text)), set()).add(ln.page)
+    furn = {(ln.page, ln.line) for ln in lines
+            if len(ln.text.split()) <= 6 and len(pages_of[re.sub(r"[\d\W]+", "", fold(ln.text))]) >= 5}
+    per_page: dict[str, Counter[int]] = {}
+    for t in toks:  # a name once or twice on most pages is a running head, not text
+        per_page.setdefault(_core(t.text), Counter())[t.page] += 1
+    heads = {k for k, c in per_page.items() if len(c) >= 8 and max(c.values()) <= 3}
+    have = Counter(_core(w) for w in words)
+    need: dict[str, list[SrcTok]] = {}
+    for t in toks:
+        if t.conf >= min_conf and kind(t.text) and (t.page, t.line) not in furn and not (kind(t.text) == "name" and _core(t.text) in heads):
+            need.setdefault(_core(t.text), []).append(t)
+    items: list[dict[str, Any]] = []
+    for k, ts in need.items():
+        for t in ts[have[k]:]:
+            items.append({"id": _id("tr", t.page, t.line, k), "type": "missing",
+                          "category": "text" if kind(t.text) == "number" else "name_replace",
+                          "src_page": t.page, "src": t.text, "out": "", "kind": kind(t.text), "conf": t.conf})
+    n_src = sum(len(v) for v in need.values())
+    return {"items": items, "mode": "translated", "src_tokens": n_src, "out_tokens": len(words),
+            "counts": {"missing": len(items)}, "ratio": round(1 - len(items) / max(n_src, 1), 4),
+            "categories": {"missing": len(items)}, "ok": not items, "open": len(items)}
+
+
 def _extra_names(paths: list[str] | None) -> list[str]:
     out: list[str] = []
     for p in paths or []:
@@ -676,6 +788,9 @@ def cmd_source_check(args: argparse.Namespace) -> int:
         return 2
     report = run(args)
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+    if report.get("mode") == "translated":
+        print(json.dumps({k: report[k] for k in ("ok", "open", "counts", "ratio", "src_tokens", "out_tokens")}, ensure_ascii=False))
+        return 0 if report["ok"] else 1
     led, nf = write_ledger(report, Path(args.out))
     summary = {k: report[k] for k in ("ok", "open", "categories", "counts", "ratio", "src_tokens", "out_tokens")}
     summary.update({"issues": str(led), "name_fixes": str(nf)})
@@ -706,4 +821,6 @@ def add_parser(sub: Any) -> None:
     sc.add_argument("--dpi", type=int, default=300)
     sc.add_argument("--jobs", type=int, default=4)
     sc.add_argument("--no-crops", action="store_true")
+    sc.add_argument("--translated", action="store_true",
+                    help="output is a translation of the source: check only numbers, years and Latin names")
     sc.set_defaults(func=cmd_source_check)

@@ -80,6 +80,7 @@ class Engine:
 
 
 def go(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replies: dict[str, str] | None = None, **kw: Any) -> tuple[Engine, Path]:
+    kw.setdefault("no_llm", False)                        # 默认已是零模型；这些用例显式开 LLM
     kw.setdefault("llm_mode", "edits")                    # 这里的旧用例测 edits 模式；rewrite 模式见 go_rw
     eng = Engine(replies or {})
     monkeypatch.setattr(gtrans, "engine_call", eng)
@@ -425,7 +426,7 @@ def test_engine_failure_keeps_google_text(net: Net, tmp_path: Path, monkeypatch:
     monkeypatch.setattr(gtrans, "engine_call", fail)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    gtrans.run(src, tmp_path / "o", gtrans.Opts(cache=str(tmp_path / "c.sqlite")))
+    gtrans.run(src, tmp_path / "o", gtrans.Opts(no_llm=False, cache=str(tmp_path / "c.sqlite")))
     assert "达尔文" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
     assert "调用失败：连不上" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")
 
@@ -439,7 +440,7 @@ def test_dry_run_no_network_no_model(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     monkeypatch.setattr(gtrans, "yiku_table", lambda en, domain: TABLE)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    rc = gtrans.main([str(src), "-o", str(tmp_path / "o"), "--dry", "--cache", str(tmp_path / "c.sqlite")])
+    rc = gtrans.main([str(src), "-o", str(tmp_path / "o"), "--dry", "--llm", "--cache", str(tmp_path / "c.sqlite")])
     assert rc == 0 and not (tmp_path / "o").exists()
     out = capsys.readouterr().out
     assert "[dry]" in out and "单元 3" in out and "LLM 2 次" in out
@@ -474,6 +475,7 @@ class RwEngine:
 
 def go_rw(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, eng: RwEngine, **kw: Any) -> Path:
     monkeypatch.setattr(gtrans, "engine_call", eng)
+    kw.setdefault("no_llm", False)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
     gtrans.run(src, tmp_path / "out", gtrans.Opts(cache=str(tmp_path / "cache.sqlite"), stem="in", **kw))
@@ -605,7 +607,7 @@ def test_edits_mode_still_works_via_cli(net: Net, tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(gtrans, "engine_call", eng)
     src = tmp_path / "in.txt"
     src.write_text(DOC, encoding="utf8")
-    assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert gtrans.main([str(src), "-o", str(tmp_path / "o"), "--llm", "--llm-mode", "edits", "--cache", str(tmp_path / "c.sqlite")]) == 0
     assert "该谱系后来分裂" in (tmp_path / "o" / "zh.md").read_text(encoding="utf8")
     assert len(eng.calls) == 2 and "采纳 1，拒绝 0" in (tmp_path / "o" / "report.md").read_text(encoding="utf8")
 
@@ -719,3 +721,20 @@ def test_prefetch_400_split_and_alignment(monkeypatch: pytest.MonkeyPatch, tmp_p
     g.prefetch([a, b], workers=2)
     assert g.has(a) and g.has(b)
     assert g.translate(b) == "T:Second paragraph."
+
+
+# ---------------------------------------------------------------- 默认零模型（用户 2026-11-25）
+
+def test_default_is_zero_llm_and_llm_flag_enables(net: Net, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    assert gtrans.Opts().no_llm is True
+    eng = Engine({})
+    monkeypatch.setattr(gtrans, "engine_call", eng)
+    monkeypatch.setattr(gtrans, "yiku_table", lambda en, domain: TABLE)
+    src = tmp_path / "in.txt"
+    src.write_text(DOC, encoding="utf8")
+    base = ["-o", str(tmp_path / "o1"), "--cache", str(tmp_path / "c.sqlite")]
+    assert gtrans.main([str(src), *base]) == 0 and eng.calls == []              # 默认不调模型
+    assert gtrans.main([str(src), "--no-llm", "-o", str(tmp_path / "o2"), "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert eng.calls == []                                                      # --no-llm 无操作
+    assert gtrans.main([str(src), "--llm", "--llm-mode", "edits", "-o", str(tmp_path / "o3"), "--cache", str(tmp_path / "c.sqlite")]) == 0
+    assert len(eng.calls) == 2                                                  # --llm 才调

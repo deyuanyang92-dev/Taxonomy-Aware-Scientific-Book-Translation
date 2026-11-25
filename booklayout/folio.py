@@ -45,11 +45,13 @@ def _number(tok: str) -> int | None:
     return int(t) if t.isdigit() and 0 < len(t) <= 4 else None
 
 
-def blank_pages(meta: Any) -> set[int]:
+def blank_pages(meta: Any, pages: list[int] | None = None) -> set[int]:
     """Output pages that must carry no footer: the first page, and every page before
     folio_first_page (front pages are own pages, so output page == source page)."""
     first = int(_get(meta, "folio_first_page", 0) or 0)
     start = int(_get(meta, "body_start_page", 1) or 1)
+    if first > 1 and pages:  # source pages may have gaps (blank scans): count the pages present
+        return {1} | set(range(1, sum(1 for p in pages if start <= p < first) + 1))
     return {1} | set(range(1, first - start + 1)) if first > 1 else {1}
 
 
@@ -93,10 +95,10 @@ def expected_text(meta: Any, number: int) -> str:
 
 
 def qa_problems(feet: list[dict[str, Any]], n_pages: int, left: float, right: float,
-                meta: Any) -> list[dict[str, Any]]:
+                meta: Any, pages: list[int] | None = None) -> list[dict[str, Any]]:
     """Footer problems the metadata alone can detect: presence, number, text, flush edges."""
     start = int(_get(meta, "folio_start", 1) or 1)
-    blank = blank_pages(meta)
+    blank = blank_pages(meta, pages)
     by_page = {f["page"]: f for f in feet}
     out: list[dict[str, Any]] = []
     for pg in range(1, n_pages + 1):

@@ -70,3 +70,58 @@ def test_fuzzy_found_missing_is_ocr_noise():
     items = [_it(type="missing", source="Familia Amphbinomidae Savigny, 1818", fuzzy_output="familia amphinomidae")]
     sc.categorize(items, LEX)
     assert items[0]["category"] == "ocr_noise" and not items[0]["blocking"]
+
+
+def _cat(**kw):
+    items = [_it(**kw)]
+    sc.categorize(items, LEX, furniture=[__import__("re").compile(r"^(\d{1,4}\s+)?ANNELIDA\ POLYCHAETA\ I(\s+\d{1,4})?$")])
+    return items[0]["category"], items[0]["blocking"]
+
+
+def test_ocr_near_miss_positive():
+    for s, o in [("Cossuripa", "Cossurida"), ("FIABELLIGERIDA", "FLABELLIGERIDA"),
+                 ("uncinigero", "uncinígero"), ("sepiada", "septada"), ("Terehélidos", "Terebélidos"),
+                 ("parapodicl", "parapodial"), ("ORCOYEÉN", "ORCOYEN"), ("Inn", "lnn"), ("Ins", "lns¹"),
+                 ("vcur", "vcvr²"), ("dcor", "dcvr"), ("Ínbs", "lnbs"), ("19884", "1988a")]:
+        assert _cat(type="review", source=s, output=o) == ("ocr_near_miss", False), (s, o)
+
+
+def test_accent_only_single_letter_conflict():
+    assert _cat(type="conflict", source="Á", output="A") == ("ocr_near_miss", False)
+
+
+def test_page_number_noise():
+    for s, o in [("Je", "293"), ("AS", "422")]:
+        assert _cat(type="output_error", source=s, output=o) == ("ocr_noise", False)
+
+
+def test_running_head_glue():
+    assert _cat(type="review", source="lleANNELIDA POLYCHAETA 1", output="lle") == ("ocr_noise", False)
+
+
+def test_faithful_name_suspect():
+    for w in ("taxon", "palolo"):
+        assert _cat(type="name_suspect", source=w, output=w) == ("faithful", False)
+
+
+def test_must_stay_blocking():
+    cases = [("review", "ent", "em"), ("review", "ndbl de", "dg"), ("conflict", "D", "I"), ("conflict", "E", "F"),
+             ("output_error", "34D", "34I"), ("output_error", "f", "β"), ("conflict", "ce", "de"),
+             ("output_error", "e", "we"), ("missing", "texto perdido", ""), ("missing", "ab", "")]
+    for t, s, o in cases:
+        assert _cat(type=t, source=s, output=o) == ("text", True), (t, s, o)
+
+
+def test_translated_report_checks_numbers_and_names_only():
+    from booklayout.sourcecheck import Lexicon, SrcLine, SrcTok, translated_report
+
+    def tok(t, page, line):
+        return SrcTok(t, page, line, 95.0, (0, 0, 1, 1))
+
+    toks = [tok("figs.", 1, 1), tok("168A", 1, 1), tok("Haplosyllis", 1, 2), tok("1997", 1, 2)]
+    lines = [SrcLine(1, i, "x", 95.0, (0, 0, 1, 1)) for i in range(3)]
+    lex = Lexicon(words=frozenset({"figs"}), names=frozenset({"haplosyllis", "annelida"}))
+    ok = translated_report(toks, lines, ["figs", "168A", "Haplosyllis", "1997", "extra"], lex, 60.0)
+    assert ok["ok"] and ok["mode"] == "translated"
+    bad = translated_report(toks, lines, ["168A", "Haplosyllis"], lex, 60.0)
+    assert [i["src"] for i in bad["items"]] == ["1997"]

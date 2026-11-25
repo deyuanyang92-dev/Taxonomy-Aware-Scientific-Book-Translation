@@ -794,8 +794,11 @@ def _reference_problems(pdf: Path, meta: BookMeta) -> dict:
                 or any(line in titles for line in lines)):
             scan([i], "contents", "contents", contents_stop)
             break
+    # the index title must be a heading line: a running-text "index" (e.g. "mitotic index") is not an index
+    title_l = meta.index_title.lower()
     index_start = next((i for i in range(len(texts) - 1, -1, -1)
-                        if meta.index_title.lower() in texts[i]), None)
+                        if any(ln.strip().lower().startswith(title_l) and len(ln.strip()) <= len(title_l) + 12
+                               for ln in doc[i].get_text("text").splitlines())), None)
     if index_start is not None:
         scan(list(range(index_start, len(texts))), "index", "index",
              {"type", "species", "inquirenda", "see", "figure", "plate"})
@@ -1136,6 +1139,13 @@ def cmd_qa(args: argparse.Namespace) -> int:
     if getattr(args, "profile", None) and json.loads(Path(args.profile).read_text(encoding="utf-8")).get("promote_captions"):
         from .headings import drop_stray_labels
         drop_stray_labels(data)  # the builder drops them under this profile
+    from .trace import key_target_losses
+    report["key_target_lost"] = key_target_losses(Path(args.aligned))
+    if report["key_target_lost"]:
+        structure_problems.append(
+            f"{len(report['key_target_lost'])} key/index lines lost their target number or page ref "
+            f"vs the source (first {report['key_target_lost'][0]['block_id']}: {report['key_target_lost'][0]['lost']}); "
+            f"translate with --source-field translation if the source was corrected")
     strays = stray_label_blocks(data)
     report["stray_label_blocks"] = strays
     if strays:
@@ -1172,7 +1182,10 @@ def cmd_qa(args: argparse.Namespace) -> int:
                 from . import folio
                 band = (prof.page_h - prof.margin_bottom) * 72 / 25.4
                 feet, n_pg, x_l, x_r = folio.output_footers(args.pdf, band)
-                report["folio_problems"] = folio.qa_problems(feet, n_pg, x_l, x_r, meta)
+                # the margins are the truth: measuring body ink fails on CJK (hanging "，。" overshoot ~10 pt, #50)
+                x_l = prof.margin_left * 72 / 25.4
+                x_r = (prof.page_w - prof.margin_right) * 72 / 25.4
+                report["folio_problems"] = folio.qa_problems(feet, n_pg, x_l, x_r, meta, [p["page"] for p in data["pages"]])
                 if report["folio_problems"]:
                     layout_problems.append(
                         f"{len(report['folio_problems'])} footer problems: {folio.summarize(report['folio_problems'])}")
@@ -2151,6 +2164,12 @@ def build_parser() -> argparse.ArgumentParser:
     sourcecheck_module.add_parser(sub)
     from . import review as review_module
     review_module.add_parser(sub)
+    from . import gtranslate as gtranslate_module
+    gtranslate_module.add_parser(sub)
+    from . import trace as trace_module
+    trace_module.add_parser(sub)
+    from . import recover_top as recover_top_module
+    recover_top_module.add_parser(sub)
     from . import sourcefix as sourcefix_module
     sourcefix_module.add_parser(sub)
     treatments_module.add_parser(sub)

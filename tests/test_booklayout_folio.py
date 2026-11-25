@@ -188,3 +188,11 @@ def test_contents_refs_follow_printed_folios(tmp_path):
     assert r["page_refs_checked"] == 2  # 457 is not printed in the excerpt: skipped
     # Introducción prints 5 (pdf 2): right; Morfología prints 7 (pdf 4), the ÍNDICE says 6
     assert [(w["entry"], w["ref"]) for w in r["wrong_page_refs"]] == [("Morfología", 6)]
+
+
+def test_blank_pages_count_present_pages_only():
+    from types import SimpleNamespace
+    from booklayout.folio import blank_pages
+    meta = SimpleNamespace(folio_first_page=10, body_start_page=1)
+    # source pages 5 and 9 are blank scans absent from the data: output page 8 is source 10
+    assert blank_pages(meta, [1, 2, 3, 4, 6, 7, 8, 10, 11]) == set(range(1, 8))

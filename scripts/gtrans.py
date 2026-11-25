@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""低成本翻译流水线：Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考。
+"""低成本翻译流水线：Google 免费初译 → 脚本修正（默认零模型）；加 --llm 才做 DeepSeek flash 核对润色（用户 2026-11-25：分类文献核译收益小，默认不调）。
 
-  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--no-llm] [--dry]
+  python3 gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--llm] [--dry]
+  （--llm-mode/--rewrite-engine/--think-escalate 只在 --llm 时生效；--no-llm 是兼容旧调用的无操作选项，已是默认）
 
 输入：英文文本，空行分段；`<!-- p.N -->` 页码标记和标题（# 行、全大写短行、Title Case 单行）各自成单元，原样保留、不送 Google；
   「Fig.」开头的图注单独成单元；前一段没写完句子、页码标记之后接着写的，合并成一段，标记移到合并段之后（同 join_page_breaks）。
@@ -13,7 +14,7 @@
   c 一致性检查：同一英文术语在单元内出现 ≥2 次，译文里同时出现多种译法（yiku 定名、Google 默认译法、修正表里的错译、
     SOFT 的备选译名）→ 警告；
   d fidelity_check --fix（拉丁名、人名、数字、术语首现括注）；标题全文处理完后跑 heading_bilingual；cite_diff 只报告。
-3 LLM（除非 --no-llm）。--llm-mode rewrite（默认）：每单元（正文段合并到 ≤1500 英文词）让名家译者整段改写（system 含 skill/STYLE.md §6），
+3 LLM（默认不调用；仅 --llm 时执行）。--llm-mode rewrite（默认）：每单元（正文段合并到 ≤1500 英文词）让名家译者整段改写（system 含 skill/STYLE.md §6），
   引擎缺省 deepseek-flash、关思考，--rewrite-engine 可换（如 claude-sonnet）。改写稿须通过护栏（引证、年份、数字单位、拉丁名、页码标记、
   HARD 术语不变，段数不变），否则保留初稿并记录；通过后再做一次意义核对（deepseek-flash 关思考，只报意思不一致的句子并给最小修正），
   修正须 zh_old 恰好出现一次并过同一护栏；核对返回格式错误则保留改写稿，在 report.md 标注该单元。--think-escalate：仍有未修复意义警告的单元，开思考再核对一次。
@@ -772,7 +773,7 @@ def parse_meaning(text: str) -> list[dict[str, Any]] | None:
 class Opts:
     domain: str = "进化生物学"
     think_escalate: bool = False
-    no_llm: bool = False
+    no_llm: bool = True                  # 默认零模型（用户 2026-11-25）；要 LLM 传 no_llm=False（CLI：--llm）
     dry: bool = False
     max_words: int = MAX_WORDS
     fixes: str | None = None
@@ -981,7 +982,7 @@ def render_report(src: str, o: Opts, reps: list[Rep], g: Google, bilingual_note:
     L = [f"# gtrans 报告：{src}",
          f"领域 {o.domain}；单元 {len(reps)}；Google 请求 {g.requests} 次、{g.chars} 字符、缓存命中 {g.hits}；"
          f"DeepSeek 输入 {tin} / 输出 {tout} token；开思考的单元 {nthink}"
-         + ("；未调用 LLM（--no-llm）" if o.no_llm else ""),
+         + ("；未调用 LLM（默认零模型；加 --llm 才核译）" if o.no_llm else ""),
          f"标题双语：{bilingual_note}", ""]
     for r in reps:
         L.append(f"## 单元 {r.idx}（{r.kind}，{r.words} 词，Google {r.chars} 字符{'，起始页 p.' + r.page if r.page else ''}）")
@@ -1083,22 +1084,23 @@ def run(src: Path, out_dir: Path, o: Opts, google: Google | None = None) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Google 免费初译 → 脚本修正 → DeepSeek flash 核对润色")
+    ap = argparse.ArgumentParser(description="Google 免费初译 → 脚本修正（默认零模型）；--llm 才加 DeepSeek flash 核对润色")
     ap.add_argument("src", help="英文文本文件")
     ap.add_argument("-o", "--out", required=True, help="输出目录（zh.md、report.md、edits.jsonl）")
     ap.add_argument("--domain", default="进化生物学", help="yiku 领域")
     ap.add_argument("--llm-mode", choices=("rewrite", "edits"), default="rewrite",
-                    help="rewrite（默认）：整段改写 + 意义核对；edits：旧的 JSON 改动单")
+                    help="（仅 --llm）rewrite（默认）：整段改写 + 意义核对；edits：旧的 JSON 改动单")
     ap.add_argument("--rewrite-engine", help=f"改写引擎（缺省 {ENGINE}，如 claude-sonnet）；意义核对始终用 {ENGINE}")
     ap.add_argument("--think-escalate", action="store_true", help="仍有警告（rewrite 模式：未修复的意义警告）的单元才开思考再跑一次")
-    ap.add_argument("--no-llm", action="store_true", help="只做 Google + 脚本修正")
+    ap.add_argument("--llm", action="store_true", help="开启 LLM 核对/改写（默认不调模型）")
+    ap.add_argument("--no-llm", action="store_true", help="已是默认（兼容旧调用，无操作）；与 --llm 同给时以 --llm 为准")
     ap.add_argument("--dry", action="store_true", help="只列计划，不联网、不调模型")
     ap.add_argument("--max-words", type=int, default=MAX_WORDS, help="每个 LLM 单元的英文词数上限")
     ap.add_argument("--fixes", help="修正表 TSV（缺省 skill/google_fixes.tsv）")
     ap.add_argument("--cache", help=f"Google 缓存 sqlite（缺省 {DEFAULT_CACHE}）")
     a = ap.parse_args(argv)
     src = Path(a.src)
-    o = Opts(a.domain, a.think_escalate, a.no_llm, a.dry, a.max_words, a.fixes, a.cache, src.stem,
+    o = Opts(a.domain, a.think_escalate, not a.llm, a.dry, a.max_words, a.fixes, a.cache, src.stem,
              llm_mode=a.llm_mode, rewrite_engine=a.rewrite_engine)
     try:
         run(src, Path(a.out), o)

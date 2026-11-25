@@ -89,7 +89,8 @@ def make(args) -> int:
         jobs["source-check"] = lambda: _bl(
             "source-check", "--source-pdf", args.source_pdf, "--pages", args.pages, "--pdf", pdf,
             "--metadata", args.metadata, "--work", wk / "sc", "--out", sc,
-            "--lang", args.lang, "--dict-lang", args.dict_lang,
+            "--lang", "spa" if args.translated else args.lang, "--dict-lang", "es" if args.translated else args.dict_lang,
+            *(["--translated"] if args.translated else []),
             *(["--accepted", args.accepted] if args.accepted else []), "--jobs", str(args.jobs))
     t = time.time()
     with ThreadPoolExecutor(len(jobs)) as ex:
@@ -121,6 +122,11 @@ def make(args) -> int:
                "total_s": round(sum(v for k, v in times.items()), 1), "files": {
                    "docx": str(docx), "pdf": str(pdf), "gate": str(gate),
                    "review": str(review_html) if review_html else None}, "log": log}
+    try:  # trace db: where did each text come from (booklayout trace find/block/set)
+        from . import trace as trace_module
+        summary["trace_db"] = trace_module.build(Path(args.aligned), wk / "trace.db", pdf, wk)["db"]
+    except Exception as exc:  # never fail a build for the index
+        summary["trace_db_error"] = str(exc)
     (out_dir / f"{name}.make.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1),
                                                encoding="utf-8")
     print(("PASS" if ok else "FAIL") + f" total={summary['total_s']}s stages={times}")
@@ -143,6 +149,7 @@ def add_parser(sub) -> None:
     m.add_argument("--name", required=True)
     m.add_argument("--release-acceptance", type=Path)
     m.add_argument("--source-pdf", type=Path)
+    m.add_argument("--translated", action="store_true", help="edition is a translation of --source-pdf (numbers/names check only)")
     m.add_argument("--pages", default="1-50")
     m.add_argument("--accepted", type=Path)
     m.add_argument("--lang", default="spa")

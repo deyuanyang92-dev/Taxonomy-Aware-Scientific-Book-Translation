@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-_TERMINAL = re.compile(r"""[.!?…:;]["')\]”’]*$""")
+_TERMINAL = re.compile(r"""[.!?…:;。！？；：]["')\]”’」』）]*$""")
 SINGLE_BLOCK_CHARS = 1800
 
 
@@ -60,10 +60,10 @@ def uncertain_boundaries(data: Mapping[str, Any]) -> list[dict[str, Any]]:
         if a.get("role") != "body" or a.get("boundary_reviewed"):
             continue
         text = (a.get("translation") or "").rstrip()
-        if not text or _TERMINAL.search(text) or _is_checklist(text):
+        if not text or _TERMINAL.search(text) or _is_checklist(a.get("text") or text):
             continue
         head = (b.get("translation") or "").lstrip()
-        if b.get("role") == "body" and head[:1].islower():
+        if b.get("role") == "body" and (head[:1].islower() or (b.get("text") or "")[:1].islower()):
             continue  # clear continuation (normalize joins it)
         reason = {
             "heading": "unfinished_before_heading",

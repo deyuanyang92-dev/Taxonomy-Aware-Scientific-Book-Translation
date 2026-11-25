@@ -417,3 +417,42 @@ booklayout make --aligned aligned.json --figures figs/ --metadata meta.json --pr
 不阻塞的条目不会隐藏，全部写进 `<out>.issues.tsv`（每项一行，按类别排序）。学名类另汇总为 `<out>.name-fixes.tsv`，列为 kind、wrong、right、count、src_pages，供以后统一替换。kind=output_wrong 表示成品要改，kind=source_ocr_wrong 只作记录。
 Vol. 25 p1-50 实测：阻塞项从 75 降到 35，source-check 用时 2.3 s（OCR 已缓存）。剩下的 35 项是数字、页眉漏入正文、无学名依据的拼写差异，需人工判定。
 
+
+
+## Vol.21 p1-50 EN/ZH via Google Translate (2026-11-25): capability and efficiency record
+
+Command chain: `booklayout translate-aligned --sl es --tl en|zh-CN --pages 1-50` then `booklayout make` (no --source-pdf; translated source-check not supported, #47).
+
+| Step | EN | ZH |
+|---|---|---|
+| translate-aligned (368 blocks, 85.5k chars, cold cache) | 82 s, 312 requests | 91 s, 411 requests |
+| re-run (cache) | 0.2 s | 0.2 s |
+| make | 16-17 s | 17 s |
+| gate | FAIL (DRAFT) | FAIL (DRAFT) |
+
+Remaining failures: lost top-of-page paragraphs in the OCR data (#46: 10 EN / 24 ZH uncertain boundaries), index refs beyond the excerpt (#51), ZH footer/heading/punctuation (#50). Fixed in this run: folio blank-page counting with absent pages (#48, test_blank_pages_count_present_pages_only), Vol.21 footer meta (#49, gt metas only). New software: booklayout/gtranslate.py (names masked via WoRMS genera, leaders kept, page-break joins; tests/test_booklayout_gtranslate.py).
+Deliverables: 排版成品/Fauna_Iberica_Vol21_{EN,ZH}_p1-50.DRAFT.{docx,pdf}; zh check OK on all four. Known limit: text lost at page tops is NOT in the deliverables.
+
+Update (same day, final): `recover-top` now also runs `recover_gaps` (OCR lines that the aligned data lost mid-page are re-inserted as `p{page}_g{NN}` blocks, legends re-attached to their caption). Final make: EN PASS 15 s, ZH PASS 24 s (gate PASS for both, DRAFT). Fixed on the way: uncertain boundaries (join chains over emptied pages, lower-case legend tails, checklist test on source text), mixed half/full-width parentheses in Google ZH (`zh_punct`, test_zh_punct_makes_mixed_parens_fullwidth), false index-page detection from the word "index" in running text (#51). Not done: source-check against the scans is skipped for translated editions (#47); gap-recovered paragraphs were only spot-checked visually.
+
+
+Update (2026-11-25, key targets): EN/ZH keys lost couplet targets ("..... 2", "Eusyllinae (p. 47)"; "(p. 447)" became "(p. 7)") because the proofread Spanish lives in the "translation" field (111 of 368 blocks differ from raw OCR "text") while translate-aligned read "text". New option translate-aligned --source-field translation starts from the proofread edition (raw kept as text_ocr); test_use_translation_as_source_restores_key_targets. Rebuilt: EN PASS; ZH gate FAIL footer_not_flush x31 (#50), DRAFT.
+
+## 追踪库 trace（2026-11-25）
+
+`booklayout make` 结束时写 `<name>.work/trace.db`（SQLite）：每块在各阶段的文本（最终 aligned → 上游 OCR/校正版，沿 `lineage.derived_from` 自动追）、块→PDF 页、qa/check/gate 问题、人工修改记录。用户说"某处有问题"时，先查库，不要翻文件：
+
+- `booklayout trace find <db> "Eusyllinae (p"`：任意文字（原文/译文均可）→ 块号、PDF 页、各阶段文本、FLAG（上游有、最终无的数字/页码目标）。
+- `booklayout trace block <db> p046_b06`：单块完整谱系 + 问题 + 修改。
+- `booklayout trace set <db> <块号> --aligned <最终aligned> --text … --reason …`：改最终文本；首次留 .bak；记入 `edits.jsonl`（重建后仍在）。随后重跑 make 即只更新结果。
+
+`translate-aligned` 输出写 `lineage`。局限：DOCX 文字未入库（只索引 PDF 文字）。测试 tests/test_booklayout_trace.py。
+
+qa `key_target_lost`（trace.key_target_losses）：检索表/索引行末的目标号或页码（"..... 3"、"..... Eusyllinae (p. 47)"），上游已校正译文有、最终译文无 → 结构问题。需要 aligned 带 `lineage`（translate-aligned 自动写）；无 lineage 的旧文件只能与自身 OCR text 比。旧 EN 成品（不带 --source-field translation）报 4 项（447/2…），新成品 0。
+footer 齐版心：改用 profile 页边距，不再量正文墨迹（ZH 悬挂「，」伸出约 10pt，#50）。
+
+## source-check --translated（#47）
+Translated edition (e.g. ES scan → EN/ZH via `translate-aligned`): prose differs by design, so `source-check --translated` (and `make --translated --source-pdf …`) compares only numbers/years/figure refs and Latin names, counted against the source OCR; running heads (short lines on ≥5 pages, or a name once or twice on ≥8 pages) are ignored. Weaker than the same-language check: no word order, no prose. Vol.21 p1-50: EN 85 / ZH 320 items for human review (was ≈1,500 false items).
+
+## translate-aligned fixes (#50)
+Fixed headings (`Clave de géneros` → Genus key / 属检索表, `ÍNDICE`, `Familia NAME` → Family/科 NAME), junior-synonym binomials with author+year and `comb. n.` are masked; CJK punctuation spacing is stripped; hard line breaks in captions/legends are joined (`of\nS.` no longer becomes `ofS.`).
