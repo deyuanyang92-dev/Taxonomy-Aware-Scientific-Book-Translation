@@ -318,6 +318,57 @@ def _roman_family_group(pieces: list[tuple[str, bool, bool]]) -> list[tuple[str,
     return [p for p in out if p[0]]
 
 
+def _patch_image_sha1() -> None:
+    """python-docx re-hashes every existing image blob for each add_picture (quadratic in figure count)."""
+    try:
+        import hashlib
+        from docx.parts.image import ImagePart
+        if getattr(ImagePart, "_bl_sha1_cached", False):
+            return
+        def sha1(self):
+            v = self.__dict__.get("_bl_sha1")
+            if v is None:
+                v = self.__dict__["_bl_sha1"] = hashlib.sha1(self.blob).hexdigest()
+            return v
+        ImagePart.sha1 = property(sha1)
+        ImagePart._bl_sha1_cached = True
+    except Exception:
+        pass
+
+
+_patch_image_sha1()
+
+_GENUS_RX_CACHE: dict = {}
+
+
+def _genus_rx(genera):
+    """Compiled genus regex, cached per genera set (was rebuilt for every text chunk: ~19 s/book)."""
+    key = (id(genera), len(genera))
+    hit = _GENUS_RX_CACHE.get(key)
+    if hit is not None and hit[0] is genera:
+        return hit[1]
+    names = sorted(genera, key=len, reverse=True)
+    rx = re.compile(
+        r'(?<![A-Za-z])(' + '|'.join(map(re.escape, names)) + r')(?![a-z])'
+        r'(?:\s+([a-z][a-z\-]{1,})(?:\s+([a-z][a-z\-]{1,}))?)?')
+    _GENUS_RX_CACHE.clear()
+    _GENUS_RX_CACHE[key] = (genera, rx)
+    return rx
+
+
+def _has_styles(doc) -> bool:
+    """Whether define_styles already ran on doc (the name scan ran per paragraph: ~10 s/book)."""
+    if getattr(doc, "_bl_styles_ok", False):
+        return True
+    ok = "Body" in [s.name for s in doc.styles]
+    if ok:
+        try:
+            doc._bl_styles_ok = True
+        except Exception:
+            pass
+    return ok
+
+
 def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None,
              invert: bool = False):
@@ -365,13 +416,10 @@ def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = Fal
         if not genera:
             pieces.append((chunk, italic, bold))
             continue
-        names = sorted(genera, key=len, reverse=True)
+        rx = _genus_rx(genera)
         # 属名单独出现也排斜体（分类学惯例：属名后不带种加词时同样斜体）。
         # 「属名 + 小写词」只有小写词确实是种加词才连排斜体——英语词和虚词
         # 不是种加词，曾把「Lopadorrhynchus comprises the」整段排成斜体。
-        rx = re.compile(
-            r'(?<![A-Za-z])(' + '|'.join(map(re.escape, names)) + r')(?![a-z])'
-            r'(?:\s+([a-z][a-z\-]{1,})(?:\s+([a-z][a-z\-]{1,}))?)?')
         pos = 0
         for m in rx.finditer(chunk):
             ep = (m.group(2) or '').lower().strip('.')
@@ -801,13 +849,13 @@ def fill_styled(par, text: str, cfg: dict, genera=None, color=None, invert=False
 
 def _add_par(doc, style: str):
     """doc.add_paragraph(style=...), defining the named styles first on a bare document."""
-    if "Body" not in [s.name for s in doc.styles]:
+    if not _has_styles(doc):
         define_styles(doc)
     return doc.add_paragraph(style=style)
 
 
 def _add_par_style(doc, name: str):
-    if "Body" not in [s.name for s in doc.styles]:
+    if not _has_styles(doc):
         define_styles(doc)
     return doc.styles[name]
 
@@ -2258,6 +2306,22 @@ def fill_heading_contents(doc, genera, page_map) -> None:
     marker._p.getparent().remove(marker._p)
 
 
+class _CountingMap(dict):
+    """dict that counts reads, to learn whether the page map influenced the output at all."""
+
+    def __init__(self, d):
+        super().__init__(d)
+        self.reads = 0
+
+    def get(self, k, default=None):
+        self.reads += 1
+        return super().get(k, default)
+
+    def __getitem__(self, k):
+        self.reads += 1
+        return super().__getitem__(k)
+
+
 def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: BookMeta,
           key_breaks: set[str] | None = None) -> dict:
     data = load_aligned(paths.aligned)
@@ -2280,6 +2344,7 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
     _set_folio_start(doc.sections[0], meta.folio_start)
     TOC_ROWS.clear()
     TOC_MARK.clear()
+    page_map = _CountingMap(page_map)
     front_matter(doc, data, genera, page_map, meta, paths.translation)
     render_body(doc, data, genera, figs, page_map, meta, paths.figures_dir, key_breaks)
     out_docx.parent.mkdir(parents=True, exist_ok=True)
@@ -2288,6 +2353,9 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
         out_docx.with_suffix(".toc.json").write_text(
             json.dumps([[lv, tx] for lv, tx in TOC_ROWS], ensure_ascii=False), encoding="utf-8")
     doc.save(str(out_docx))
+    # make.py skips the page-number rebuild when nothing read the map (output would be identical)
+    out_docx.with_suffix(".pagemap_reads.json").write_text(
+        json.dumps({"reads": page_map.reads}), encoding="utf-8")
     return data
 
 

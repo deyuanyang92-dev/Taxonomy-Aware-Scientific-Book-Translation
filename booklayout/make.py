@@ -22,6 +22,25 @@ def _bl(*args: object) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
+def source_lang(args) -> str:
+    """Tesseract language for source-check. Explicit --lang wins; otherwise the old behaviour (spa) for a
+    same-language edition and eng for a --translated one (the hard-coded spa was wrong for English books)."""
+    return args.lang or ("eng" if args.translated else "spa")
+
+
+def source_dict_lang(args) -> str:
+    return args.dict_lang or ("en" if args.translated else "es")
+
+
+def _default_profile(wk: Path) -> Path:
+    """The html command requires --profile; without one write the default profile into the work dir."""
+    from .profile import StyleProfile
+    wk.mkdir(parents=True, exist_ok=True)
+    f = wk / "default_profile.json"
+    f.write_text(json.dumps(StyleProfile().to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    return f
+
+
 def _jload(p: Path) -> dict:
     try:
         return json.loads(p.read_text(encoding="utf-8"))
@@ -167,9 +186,15 @@ def make(args) -> int:
             r1, subprocess.CompletedProcess) else "; ".join(log)
         print("build failed: " + msg, file=sys.stderr)
         return 2
-    stage("map-pages", lambda: _bl("map-pages", "--pdf", pdf, "--aligned", args.aligned,
-                                   "--metadata", args.metadata, *prof, "--out", pmap))
-    stage("build2", lambda: _bl("build", *base, "--map", pmap, "--report", rep))
+    reads = _jload(docx.with_suffix(".pagemap_reads.json")).get("reads")
+    if reads == 0:
+        # nothing in this book (no contents/index) reads the page map: build2 would be identical
+        times["build2"] = 0.0
+        log.append("build2 skipped: page map unused")
+    else:
+        stage("map-pages", lambda: _bl("map-pages", "--pdf", pdf, "--aligned", args.aligned,
+                                       "--metadata", args.metadata, *prof, "--out", pmap))
+        stage("build2", lambda: _bl("build", *base, "--map", pmap, "--report", rep))
     stage("key-report", lambda: _bl("key-report", "--pdf", pdf, "--out", key))
     if _jload(key).get("breaks"):
         stage("build3", lambda: _bl("build", *base, "--map", pmap, "--key-breaks", key, "--report", rep))
@@ -187,7 +212,7 @@ def make(args) -> int:
         jobs["source-check"] = lambda: _bl(
             "source-check", "--source-pdf", args.source_pdf, "--pages", args.pages, "--pdf", pdf,
             "--metadata", args.metadata, "--work", wk / "sc", "--out", sc,
-            "--lang", "spa" if args.translated else args.lang, "--dict-lang", "es" if args.translated else args.dict_lang,
+            "--lang", source_lang(args), "--dict-lang", source_dict_lang(args),
             *(["--translated"] if args.translated else []),
             *(["--accepted", args.accepted] if args.accepted else []), "--jobs", str(args.jobs))
     gate_s: dict[str, float] = {}
@@ -214,7 +239,8 @@ def make(args) -> int:
     if res["stylecheck"].returncode != 0:
         problems.append("stylecheck: " + (res["stylecheck"].stdout + res["stylecheck"].stderr)[-300:])
     if args.html:
-        stage("html", lambda: _bl("html", "--docx", docx, *prof, "--out", out_dir / f"{stem}.html"))
+        hprof = prof or ["--profile", _default_profile(wk)]
+        stage("html", lambda: _bl("html", "--docx", docx, *hprof, "--out", out_dir / f"{stem}.html"))
     if args.edit_html:
         stage("edit-html", lambda: _bl("edit-html", "--aligned", args.aligned, "--figures", args.figures,
                                        *prof, "--out", out_dir / f"{stem}.edit.html"))
@@ -278,8 +304,8 @@ def add_parser(sub) -> None:
     m.add_argument("--translated", action="store_true", help="edition is a translation of --source-pdf (numbers/names check only)")
     m.add_argument("--pages", default="1-50")
     m.add_argument("--accepted", type=Path)
-    m.add_argument("--lang", default="spa")
-    m.add_argument("--dict-lang", default="es")
+    m.add_argument("--lang", default=None, help="tesseract language (default spa; eng with --translated)")
+    m.add_argument("--dict-lang", default=None, help="aspell dictionary (default es; en with --translated)")
     m.add_argument("--jobs", type=int, default=4)
     m.add_argument("--fast", nargs="?", const="auto", choices=["auto", "style"], default=None,
                    help="skip source-check when the source text is unchanged since its last run (see classify_change); "

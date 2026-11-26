@@ -2158,6 +2158,11 @@ def build_parser() -> argparse.ArgumentParser:
     from . import make as make_module
 
     make_module.add_parser(sub)
+    from . import sample as sample_module
+
+    sample_module.add_parser(sub)
+    from . import run as run_module
+    run_module.add_parser(sub)
     from . import editor as editor_module
 
     editor_module.add_parser(sub)

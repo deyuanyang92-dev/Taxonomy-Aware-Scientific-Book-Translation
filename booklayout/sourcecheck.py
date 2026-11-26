@@ -119,6 +119,55 @@ def load_names(path: Path | None = DEFAULT_WORMS, extra: Iterable[str] = ()) -> 
 
 # ---------- 原书 OCR ----------
 
+NATIVE_MIN_CHARS = 30
+
+
+def native_words_tsv(source_pdf: Path, pages: list[int], cache: Path, dpi: int) -> dict[int, Path]:
+    """Tesseract-format TSVs from the PDF's own text layer (no OCR), for the pages that have one.
+
+    Per page: >= NATIVE_MIN_CHARS characters of text and no full-page image (>= 80% of the area, a scan
+    with an OCR layer).  Pages that fail (covers, scanned plates) are simply absent from the result and
+    go through Tesseract.  Pixel coordinates use the same dpi scale as the OCR path, so read_tsv/folio
+    work unchanged.  Words in the top/bottom edge band (running heads, folios, DOI strips) are left out:
+    the typeset edition drops them as furniture, so they are not source text to match.
+    """
+    try:
+        import fitz
+    except ImportError:
+        return {}
+    from .fontlevels import EDGE_BAND
+    doc = fitz.open(str(source_pdf))
+    out: dict[int, Path] = {}
+    try:
+        k = dpi / 72.0
+        for p in pages:
+            if p < 1 or p > doc.page_count:
+                continue
+            tsv = cache / f"p{p:04d}.tsv"
+            if tsv.exists() and tsv.stat().st_size:
+                out[p] = tsv
+                continue
+            pg = doc[p - 1]
+            if len(pg.get_text("text").strip()) < NATIVE_MIN_CHARS:
+                continue
+            area = pg.rect.width * pg.rect.height
+            if any(area and (im["bbox"][2] - im["bbox"][0]) * (im["bbox"][3] - im["bbox"][1]) / area >= 0.8
+                   for im in pg.get_image_info()):
+                continue
+            h = pg.rect.height
+            rows = ["level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext"]
+            for x0, y0, x1, y1, w, b, ln, wn in pg.get_text("words"):
+                w = w.strip()
+                if w and not (y1 < h * EDGE_BAND or y0 > h * (1 - EDGE_BAND)):
+                    rows.append("\t".join(map(str, (5, 1, b + 1, 1, ln + 1, wn + 1, int(x0 * k), int(y0 * k),
+                                                     max(1, int((x1 - x0) * k)), max(1, int((y1 - y0) * k)), 99, w))))
+            tsv.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            out[p] = tsv
+        return out
+    finally:
+        doc.close()
+
+
 def ocr_page(source_pdf: Path, page: int, cache: Path, lang: str, dpi: int) -> Path:
     tsv = cache / f"p{page:04d}.tsv"
     if tsv.exists() and tsv.stat().st_size:
@@ -209,13 +258,13 @@ def order_columns(segs: list[list[list[str]]]) -> list[list[list[str]]]:
 # ---------- 成品 ----------
 
 def output_tokens(pdf: Path, furniture: list[re.Pattern[str]]) -> tuple[list[str], list[int]]:
-    info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, check=True).stdout
-    npages = int(re.search(r"Pages:\s+(\d+)", info).group(1))  # type: ignore[union-attr]
+    import fitz
+
     words: list[str] = []
     pages: list[int] = []
-    for p in range(1, npages + 1):
-        txt = subprocess.run(["pdftotext", "-layout", "-f", str(p), "-l", str(p), str(pdf), "-"],
-                             capture_output=True, text=True, check=True).stdout
+    doc = fitz.open(str(pdf))
+    for p in range(1, doc.page_count + 1):
+        txt = doc[p - 1].get_text("text", sort=True)
         keep = [ln for ln in txt.splitlines() if ln.strip() and not any(f.search(ln.strip()) for f in furniture)]
         body = re.sub(r"(\w)-\n\s*(\w)", r"\1\2", "\n".join(keep))
         for t in TOKEN.findall(body):
@@ -698,13 +747,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     import hashlib
 
     st = Path(args.source_pdf).stat()
-    key = hashlib.sha1(f"{Path(args.source_pdf).resolve()}|{st.st_size}|{st.st_mtime_ns}|{args.lang}|{args.dpi}".encode()).hexdigest()[:16]
-    cache = Path(os.environ.get("BOOKLAYOUT_OCR_CACHE", Path.home() / ".cache" / "booklayout" / "ocr")) / key
-    cache.mkdir(parents=True, exist_ok=True)
+    base_key = f"{Path(args.source_pdf).resolve()}|{st.st_size}|{st.st_mtime_ns}|{args.lang}|{args.dpi}"
+    cache_root = Path(os.environ.get("BOOKLAYOUT_OCR_CACHE", Path.home() / ".cache" / "booklayout" / "ocr"))
     pages = parse_pages(args.pages)
     furn_src = [re.compile(p) for p in (args.source_furniture or [])] + [re.compile(r"^\W*\d{1,4}\W*$")]
+    native_cache = cache_root / (hashlib.sha1((base_key + "|native2").encode()).hexdigest()[:16])
+    native_cache.mkdir(parents=True, exist_ok=True)
+    nat = {} if getattr(args, "ocr", False) else native_words_tsv(Path(args.source_pdf), pages, native_cache, args.dpi)
+    cache = cache_root / hashlib.sha1(base_key.encode()).hexdigest()[:16]
+    cache.mkdir(parents=True, exist_ok=True)
+    need = [p for p in pages if p not in nat]
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        tsvs = list(ex.map(lambda p: ocr_page(args.source_pdf, p, cache, args.lang, args.dpi), pages))
+        ocr = dict(zip(need, ex.map(lambda p: ocr_page(args.source_pdf, p, cache, args.lang, args.dpi), need)))
+    tsvs = [nat.get(p) or ocr[p] for p in pages]
+    engine = "native-text-layer" if not need else ("tesseract" if not nat else f"mixed({len(nat)} native, {len(need)} ocr)")
+    if need and nat:
+        cache = cache  # figure crops of OCR pages use the OCR cache; native pages render on demand
     toks: list[SrcTok] = []
     lines: list[SrcLine] = []
     for p, tsv in zip(pages, tsvs):
@@ -719,7 +777,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     lex = Lexicon(load_spanish(args.dict_lang), load_names(args.worms, _extra_names(args.names)))
     if getattr(args, "translated", False):
         rep = translated_report(toks, lines, words, lex, args.min_conf)
-        rep.update({"pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf)})
+        rep.update({"pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf), "source_engine": engine})
         return rep
     report = compare(toks, lines, words, opages, lex, args.min_conf, refs)
     fig_pages = {it["src_page"] for it in report["items"] if it["type"] in ("missing", "moved")}
@@ -743,7 +801,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     for it in report["items"]:
         cats[it["category"]] = cats.get(it["category"], 0) + 1
     report.update({"categories": cats, "ok": ok, "open": open_, "pages": [pages[0], pages[-1]], "source_pdf": str(args.source_pdf),
-                   "pdf": str(args.pdf) if args.pdf else None, "aligned": str(args.aligned) if args.aligned else None, "lang": args.lang, "dictionary_words": len(lex.words),
+                   "pdf": str(args.pdf) if args.pdf else None, "aligned": str(args.aligned) if args.aligned else None, "lang": args.lang, "source_engine": engine, "dictionary_words": len(lex.words),
                    "name_words": len(lex.names)})
     order = {"missing": 0, "moved": 1, "output_error": 2, "conflict": 3, "name_suspect": 4, "review": 5, "tess_noise": 6}
     report["items"].sort(key=lambda it: (order[it["type"]], it["src_page"]))
@@ -839,6 +897,7 @@ def add_parser(sub: Any) -> None:
     sc.add_argument("--dpi", type=int, default=300)
     sc.add_argument("--jobs", type=int, default=4)
     sc.add_argument("--no-crops", action="store_true")
+    sc.add_argument("--ocr", action="store_true", help="force Tesseract even when the source PDF has a usable text layer")
     sc.add_argument("--translated", action="store_true",
                     help="output is a translation of the source: check only numbers, years and Latin names")
     sc.set_defaults(func=cmd_source_check)

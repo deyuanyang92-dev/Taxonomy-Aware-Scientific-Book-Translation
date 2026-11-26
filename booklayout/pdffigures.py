@@ -294,6 +294,9 @@ def add_parser(sub: Any) -> None:
     e.add_argument("--aligned", type=Path, help="only crop the source pages present in this aligned JSON (sample builds)")
     e.add_argument("--dpi", type=int, default=300)
     e.add_argument("--vector", action="store_true", help="also crop vector-only figures")
+    e.add_argument("--lenient", action="store_true",
+                   help="exit 0 whenever the manifest was written (audit problems stay in the audit file); "
+                        "for unattended pipelines (sample, run)")
     e.add_argument("--expected-labels", help="comma list; missing/unexpected labels are reported")
     e.set_defaults(func=cmd_extract)
     s = fs.add_parser("scan", help="crop figures from an image-only (scanned) PDF by connected components")
@@ -324,7 +327,7 @@ def cmd_extract(args: Any) -> int:
     write_outputs(mf, args.out, " ".join(["python3", "-m", "booklayout", *sys.argv[1:]]))
     a = mf["audit"]
     print(f"figures={a['figures']} scientific={a['scientific_figures']} furniture={a['furniture_figures']} ok={a['ok']}")
-    return 0 if a["ok"] else 1
+    return 0 if (a["ok"] or getattr(args, "lenient", False)) else 1
 
 
 def cmd_scan(args: Any) -> int:
