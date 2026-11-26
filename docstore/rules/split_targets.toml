@@ -1,0 +1,120 @@
+# docstore split 目标服务 profile。来源：docs/gemini_pdf_limits.md §5、docs/pdf_compress_research.md §5。
+# max_bytes 按 10^6 字节取严（官方 MB/MiB 混用）；max_pages 为官方硬上限（缺省 = 未确证/不限）；
+# rec_pages 为建议单次页数（推测，见文档 §3）；render_dpi 与 docstore OCR 一致；
+# encode: "flate" = 200 dpi 灰度无损重编码；"none" = pypdf 原样抄页。
+# 显式命令行参数覆盖 profile。
+
+[profiles.gemini-api-inline]
+max_bytes = 50_000_000
+max_pages = 1000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "Gemini API inline：PDF 50 MB/文件、1000 页；整请求 100 MB；中文稿建议 15-20 页"
+source = "https://aistudio.google.com/docs/file-input-methods ; https://aistudio.google.com/docs/document-processing"
+checked = "2026-11-26"
+
+[profiles.gemini-api-files]
+max_bytes = 50_000_000
+max_pages = 1000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "Gemini Files API：PDF 仍 50 MB；48 h 过期；page_options 切片仍按整文件计大小"
+source = "https://aistudio.google.com/docs/files"
+checked = "2026-11-26"
+
+[profiles.gemini-api-url]
+max_bytes = 15_000_000
+max_pages = 1000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "Gemini API 外部 URL：15 MB/文件"
+source = "https://aistudio.google.com/docs/file-input-methods"
+checked = "2026-11-26"
+
+[profiles.gemini-app-free]
+max_bytes = 100_000_000
+rec_pages = 10
+render_dpi = 200
+encode = "flate"
+note = "gemini.google.com 免费版：100 MB/文件、10 文件/提示；页数上限未确证；32k 上下文故 rec_pages 取 10（推测）"
+source = "https://support.google.com/gemini/answer/14903178 ; https://support.google.com/gemini/answer/16275805"
+checked = "2026-11-26"
+
+[profiles.gemini-app-pro]
+max_bytes = 100_000_000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "gemini.google.com AI Pro/Ultra：100 MB/文件、10 文件/提示；1M 上下文；页数上限未确证"
+source = "https://support.google.com/gemini/answer/14903178 ; https://support.google.com/gemini/answer/16275805"
+checked = "2026-11-26"
+
+[profiles.aistudio-web]
+max_bytes = 50_000_000
+max_pages = 1000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "AI Studio 网页上传：无官方帮助页，按 API 限制设置（未确证）"
+source = "docs/gemini_pdf_limits.md §2（论坛，非官方）"
+checked = "2026-11-26"
+
+[profiles.vertex-inline]
+max_bytes = 256_000_000
+max_pages = 3000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "Vertex GenerateContent inline 256 MB；未迁移端点页数上限 1000"
+source = "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding"
+checked = "2026-11-26"
+
+[profiles.vertex-console]
+max_bytes = 7_000_000
+max_pages = 3000
+rec_pages = 10
+render_dpi = 200
+encode = "flate"
+note = "Vertex 控制台本地上传 7 MiB（取 7.0e6 取严）；体积先到，约 11-12 页/块（推测）"
+source = "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding"
+checked = "2026-11-26"
+
+[profiles.vertex-gcs]
+max_bytes = 2_000_000_000
+max_pages = 3000
+rec_pages = 20
+render_dpi = 200
+encode = "flate"
+note = "Vertex Cloud Storage：2 GiB - 500 KiB（取 2.0e9 取严）"
+source = "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding"
+checked = "2026-11-26"
+
+[profiles.google-translate-web]
+max_bytes = 10_000_000
+max_pages = 300
+render_dpi = 200
+encode = "flate"
+note = "Google 翻译网页版文档：10 MB/300 页；扫描页不翻译，只会拿回原图，此路对扫描件无用"
+source = "https://support.google.com/translate/answer/2534559"
+checked = "2026-11-26"
+
+[profiles.cloud-translate-scanned]
+max_bytes = 20_000_000
+max_pages = 20
+rec_pages = 18
+render_dpi = 200
+encode = "flate"
+note = "Cloud Translation 扫描 PDF 同步翻译：20 页、20 MB；实测最坏连续 18 页 9.04 MiB"
+source = "https://docs.cloud.google.com/translate/docs/advanced/translate-documents"
+checked = "2026-11-26"
+
+[profiles.drive-ocr]
+max_bytes = 2_000_000
+render_dpi = 200
+encode = "flate"
+note = "Drive OCR 建议 2 MB；无损不可行（单页约 0.4-0.6 MB，每块 ≤3 页且常超限，ok=false 属预期），只适合 G4 二值化等有损方案"
+source = "https://support.google.com/drive/answer/176692"
+checked = "2026-11-26"

@@ -33,6 +33,37 @@ def test_halfwidth_period_before_closing_quote_is_punct_not_typo():
     assert zh_typo.fix_mechanical(t)[0] == "他说：“样本很好。”"
 
 
+def test_dun_before_contrast_fixed_but_real_enumeration_untouched():
+    assert zh_typo.fix_mechanical("体长、但无鳃")[0] == "体长，但无鳃"
+    assert zh_typo.fix_mechanical("体长、却宽")[0] == "体长，却宽"
+    assert zh_typo.scan("鳃、足和刚毛") == []
+
+
+def test_known_typo_auto_vs_review():
+    assert zh_typo.fix_mechanical("蛋白质质含量")[0] == "蛋白质含量"
+    t = "体具具疣足"
+    fs = [f for f in zh_typo.scan(t) if f.rule == "zh.known_typo"]
+    assert fs and fs[0].kind == "review" and fs[0].new == "具"
+    assert zh_typo.fix_mechanical(t)[0] == t          # review 不自动改
+    assert zh_typo.fix_mechanical("工具具有")[0] == "工具具有"
+
+
+def test_variant_minority_suggests_majority_only_when_clear():
+    grp = [("储精囊", "贮精囊")]
+    t = "储精囊大。储精囊小。贮精囊圆。"
+    fs = [f for f in zh_typo.scan(t, variants=grp) if f.rule == "zh.variant_minority"]
+    assert [(f.old, f.new, f.kind) for f in fs] == [("贮精囊", "储精囊", "review")]
+    tie = [f for f in zh_typo.scan("储精囊大。贮精囊小。", variants=grp) if f.rule == "zh.variant_minority"]
+    assert tie and all(f.new is None for f in tie)
+    assert zh_typo.scan("储精囊大。储精囊小。", variants=grp) == []
+    assert zh_typo.fix_mechanical(t)[0] == t
+
+
+def test_dun_before_more_contrast_words_and_extra_dup_review():
+    assert zh_typo.fix_mechanical("长、然而短")[0] == "长，然而短"
+    assert any(f.rule == "zh.known_typo" and f.kind == "review" for f in zh_typo.scan("鳃叶叶片"))
+
+
 def test_duplicates_never_legit_vs_reduplication_allowlist():
     assert zh_typo.fix_mechanical("这是的的错误，，然后。。")[0] == "这是的错误，然后。"
     for ok in ("常常", "渐渐", "个个", "人人", "谢谢"):

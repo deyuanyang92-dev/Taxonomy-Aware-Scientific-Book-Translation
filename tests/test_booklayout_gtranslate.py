@@ -77,3 +77,86 @@ def test_use_translation_as_source_restores_key_targets():
     b = d["pages"][0]["blocks"][0]
     assert b["text"].endswith("..... 2") and b["text_ocr"].endswith(".....")
     assert d["pages"][0]["blocks"][2]["text"] == "Solo OCR."
+
+
+def test_glossary_replaces_google_default_with_yiku_name():
+    """#68: Google renders "chaetae" as 毛壳; the yiku HARD name must win, and only when enabled."""
+    class G:
+        @staticmethod
+        def term_count(en, term):
+            return en.lower().count(term.lower())
+
+        @staticmethod
+        def replace_google_terms(zh, hard, probe):
+            out = []
+            for en, z in hard:
+                g = probe(en)
+                if g in zh and g != z:
+                    zh = zh.replace(g, z)
+                    out.append(f"{en}: {g}→{z}")
+            return zh, out
+
+        @staticmethod
+        def apply_fixes(zh, en, fixes):
+            return zh, []
+
+    class Goog:
+        @staticmethod
+        def term(en):
+            return {"chaetae": "毛壳"}[en]
+
+    t = Translator.__new__(Translator)
+    t.g, t.google, t.hard, t.fixes, t.glossary_applied = G, Goog, [("chaetae", "刚毛")], [], {}
+    assert t.apply_glossary("体节具毛壳。", "Segments bear chaetae.") == "体节具刚毛。"
+    assert t.glossary_applied
+    t.hard = []  # no --glossary: output untouched
+    assert t.apply_glossary("体节具毛壳。", "Segments bear chaetae.") == "体节具毛壳。"
+
+
+def test_zh_punct_drops_italic_stars_around_pure_chinese():
+    from booklayout.gtranslate import zh_punct
+    assert zh_punct("Vinther *等人* 2008，*Nereis* 属") == "Vinther 等人 2008，*Nereis* 属"
+
+
+def test_zh_caption_label_is_fixed_not_machine_translated():
+    """#69: "**Fig. 3.1:** text" must keep a caption label ("图 3.1：") in Chinese output."""
+    t = Translator.__new__(Translator)
+    t.tl, t.genera = "zh-CN", frozenset()
+    assert t.plan("**Fig. 3.1:** Stratigraphic distribution of fossils.") == [
+        ("keep", "**图 3.1：** "), ("tr", "Stratigraphic distribution of fossils.")]
+    assert t.plan("Fig. 12. Ejemplar y seda simple")[0] == ("keep", "图 12： ")
+
+
+def test_italic_fossil_name_masked_even_if_genus_not_in_worms():
+    m, table = mask_names("A, *Phragmochaeta canicularis,* MGUH31365. B, *Canadia spinosa,* USNM", frozenset())
+    assert "Phragmochaeta" not in m and "Canadia" not in m
+    out, ok = unmask(m, table)
+    assert ok and out == "A, *Phragmochaeta canicularis,* MGUH31365. B, *Canadia spinosa,* USNM"
+
+
+def test_join_when_next_page_starts_with_paren_or_year():
+    from booklayout.gtranslate import join_continuations
+    for head in ("(Butterfield and Harvey 2012). More.", "2004, Parry et al. 2015b). More."):
+        d = {"pages": [{"page": 1, "blocks": [{"role": "body", "text": "spines and chaetae"}]},
+                       {"page": 2, "blocks": [{"role": "body", "text": head}]}]}
+        assert join_continuations(d) == 1
+
+
+def test_section_number_is_not_a_continuation():
+    from booklayout.structure import starts_continuation
+    assert not starts_continuation("3.2 Soft-bodied annelid fossils")
+    assert starts_continuation("2004, Parry") and starts_continuation("(Butterfield 1990)")
+
+
+def test_comma_tail_joins_capital_species_name_on_next_page():
+    from booklayout.gtranslate import join_continuations
+    d = {"pages": [{"page": 1, "blocks": [{"role": "body", "text": "such as *Wiwaxia corrugata,*"}]},
+                   {"page": 2, "blocks": [{"role": "body", "text": "*Halkieria evangelista* and more."}]}]}
+    assert join_continuations(d) == 1
+
+
+def test_credit_line_after_caption_joins_the_caption():
+    from booklayout.gtranslate import join_continuations
+    d = {"pages": [{"page": 1, "blocks": [{"role": "caption", "text": "**Fig. 3.4:** Jaws."},
+                                           {"role": "body", "text": "Modified from Paxton (2009)."}]}]}
+    assert join_continuations(d) == 1 and len(d["pages"][0]["blocks"]) == 1

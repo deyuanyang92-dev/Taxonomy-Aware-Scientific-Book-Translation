@@ -29,19 +29,7 @@ HEAD_RE = re.compile(r"^(\d+(?:\.\d+)+)\s+([A-Z].{2,110})$")
 IRREG = {"cirri": "cirrus", "uncini": "uncinus", "radioli": "radiolus", "setae": "seta", "chaetae": "chaeta"}
 
 
-def lemma(term: str) -> str:
-    """Singular form of the last word only (chaetae->chaeta, lobes->lobe, cirri->cirrus)."""
-    w = term.split()
-    x = w[-1]
-    if x in IRREG:
-        x = IRREG[x]
-    elif x.endswith("ae") and len(x) > 4:
-        x = x[:-2] + "a"
-    elif x.endswith("ies"):
-        x = x[:-3] + "y"
-    elif x.endswith("s") and not x.endswith(("ss", "us", "is")) and len(x) > 3:
-        x = x[:-1]
-    return " ".join(w[:-1] + [x])
+lemma = T.lemma  # single source of truth: term_en_candidates.lemma (plurals, -ae, -ia, IRREG)
 
 
 GL_ENTRY = re.compile(r"^([a-z][A-Za-z\-' /()]{1,60}?(?:, [a-z][A-Za-z\-' ]{1,40})*): (\S.*)$")
@@ -144,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             w0 = csv.writer(fh, delimiter="\t")
             w0.writerow(["term", "definition", "applicable", "abbr", "source"])
             w0.writerows([t, d, "Annelida", "", "Rouse 2022 Glossary"] for t, d in rgl)
-    heads = T.heads_from_glossary([r["term"] for r in gl] + list(rstd) + [t for t, _ in rgl], min_n=2)
+    heads = T.heads_from_glossary([r["term"] for r in gl] + list(rstd) + [t for t, _ in rgl], min_n=1)
 
     units = rouse_units(Path(a.rouse)) + handbook_units(Path(a.handbook))
     long_rows: list[tuple] = []

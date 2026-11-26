@@ -199,6 +199,19 @@ def test_narrow_gutter_found_when_full_width_line_present():
     assert ingest_native._narrow_gutter(lines[:6]) is None   # single column
 
 
+def test_narrow_gutter_survives_one_stray_line_over_the_gutter():
+    """issue #67: Handbook Vol1 PDF p82 — one 254 pt line crossing the 10 pt gutter hid it."""
+    mk = lambda x0, x1, y: {"x0": x0, "x1": x1, "y0": y, "y1": y + 9}  # noqa: E731
+    lines = ([mk(51, 288, 60 + 13 * i) for i in range(30)] + [mk(298, 535, 60 + 13 * i) for i in range(30)]
+             + [mk(51, 305, 718)])
+    g = ingest_native._narrow_gutter(lines)
+    assert g and 288 <= g[0] and g[1] <= 298
+    ordered, ncol = ingest_native.order_lines(lines)
+    assert ncol == 2
+    left_first = [ln for ln in ordered if ln["x1"] <= 288]
+    assert ordered.index(left_first[-1]) < ordered.index(next(ln for ln in ordered if ln["x0"] >= 298))
+
+
 @pytest.mark.skipif(not ROUSE.exists(), reason="Rouse native PDF not on this machine")
 def test_rouse_native_sample_vs_gt():
     """Quantified on the T1 GT scorer: levels, order and text must not regress (T2b baseline:
@@ -228,3 +241,9 @@ def test_rouse_native_sample_vs_gt():
     assert max(b["level"] for p in d["pages"] for b in p["blocks"] if b["role"] == "heading") <= 4
     texts = [b["text"] for p in d["pages"] for b in p["blocks"] if b["role"] == "heading"]
     assert "introduction and systematics" not in {t.lower() for t in texts}  # running head gone (GLOSSARY p339 is a real title)
+
+
+def test_caption_bullet_marker_is_dropped_and_caption_recognised():
+    from booklayout.ingest_native import _CAPTION, _MARKER
+    assert _MARKER.sub("", "◂ Fig. 3.3: Selected") == "Fig. 3.3: Selected"
+    assert _CAPTION.match(_MARKER.sub("", "◂ Fig. 3.3: Selected"))

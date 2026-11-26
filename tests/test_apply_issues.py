@@ -160,3 +160,16 @@ def test_decimal_comma_in_source_matches_point_in_translation(book):
     put(book, "长 33.6 mm。\n")
     r = ai.apply(book, issues(book, [dict(row("长 33.6 mm", "长 33.6 毫米", "术语"), en="дълъг 33,6 mm")]))
     assert r.ok == 1
+
+
+def test_crlf_file_matches_with_lf_old_and_keeps_crlf(book):
+    (book / "译文" / "ch.md").write_bytes("甲刚毛。\r\n乙疣足。\r\n".encode("utf8"))
+    p = issues(book, [row("甲刚毛。\n乙疣足", "甲刚毛。\n乙疣足长", "误译")])
+    assert ai.apply(book, p).ok == 1
+    assert (book / "译文" / "ch.md").read_bytes() == "甲刚毛。\r\n乙疣足长。\r\n".encode("utf8")
+
+
+def test_lf_file_stays_lf(book):
+    put(book, "甲刚毛。\n乙疣足。\n")
+    assert ai.apply(book, issues(book, [row("乙疣足", "乙疣足长", "误译")])).ok == 1
+    assert (book / "译文" / "ch.md").read_bytes() == "甲刚毛。\n乙疣足长。\n".encode("utf8")

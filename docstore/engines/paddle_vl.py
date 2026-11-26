@@ -14,6 +14,8 @@ import json
 import math
 import os
 import re
+import shutil
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -25,6 +27,8 @@ import requests
 
 URL = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
 OPT = {"useDocOrientationClassify": False, "useDocUnwarping": False, "useChartRecognition": False}
+# 试验用：环境变量 DOCSTORE_PADDLE_OPT（JSON）覆盖/追加 optionalPayload 键；未设置时与正式请求完全一致
+OPT.update(json.loads(os.environ.get("DOCSTORE_PADDLE_OPT") or "{}"))
 TIMEOUT_S = 1800  # 块总等待上限；env DOCSTORE_PADDLE_JOB_TIMEOUT 覆盖
 UPLOAD_TIMEOUT_S = 300
 POLL_TIMEOUT_S = 60
@@ -33,9 +37,15 @@ BACKOFF_S = (10, 30, 90)  # 暂时性错误退避
 DEFAULT_MAX_PAGES = 100
 DEFAULT_MAX_BYTES = 45 * 1024 * 1024
 SIZE_TOL_PX = 2  # 页身份校验：返回宽高 vs 提交页 rect x2 的容差
-BLANK_DPI = 30
+BLANK_DPI = 40
 BLANK_INK_FRAC = 0.005
-BLANK_TINT_DELTA = 40
+BLANK_TINT_DELTA = 35
+BLANK_MARGIN = 0.08  # 扫描边缘阴影/书脊不算墨迹
+BLANK_JUNK_CHARS = 8  # 扫描件常带 'I' '/' '.' 之类 1-2 字符的垃圾文本层，不算有文本
+EMPTY_OK_REASONS = ("blank", "image_only", "no_text_local")
+LOCAL_OCR_MIN_CHARS = 15  # 本地 tesseract 识别出 >= 这么多字符才认定云端漏识
+EMPTY_STREAK_STOP = 10  # 连续 10 页空返回 -> 启动预案（停提交 + 诊断）
+PROBE_PAGES = 10  # 每个文件先试提这么多页，连续全空就不再提交其余页
 _sleep: Callable[[float], None] = time.sleep
 _now: Callable[[], float] = time.monotonic
 _FITZ_LOCK = threading.Lock()  # fitz(MuPDF) 非线程安全：所有 fitz 操作串行
@@ -235,20 +245,42 @@ def _page_sizes(pdf_path: str, pages: list[int]) -> list[tuple[float, float]]:
 
 
 def _is_blank(pdf_path: str, page_no: int) -> bool:
-    """无文本层且 30 dpi 灰度渲染非白像素 < 0.5%。"""
+    """文本层（去空白后 <= BLANK_JUNK_CHARS 字符）且灰度渲染去边缘后偏离纸色的像素 < 0.5%。
+    2026-11-25 根因：旧版“有任何文本层即非空白”，扫描件空白页带垃圾文本层 + 边缘阴影，被误判为疑似漏识。"""
     with _FITZ_LOCK, fitz.open(pdf_path) as pdf:
         pg = pdf[page_no - 1]
-        if pg.get_text().strip():
+        if len("".join(pg.get_text().split())) > BLANK_JUNK_CHARS:
             return False
         pix = pg.get_pixmap(dpi=BLANK_DPI, colorspace=fitz.csGRAY)
         s = pix.samples
         if not s:
             return True
+        w, h = pix.width, pix.height
+        x0, x1, y0, y1 = int(w * BLANK_MARGIN), int(w * (1 - BLANK_MARGIN)), int(h * BLANK_MARGIN), int(h * (1 - BLANK_MARGIN))
+        if x1 > x0 and y1 > y0:
+            s = b"".join(s[y * w + x0:y * w + x1] for y in range(y0, y1))
         # 泛黄/灰底纸：以页面中位灰度为底色，偏离底色 >40 才算墨迹（2026-11-24：旧版用绝对 <250，
         # 泛黄空白页被误判非空白，造成 1901 条 empty_suspect 假阳性）
         base = sorted(s[:: max(1, len(s) // 4000)])
         med = base[len(base) // 2]
         return sum(1 for b in s if abs(b - med) > BLANK_TINT_DELTA) / len(s) < BLANK_INK_FRAC
+
+
+def local_ocr_chars(pdf_path: str, page_no: int) -> int | None:
+    """第二道防线：本机 tesseract 识别该页，返回字母数字字符数；tesseract 不可用返回 None。
+    DOCSTORE_PADDLE_LOCAL_CHECK=0 关闭。"""
+    if not _env_int("DOCSTORE_PADDLE_LOCAL_CHECK", 1, 0, 1) or not shutil.which("tesseract"):
+        return None
+    with _FITZ_LOCK, fitz.open(pdf_path) as pdf:
+        png = pdf[page_no - 1].get_pixmap(dpi=150, colorspace=fitz.csGRAY).tobytes("png")
+    try:
+        r = subprocess.run(["tesseract", "stdin", "stdout", "-l", "eng", "--psm", "3"], input=png,
+                           capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return sum(1 for c in r.stdout.decode("utf8", "ignore") if c.isalnum())
 
 
 def _parse_result(
@@ -320,14 +352,53 @@ def _layouts(text: str, pages: list[int], sizes: list[tuple[float, float]]) -> l
             continue
         res = json.loads(ln)["result"]
         for it, dp in zip(res["layoutParsingResults"], res["dataInfo"]["pages"]):
+            d = it if isinstance(it, dict) else {}
             out.append({"width_px": dp.get("width"), "height_px": dp.get("height"),
-                        "pruned_result": it.get("prunedResult") if isinstance(it, dict) else None})
+                        "pruned_result": d.get("prunedResult") if d else None,
+                        "markdown": d.get("markdown"), "outputImages": d.get("outputImages"),
+                        "inputImage": d.get("inputImage")})
     for lay, p, (w, h) in zip(out, pages, sizes):
         lay.update(page=p, pdf_w_pt=w, pdf_h_pt=h)
     return out
 
 
-def save_layout(root: Any, key: str, page: int, meta: dict) -> None:
+def save_images(d: Path, lay: dict, session: Any = None) -> dict:
+    """把 lay["markdown"]["images"]（相对路径 -> URL）逐个下载到 d/img/<相对路径>。
+    拒绝绝对路径和 ..；下载失败只记录不抛。返回 {相对路径: 本地相对路径(相对 d) 或 "ERR: ..."}。
+    outputImages 是可视化图，不下载（URL 留在 JSONL 与 pNNNN.json 里）。"""
+    md = lay.get("markdown")
+    imgs = md.get("images") if isinstance(md, dict) else None
+    res: dict[str, str] = {}
+    if not isinstance(imgs, dict) or not imgs:
+        return res
+    sess = session if session is not None else _new_session()
+    base = (Path(d) / "img").resolve()
+    for rel, url in imgs.items():
+        rel_s = str(rel)
+        parts = rel_s.replace("\\", "/").split("/")
+        if (not rel_s or rel_s.startswith(("/", "\\")) or ".." in parts or re.match(r"^[A-Za-z]:", rel_s)
+                or "\x00" in rel_s):
+            res[rel_s] = "ERR: 不安全的路径"
+            continue
+        dest = (base / rel_s).resolve()
+        if base != dest and base not in dest.parents:
+            res[rel_s] = "ERR: 不安全的路径"
+            continue
+        try:
+            r = sess.get(url, timeout=120)
+            if r.status_code != 200:
+                res[rel_s] = f"ERR: HTTP {r.status_code}"
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(r.content)
+            res[rel_s] = f"img/{rel_s}"
+        except Exception as e:
+            res[rel_s] = f"ERR: {type(e).__name__}: {e}"[:200]
+    return res
+
+
+def save_layout(root: Any, key: str, page: int, meta: dict, *, download_images: bool = False,
+                session: Any = None) -> None:
     """把云端版面落盘：<root>/layout/<key>/pNNNN.json + 整个任务的原始 JSONL <root>/layout/<key>/jobs/<job_id>.jsonl。
     OCR 一次就要把版面存下来，后续还原排版/对照原页不再重跑 OCR（2026-11-24 Vol21 教训）。"""
     lay, raw = meta.get("_layout"), meta.get("_raw_jsonl")
@@ -341,6 +412,11 @@ def save_layout(root: Any, key: str, page: int, meta: dict) -> None:
         jf.write_text(raw, encoding="utf-8")
     rec = {**lay, "key": key, "job_id": job, "trace_id": meta.get("trace_id"), "model": meta.get("model"),
            "raw_jsonl": f"jobs/{job}.jsonl"}
+    if download_images:
+        # 各页图片同名（imgs/img_in_...）会互相覆盖，所以按页分子目录；images_local 的值相对 <root>/layout/<key>
+        sub = f"p{int(page):04d}"
+        loc = save_images(d / sub, lay, session)
+        rec["images_local"] = {k: (f"{sub}/{v}" if not v.startswith("ERR") else v) for k, v in loc.items()}
     (d / f"p{int(page):04d}.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
 
 
@@ -359,13 +435,18 @@ def _judge_pages(
         elif _is_blank(pdf_path, p):
             ok[p] = (txt, {"empty_reason": "blank"})
         else:
-            failed[p] = "empty_suspect: 云端返回空文本但页面非空白（疑似漏识）"
+            n = local_ocr_chars(pdf_path, p)
+            if n is not None and n < LOCAL_OCR_MIN_CHARS:
+                ok[p] = (txt, {"empty_reason": "no_text_local"})  # 云端空 + 本地 OCR 也无字：封面/护页/无字图版
+            else:
+                failed[p] = "empty_suspect: 云端返回空文本但页面非空白（疑似漏识）" + (
+                    f"；本地 OCR 识别出 {n} 字符" if n is not None else "；本地 OCR 不可用")
     return ok, failed
 
 
 def _attempt(
     session: Any, data: bytes, pdf_path: str, pages: list[int], sizes: list[tuple[float, float]],
-    log: Callable[[str], None], stop: threading.Event | None = None,
+    log: Callable[[str], None], stop: threading.Event | None = None, opt: dict | None = None,
 ) -> tuple[dict[int, tuple[str, dict]], dict[int, str], dict]:
     """提交一次 + 轮询 + 校验。成功返回 (ok, failed, {job_id, trace_id})；块级失败抛异常。
     已有 jobId 后的轮询/下载耗尽或超时 -> kind=job（不重传）；state=failed / 校验不过 -> transient（可重提）。"""
@@ -374,7 +455,7 @@ def _attempt(
     headers = {"Authorization": f"bearer {_token()}"}
     model = os.environ.get("DOCSTORE_PADDLE_VL_MODEL", "PaddleOCR-VL-1.6")
     r = _net(lambda: session.post(
-        URL, headers=headers, data={"model": model, "optionalPayload": json.dumps(OPT)},
+        URL, headers=headers, data={"model": model, "optionalPayload": json.dumps(OPT if opt is None else opt)},
         files={"file": ("chunk.pdf", data, "application/pdf")}, timeout=UPLOAD_TIMEOUT_S), "提交")
     sub = _check(r, "提交").get("data")
     if not isinstance(sub, dict):
@@ -465,7 +546,7 @@ def _attempt(
 def run_chunk(
     pdf_path: str, pages: list[int], *, session: Any = None, log: Callable[[str], None] = print,
     chunk_no: int = 1, data: bytes | None = None, stop: threading.Event | None = None,
-    out: tuple[dict[int, tuple[str, dict]], dict[int, str]] | None = None,
+    out: tuple[dict[int, tuple[str, dict]], dict[int, str]] | None = None, opt: dict | None = None,
 ) -> tuple[dict[int, tuple[str, dict]], dict[int, str]]:
     """识别一个块。返回 (ok {页: (文本, 元数据)}, failed {页: 原因})；配置错/配额抛 PaddleConfigError/PaddleQuotaError，
     stop 置位抛 PaddleStopped。传入 out=(ok, failed) 时，异常上抛前已通过的子块结果仍留在其中。
@@ -481,7 +562,7 @@ def run_chunk(
         for i in range(len(BACKOFF_S) + 1):
             t0 = _now()
             try:
-                o, f, info = _attempt(session, blob, pdf_path, ps, sizes, log, stop)
+                o, f, info = _attempt(session, blob, pdf_path, ps, sizes, log, stop, opt=opt)
             except PaddleJobError as e:
                 last = e
                 log(f"[paddle] 块{chunk_no} 页{_label(ps)} 失败({e.kind}): {e}")
@@ -512,7 +593,7 @@ def run_chunk(
 
 # ---------------------------------------------------------------- 多块并发
 
-EMPTY_STORM_MIN = 3
+EMPTY_STORM_MIN = EMPTY_STREAK_STOP
 
 
 def empty_storm(reasons: Any) -> bool:
@@ -524,7 +605,20 @@ def empty_storm(reasons: Any) -> bool:
     return n >= EMPTY_STORM_MIN and 2 * n >= len(rs)
 
 
-def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = print) -> dict:
+def empty_streak(pages: Any, failed: dict) -> int:
+    """按页序，已提交页中连续 empty_suspect 的最长长度（被其他结果打断则清零）。"""
+    best = cur = 0
+    for p in sorted(pages):
+        if str(failed.get(p, "")).startswith("empty_suspect"):
+            cur += 1
+            best = max(best, cur)
+        else:
+            cur = 0
+    return best
+
+
+def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = print,
+              opt: dict | None = None) -> dict:
     """父进程里批量识别：分块、线程并发（DOCSTORE_PADDLE_CONCURRENCY，默认 4 块）。
     返回 {"ok": {页: (文本, 元数据)}, "failed": {页: 原因}, "quota_hit": bool}。配置错直接上抛。
     共享停止事件：配额/配置错一出现，所有线程在每次 POST 前停止，未开始的块取消；已通过的子块结果保留。"""
@@ -536,8 +630,24 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
     except RuntimeError as e:
         return {"ok": ok, "failed": {p: f"no_token: {e}" for p in pages}, "quota_hit": False}
     conc = _env_int("DOCSTORE_PADDLE_CONCURRENCY", 4, 1)
-    chunks, oversize = plan_chunks(pdf_path, pages)
+    if _env_int("DOCSTORE_PADDLE_PRESKIP_BLANK", 1, 0, 1):
+        # 本地判定为空白的页不提交（云端照样计额度）；记为 blank，标记 local-blank
+        keep = []
+        for p in pages:
+            if _is_blank(pdf_path, p):
+                ok[p] = ("", {"empty_reason": "blank", "job_id": "local-blank"})
+            else:
+                keep.append(p)
+        if len(keep) < len(pages):
+            log(f"[paddle] 本地判空白 {len(pages) - len(keep)} 页，不提交")
+        pages = keep
+    probe_n = PROBE_PAGES if len(pages) > PROBE_PAGES else 0
+    chunks, oversize = plan_chunks(pdf_path, pages[:probe_n]) if probe_n else ([], {})
+    n_probe = len(chunks)
+    rest, over2 = plan_chunks(pdf_path, pages[probe_n:])
+    chunks += rest
     failed.update(oversize)
+    failed.update(over2)
     stop = threading.Event()
     quota = threading.Event()
     empty = threading.Event()
@@ -552,9 +662,11 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
         why = "cancelled: 其他块触发配额/配置错误，未提交"
         try:
             if stop.is_set():
+                if empty.is_set():
+                    why = "empty_storm: 前面连续空返回，未提交（预案：先核官方要求）"
                 raise PaddleStopped(why)
-            run_chunk(pdf_path, ps, session=_new_session(), log=log, chunk_no=i, data=data, stop=stop, out=(cok, cfail))
-            if empty_storm(cfail.values()):
+            run_chunk(pdf_path, ps, session=_new_session(), log=log, chunk_no=i, data=data, stop=stop, out=(cok, cfail), opt=opt)
+            if empty_storm(cfail.values()) or empty_streak(ps, cfail) >= EMPTY_STREAK_STOP:
                 empty.set()
                 stop.set()
                 why = "empty_storm: 连续空返回，已停止云提交"
@@ -579,7 +691,12 @@ def run_pages(pdf_path: str, pages: list[int], *, log: Callable[[str], None] = p
             failed.update({p: why for p in ps if p not in cok and p not in cfail})
 
     with ThreadPoolExecutor(max_workers=min(conc, max(1, len(chunks)))) as ex:
-        futs.extend(ex.submit(work, i, ps, d) for i, (ps, d) in enumerate(chunks, 1))
+        # 先试提 PROBE_PAGES 页；连续全空就触发预案，其余页一页都不提交
+        futs.extend(ex.submit(work, i, ps, d) for i, (ps, d) in enumerate(chunks[:n_probe], 1))
+        for fu in list(futs):
+            if not fu.cancelled():
+                fu.result()
+        futs.extend(ex.submit(work, i, ps, d) for i, (ps, d) in enumerate(chunks[n_probe:], n_probe + 1))
         for fu in futs:
             if not fu.cancelled():
                 fu.result()

@@ -22,6 +22,28 @@ _CHECKLIST_LINE = re.compile(
     r"^[A-ZÀ-Þ].*(?:\b(?:1[5-9]|20)\d\d\)?|\b(?:gen|sp|nom|comb|stat)\. (?:n|nov)\.)$")
 
 
+_SECTION_NO = re.compile(r"^\d+(?:\.\d+)*\.?\s+[A-Z]")
+
+
+def starts_continuation(text: str) -> bool:
+    """True when a page-top body block cannot open a new paragraph: it starts with a lower-case
+    letter, "(" or a digit run that is not a section number ("(Butterfield 1990)", "2004, Parry")."""
+    t = text.lstrip()
+    if not t:
+        return False
+    if t[0].islower() or t[0] in "([":
+        return True
+    return t[0].isdigit() and not _SECTION_NO.match(t)
+
+
+_OPEN_TAIL = re.compile(r"[,(\[]\**\s*$")
+
+
+def tail_is_open(text: str) -> bool:
+    """A paragraph never ends on a comma or an open bracket: the sentence goes on over the page break."""
+    return bool(_OPEN_TAIL.search(text.rstrip()))
+
+
 def _flow(blocks: list[dict]) -> list[dict]:
     from .normalize import _caption_like
 
@@ -63,7 +85,8 @@ def uncertain_boundaries(data: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not text or _TERMINAL.search(text) or _is_checklist(a.get("text") or text):
             continue
         head = (b.get("translation") or "").lstrip()
-        if b.get("role") == "body" and (head[:1].islower() or (b.get("text") or "")[:1].islower()):
+        if b.get("role") == "body" and (starts_continuation(head) or starts_continuation(b.get("text") or "")
+                                        or tail_is_open(text)):
             continue  # clear continuation (normalize joins it)
         reason = {
             "heading": "unfinished_before_heading",

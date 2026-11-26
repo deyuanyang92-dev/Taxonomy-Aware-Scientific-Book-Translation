@@ -5,6 +5,12 @@ description: 专业书籍翻译的通用流水线（英→中全流程；auto �
 
 # yzz-translate · 专业书籍翻译（英→中全流程；auto 档支持多语言对）
 
+## 默认路线（用户 2026-11-25）
+- 默认：Google 免费机翻 + 术语表（yiku）+ 确定性脚本，零模型。`gtrans.py`、`auto_translate.py`、`fast_book.py`、`translate_corpus.py`、`booklayout translate-aligned` 默认都不调模型。
+- 核译、改写、润色只在用户明确要求时加参数开启（`gtrans.py --llm`；`auto_translate/fast_book/translate_corpus --engine X --verify-engine Y`）。分类文献核译收益小，不默认做。
+- Claude 调用流水线时只读 `report.md` 和汇总数字，不整篇读 src/draft/zh/checked 等全文；判断需要看原文时，只看报告指出的那几段。
+
+
 **语言对与已知限制（如实说明，2026-11-19 核对代码）**
 
 | 流水线 | 支持的语言对 | 限制 |
@@ -120,8 +126,8 @@ description: 专业书籍翻译的通用流水线（英→中全流程；auto �
 - 不删除、不覆盖已有译文。一切改动都要经过 issues 文件和 `apply_issues.py` 闸口。
 - 禁用 U+3000。交付 .docx 或 .pdf 前，运行 `python3 /mnt/p/yzz-分类工作流/yzz.py zh check`。
 
-## 8. 低成本流程：gtrans.py（Google 免费初译 → 脚本修正 → DeepSeek flash 不开思考一次核对润色 → 报警段才开思考）
-`python3 scripts/gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--no-llm] [--dry]`。适合试读、预览和不求定稿的篇幅；整书定稿仍走第 4 节的初译 + 异模型核译。
+## 8. 低成本流程：gtrans.py（Google 免费初译 → 脚本修正；可选：DeepSeek flash 核对润色，需 --llm）
+`python3 scripts/gtrans.py <英文.txt> -o <输出目录> [--domain 进化生物学] [--llm-mode rewrite|edits] [--rewrite-engine E] [--think-escalate] [--llm] [--dry]`（默认零模型；LLM 相关参数只在 --llm 时生效，--no-llm 为兼容旧调用的无操作）。适合试读、预览和不求定稿的篇幅；整书定稿仍走第 4 节的初译 + 异模型核译。
 1. 输入：空行分段；`<!-- p.N -->` 页码标记、标题、图注（`Fig.` 开头）各自成单元，标记不送 Google；被页码标记切开的半句话先合并，标记移到合并段之后。
 2. Google 免费初译（gtx 端点，每段一个请求，>4500 字符按句子边界切块，间隔 1–2 秒，429/5xx 指数退避）；结果缓存在 `~/.cache/yzz-translate/gtrans_cache.sqlite`（键 sha1(原文)），重跑零请求。
 3. 脚本修正（不调模型）：

@@ -7,6 +7,7 @@ def test_lemma():
     assert M.lemma("chaetal lobes") == "chaetal lobe"
     assert M.lemma("anal cirrus") == "anal cirrus"
     assert M.lemma("gills") == "gill"
+    assert M.lemma("palps") == "palp" and M.lemma("protonephridia") == "protonephridium"
 
 
 def test_parse_rouse_glossary():

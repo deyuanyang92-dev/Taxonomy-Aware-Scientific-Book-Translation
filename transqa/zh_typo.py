@@ -62,6 +62,12 @@ for _p in HOMOPHONE_PAIRS:
     _PAIRMATES[_p[1]].add(_p[0])
 
 _NEVER_DUP = '的了之与并及被将而且或又'
+# 确凿错字串：(错, 对, kind, 说明)。「具具」可能是合法的「工具+具有」，所以只报 review；其余无歧义，可自动改。
+KNOWN_TYPOS: list[tuple[str, str, str, str]] = [
+    ('蛋白质质', '蛋白质', 'auto', '衍一「质」'),
+    ('具具', '具', 'review', '叠字（「具」+「具X」）；若是「工具/器具/家具」+「具有」则保留'),
+    *[(w * 2, w, 'review', f'相邻叠字「{w * 2}」，多为衍字；若两字分属相邻词则保留') for w in '经中叶管体质'],
+]
 _DUP_PUNCT = '，。、；：！？'
 _NUMERALS = '一二三四五六七八九〇零'
 
@@ -135,6 +141,16 @@ def _mechanical(text: str, sp: list[tuple[int, int]]) -> list[Finding]:
     for m in re.finditer(f'([{_NEVER_DUP}])\\1|([{_DUP_PUNCT}])\\2+', text):
         ch = m.group(1) or m.group(2)
         add('zh.dup', m, ch, '不可能的叠字/叠标点')
+    for m in re.finditer(r'、(?=但|却|然而|不过|可是|尽管)', text):
+        add('zh.dun_contrast', m, '，', '顿号用于词语并列，此处连接转折分句，应为逗号')
+    for bad, good, kind, why in KNOWN_TYPOS:
+        for m in re.finditer(re.escape(bad), text):
+            if _hit(sp, m.start(), m.end()):
+                continue
+            if kind == 'auto':
+                add('zh.known_typo', m, good, why)
+            else:
+                out.append(_mk(text, 'zh.known_typo', 'review', m.start(), m.end(), good, why, 0.6))
     return out
 
 
@@ -247,11 +263,35 @@ def _near_miss(text: str, sp: list[tuple[int, int]], terms: set[str], names: set
     return out
 
 
-def scan(text: str, *, terms: set[str] | None = None, protected_names: set[str] | None = None) -> list[Finding]:
-    """检测，返回按位置排序的 Finding。terms：yiku 已定中文术语；protected_names：其他有效中文名（类群名等）。"""
+def _variants(text: str, sp: list[tuple[int, int]], groups: list[tuple[str, ...]]) -> list[Finding]:
+    """同义异写（如 储精囊/贮精囊）：同一文本内混用时，把少数写法报为 review，建议改成多数写法；票数相等不建议。"""
+    out: list[Finding] = []
+    for g in groups:
+        pos = {w: [m for m in re.finditer(re.escape(w), text) if not _hit(sp, m.start(), m.end())] for w in g}
+        used = {w: ms for w, ms in pos.items() if ms}
+        if len(used) < 2:
+            continue
+        top = max(len(ms) for ms in used.values())
+        winners = [w for w, ms in used.items() if len(ms) == top]
+        for w, ms in used.items():
+            if len(ms) == top and len(winners) == 1:
+                continue
+            for m in ms:
+                new = winners[0] if len(winners) == 1 else None
+                out.append(_mk(text, 'zh.variant_minority', 'review', m.start(), m.end(), new,
+                               f'同义异写混用：{"/".join(g)}（本文本多数写法：{"、".join(winners)}）', 0.7))
+    return out
+
+
+def scan(text: str, *, terms: set[str] | None = None, protected_names: set[str] | None = None,
+         variants: list[tuple[str, ...]] | None = None) -> list[Finding]:
+    """检测，返回按位置排序的 Finding。terms：yiku 已定中文术语；protected_names：其他有效中文名（类群名等）；
+    variants：同义异写组，如 [('储精囊', '贮精囊')]。"""
     terms, names = set(terms or ()), set(protected_names or ())
     sp = _protected(text)
     fs = _mechanical(text, sp) + _context_checks(text, sp, terms, names)
+    if variants:
+        fs += _variants(text, sp, variants)
     if terms:
         fs += _near_miss(text, sp, terms, names)
     return sorted(fs, key=lambda f: (f.start, f.end, f.rule))
@@ -287,11 +327,12 @@ def _unique_old(text: str, s: int, e: int) -> tuple[str, int]:
 
 
 def queue_rows(text: str, *, file: str, terms: set[str] | None = None, protected_names: set[str] | None = None,
-               auto_only: bool = False, en_by_ctx: dict[str, str] | None = None) -> list[dict[str, Any]]:
+               variants: list[tuple[str, ...]] | None = None, auto_only: bool = False, en_by_ctx: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """问题单行（交 scripts/apply_issues.py）。old 为含上下文、在文件中唯一的片段。review/decision 的行带
     confidence 与 review=true；apply_issues 不读这两个字段，人审后再决定是否并入。auto_only=True 只出机械层。"""
     rows: list[dict[str, Any]] = []
-    fs = _non_overlapping([f for f in scan(text, terms=terms, protected_names=protected_names) if f.new is not None])
+    fs = _non_overlapping([f for f in scan(text, terms=terms, protected_names=protected_names, variants=variants)
+                           if f.new is not None])
     for f in fs:
         if auto_only and f.kind != 'auto':
             continue
@@ -320,6 +361,7 @@ def check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> list[I
     if not str(cfg.get('tl', '')).lower().startswith('zh'):
         return []
     terms, names = set(cfg.get('zh_terms') or ()), set(cfg.get('zh_names') or ())
+    variants = [tuple(g) for g in (cfg.get('zh_variants') or ())]
     out: list[Issue] = []
     n_checked = 0
     counts: collections.Counter[str] = collections.Counter()
@@ -328,7 +370,7 @@ def check(src: list[Segment], tgt: list[Segment], cfg: dict[str, Any]) -> list[I
         if not _HAN_RE.search(s.text):
             continue
         n_checked += 1
-        for f in scan(s.text, terms=terms, protected_names=names):
+        for f in scan(s.text, terms=terms, protected_names=names, variants=variants):
             if f.rule == 'zh.unpaired' and _src_unbalanced(src_by_id.get(s.id, '')):
                 continue   # 原文（OCR 脚注号、断页残片）本身括号不成对，不是译文引入的
             counts[f.rule] += 1
@@ -351,9 +393,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('file')
     ap.add_argument('--terms', help='yiku 中文术语文件，每行一词')
     ap.add_argument('--names', help='其他有效中文名（类群名）文件，每行一词')
+    ap.add_argument('--variants', help='同义异写文件，每行一组，词之间用制表符或空格分隔')
     ap.add_argument('--queue', help='问题单 JSONL 输出（file 字段取文件名）')
     ap.add_argument('--auto-only', action='store_true', help='问题单只含机械层')
     a = ap.parse_args(argv)
+
+    def words_raw(p: str | None) -> list[str]:
+        if not p:
+            return []
+        with open(p, encoding='utf-8') as fh:
+            return [ln.strip() for ln in fh if ln.strip()]
 
     def words(p: str | None) -> set[str]:
         if not p:
@@ -364,12 +413,13 @@ def main(argv: list[str] | None = None) -> int:
     with open(a.file, encoding='utf-8') as fh:
         text = fh.read()
     terms, names = words(a.terms), words(a.names)
-    fs = scan(text, terms=terms, protected_names=names)
+    variants = [tuple(ln.split()) for ln in words_raw(a.variants) if len(ln.split()) >= 2]
+    fs = scan(text, terms=terms, protected_names=names, variants=variants)
     print(json.dumps({'by_rule': summarize(fs), 'total': len(fs)}, ensure_ascii=False) if fs
           else '错字/错符规则均未触发（不代表已人工校对）')
     if a.queue:
         rows = queue_rows(text, file=a.file.rsplit('/', 1)[-1], terms=terms, protected_names=names,
-                          auto_only=a.auto_only)
+                          variants=variants, auto_only=a.auto_only)
         with open(a.queue, 'w', encoding='utf-8') as out:
             out.write(''.join(json.dumps(r, ensure_ascii=False) + '\n' for r in rows))
         print(f'问题单 {len(rows)} 行 → {a.queue}')

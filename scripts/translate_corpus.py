@@ -4,7 +4,7 @@
 用法：
   python3 scripts/translate_corpus.py run   BOOK.md [BOOK2.md ...] --work ROOT --sl de --tl en
         [--md-dir DIR]            # 参数不是现成文件时，当作 docstore key，读 DIR/<key>.md
-        [--glossary G.tsv] [--names N.tsv] [--engine auto] [--verify-engine none]
+        [--glossary G.tsv] [--names N.tsv] [--engine none] [--verify-engine none]
         [--tier draft|release]    # release：须 --chapters 且 --verify-engine 非 none（token_economy.guard_tier）
         [--chapters]              # 按章：先用 chapter_split 计划切章，每章一个作业（章间并行）
         [--jobs 2] [--extra "--workers 6 --no-entities"] [--force]
@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--tl", required=True)
     r.add_argument("--glossary")
     r.add_argument("--names")
-    r.add_argument("--engine", default="auto")
+    r.add_argument("--engine", default="none", help="默认 none=零模型（用户 2026-11-25）；auto 或模型名才调模型")
     r.add_argument("--verify-engine", default="none")
     r.add_argument("--force-engine", action="store_true")
     r.add_argument("--tier", choices=["draft", "release"], default="draft")

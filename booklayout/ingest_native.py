@@ -24,6 +24,7 @@ SCHEMA = "aligned/2"
 GAP_BREAK = 0.5       # paragraph break when vertical gap > this x font size
 INDENT_BREAK = 0.8    # ... or first-line indent > this x font size after a full line
 FULL_LINE = 0.85      # previous line counts as full when it spans this share of the block width
+_MARKER = re.compile(r"^\s*[◂▸◀▶►◄]\s*")  # the Handbook's caption bullet; not in the body fonts (falls back to DejaVu)
 _CAPTION = re.compile(r"^(fig(?:ure)?s?\.?|tab(?:le)?s?\.?|plate)\s*\d", re.I)
 _PAGENO = re.compile(r"^(\d+|[ivxlcdm]{1,7}|[IVXLCDM]{1,7})$")
 _LET = "A-Za-z\xc0-\xff"
@@ -165,27 +166,37 @@ def order_lines(lines: list[dict]) -> tuple[list[dict], int]:
     return ordered, 2
 
 
-def _narrow_gutter(lines: list[dict], min_gap: float = 6.0, min_side: int = 5) -> tuple[float, float] | None:
+def _narrow_gutter(lines: list[dict], min_gap: float = 6.0, min_side: int = 5,
+                   max_cross: float = 0.05) -> tuple[float, float] | None:
     """Fallback when docstore.layout finds no gutter (a full-width figure/caption spoils its coverage
-    test): the widest x-gap, in the middle 40% of the text width, that no column-width line crosses."""
+    test): the widest x-gap, in the middle 40% of the text width, that at most `max_cross` of the
+    column-width lines cross (a stray short line over the gutter must not hide it; issue #67).
+    Lines that do cross stay full-width segment breaks in `order_lines`."""
     x0, x1 = min(ln["x0"] for ln in lines), max(ln["x1"] for ln in lines)
     width = x1 - x0
     if width <= 0:
         return None
-    narrow = sorted((ln["x0"], ln["x1"]) for ln in lines if ln["x1"] - ln["x0"] < 0.6 * width)
-    lo, hi = x0 + 0.3 * width, x1 - 0.3 * width
-    best, cur = None, lo
-    for a, b in narrow:
-        if a > cur and a <= hi and (best is None or a - cur > best[1] - best[0]):
-            best = (cur, a)
-        cur = max(cur, b)
-    if cur < hi and (best is None or hi - cur > best[1] - best[0]):
-        best = (cur, hi)
+    narrow = [(ln["x0"], ln["x1"]) for ln in lines if ln["x1"] - ln["x0"] < 0.6 * width]
+    if len(narrow) < 2 * min_side:
+        return None
+    lo, hi = int(x0 + 0.3 * width), int(x1 - 0.3 * width)
+    limit = max(1, int(max_cross * len(narrow)))
+    free = [x for x in range(lo, hi + 1) if sum(1 for a, b in narrow if a < x + 1 and b > x) <= limit]
+    best: tuple[float, float] | None = None
+    run: list[int] = []
+    for x in [*free, -1]:
+        if run and (x != run[-1] + 1):
+            if best is None or run[-1] + 1 - run[0] > best[1] - best[0]:
+                best = (float(run[0]), float(run[-1] + 1))
+            run = []
+        if x >= 0:
+            run.append(x)
     if best is None or best[1] - best[0] < min_gap:
         return None
     mid = (best[0] + best[1]) / 2
-    left = sum(1 for ln in narrow if ln[1] <= mid)
-    return best if left >= min_side and len(narrow) - left >= min_side else None
+    left = sum(1 for a, b in narrow if b <= mid)
+    right = sum(1 for a, b in narrow if a >= mid)
+    return best if left >= min_side and right >= min_side else None
 
 
 def _full(prev: dict, group: list[dict]) -> bool:
@@ -279,7 +290,9 @@ def build_page(page: Any, page_no: int, furniture: set[str], heads: dict[str, di
         fam, size, bold, italic = _dominant([s for ln in grp for s in ln["spans"]])
         runs = _runs(grp)
         head = grp[0]["head"]
-        plain = _plain(grp)
+        plain = _MARKER.sub("", _plain(grp))
+        if runs and _MARKER.match(runs[0]["t"]):
+            runs[0]["t"] = _MARKER.sub("", runs[0]["t"])
         whole_bold = bold and all(r.get("b") for r in runs if r["t"].strip())
         text = _mark(runs, whole_bold)
         level = lsrc = None

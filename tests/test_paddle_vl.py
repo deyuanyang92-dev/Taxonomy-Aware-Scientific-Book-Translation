@@ -118,6 +118,7 @@ def make_pdf(path, kinds):
             pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 60, 60), 0)
             pix.clear_with(200)
             pg.insert_image(fitz.Rect(20, 20, 280, 380), pixmap=pix)
+            pg.draw_rect(fitz.Rect(100, 150, 200, 250), color=None, fill=(0, 0, 0))  # 有内容，免被本地判空白
     doc.save(str(path))
     return str(path)
 
@@ -127,6 +128,7 @@ def fast(monkeypatch):
     monkeypatch.setenv("PADDLEOCR_TOKEN", "tok")
     monkeypatch.delenv("DOCSTORE_PADDLE_MAX_PAGES", raising=False)
     monkeypatch.delenv("PADDLEOCR_USE_PROXY", raising=False)
+    monkeypatch.setenv("DOCSTORE_PADDLE_LOCAL_CHECK", "0")  # 本机 tesseract 复核另有 test_paddle_local_check.py
     monkeypatch.setattr(paddle_vl, "_sleep", lambda s: None)
     monkeypatch.setattr(paddle_vl, "BACKOFF_S", (0, 0, 0))
     monkeypatch.setattr(paddle_vl, "POLL_INTERVAL_S", 0)
@@ -327,7 +329,7 @@ def test_empty_page_three_states(tmp_path):
     assert 1 in failed and "empty_suspect" in failed[1]  # 文本层页云端返回空 = 漏识
     assert ok[2][1]["empty_reason"] == "image_only" and ok[2][0] == ""
     assert ok[3][1]["empty_reason"] == "blank"
-    assert 4 in failed and "empty_suspect" in failed[4]  # 图像页空文本且无图片块 = 漏识
+    assert 4 in failed and "empty_suspect" in failed[4]  # 图像页空文本且无图片块 = 漏识（本地复核关闭时）
 
 
 def test_nonempty_text_passes_with_none_reason(tmp_path):

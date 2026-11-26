@@ -618,7 +618,7 @@ def yiku_table(en: str, domain: str) -> str:
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf8") as f:
         f.write(en)
     try:
-        r = subprocess.run([exe, "table", f.name, "--domain", domain], capture_output=True, text=True, timeout=120)
+        r = subprocess.run([exe, "table", f.name, "--domain", domain, "--no-usage"], capture_output=True, text=True, timeout=120)
         return r.stdout if r.returncode == 0 else ""
     finally:
         os.unlink(f.name)

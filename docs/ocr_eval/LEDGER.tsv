@@ -215,3 +215,11 @@ date	engine_params	set	metric	result	cost	source
 2026-11-23	spellfix 优化：索引块只建议/低频词候选/分类学词表（docstore/data/zoo_es.txt）	四卷各50页（sf13）；金标=Sonnet 转写，Glyphobesione/(kosteriensis) 已对 v25 p521 原页图放大核对：原书印刷即如此	自动改正确/错改	自动改 96：对 93、错 2、未定 1。brizoos→briozoos ×2、p407 ligeiramente→ligeramente 已自动修；前次两处“错改”其实是改了原书印刷的异写，现 index 块与括号异名 key 条目只建议不改。残余错改：pseudoespinígeros→-eras（llm tess-weak，词形变化）、rathkei→ratbkei（llm tess-disagree，Tesseract 读错被采纳）。仍未修：p47 ligeiramente/diminuitos（LLM KEEP/仅建议）、Paraeblersia（Tesseract 同读且 WoRMS 缓存缺）、pueda（语法错）
 2026-11-23	spellfix 守卫补全（sf19）：LLM 不得改 WoRMS 已知名、o↔a 性数互换需新词>=5倍、两引擎同读的属名仅允许同长度易混字母替换、vol-strong、genera_extra.txt	四卷各50页；金标=Sonnet 转写	自动改正确/错改	自动改 109：对 108、错 0、未定 1（tess 29/0、llm(tess-disagree) 47/0、llm(tess-weak) 14/0(1 未定)、worms 17/0、vol-strong 1/0）。Vol.21 已知错：brizoos、ligeiramente(两处)、Paraeblersia、Síldos 已自动修；仍未修 diminuitos（仅建议）、pueda（语法错）。建议 70 条待审
 2026-11-23	spellfix：LLM 自动采纳扩到 worms-weak 与 dict（候选须在本卷文字或 Tesseract 页词集里出现）	四卷各50页（sf21）	自动改正确/错改	自动改 122：对 119、错 0、未定 3（tess 29、llm(tess-disagree) 47、worms 17、llm(tess-weak) 15、llm(worms-weak) 11、llm(dict) 2、vol-strong 1）。diminuitos→diminutos 已自动修；Diplosyllis→Dioplosyllis 经核：v21 金标与 VL 全卷 Dioplosyllis 出现 7 次，改动与全书一致。仍未修：pueda→puede（合法词的语法错，拼写纠错不覆盖）。建议 57 条待审
+2026-11-26	tesseract	layout16	role_acc	0.831	0	docs/ocr_eval/layout_result.md
+2026-11-26	tesseract	layout16	heading_recall	0.126	0	docs/ocr_eval/layout_result.md
+2026-11-26	pp-doclayoutv3+tess	layout16	role_acc	0.973	0	docs/ocr_eval/layout_result.md
+2026-11-26	pp-doclayoutv3+tess	layout16	cer	0.249	0	docs/ocr_eval/layout_result.md
+2026-11-26	paddleocr-vl-cloud	layout16	role_acc	1	0	docs/ocr_eval/layout_result.md
+2026-11-26	paddleocr-vl-cloud	layout16	heading_recall	1	0	docs/ocr_eval/layout_result.md
+2026-11-26	paddleocr-vl-cloud	layout16	heading_level_strict	0.434	0	docs/ocr_eval/layout_result.md
+2026-11-26	paddleocr-vl-cloud	layout16	cer	0.086	0	docs/ocr_eval/layout_result.md

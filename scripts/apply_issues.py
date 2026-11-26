@@ -67,7 +67,10 @@ def apply(book: pathlib.Path, path: pathlib.Path, dry: bool = False) -> Result:
         if not f.exists():
             res.bad.append((ln, f"文件不存在 {it['file']}"))
             continue
-        t = f.read_text(encoding="utf8")
+        with open(f, encoding="utf8", newline="") as fh:
+            raw = fh.read()
+        crlf = "\r\n" in raw and raw.count("\r\n") == raw.count("\n")   # 纯 CRLF 文件：按 \n 匹配，写回还原 CRLF
+        t = raw.replace("\r\n", "\n") if crlf else raw
         old, new = it["old"], it["new"]
         n = t.count(old)
         if old == new:
@@ -91,7 +94,9 @@ def apply(book: pathlib.Path, path: pathlib.Path, dry: bool = False) -> Result:
             res.bad.append((ln, f"丢失英文/数字 {sorted(lost)[:5]}（type={it.get('type')}）"))
             continue
         if not dry:
-            f.write_text(t.replace(old, new, 1), encoding="utf8")
+            out = t.replace(old, new, 1)
+            with open(f, "w", encoding="utf8", newline="") as fh:
+                fh.write(out.replace("\n", "\r\n") if crlf else out)
         res.ok += 1
         res.rows.append(it)
     if not dry and res.rows:

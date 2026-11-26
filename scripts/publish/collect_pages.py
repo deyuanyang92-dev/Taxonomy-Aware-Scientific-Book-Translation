@@ -2,6 +2,7 @@
 """用 Word 量出每个章标题所在的真实页码（正文页码，自 1 起），写入 _toc_pages.json。
 
 用法: C:/Python314/python.exe -X utf8 collect_pages.py 文件.docx
+      C:/Python314/python.exe -X utf8 collect_pages.py 文件.docx --bookmarks HB_TOC_   # 按书签量页（多级目录，见 toc_anchors.py）
 """
 import json
 import os
@@ -17,7 +18,12 @@ WD_ADJUSTED_PAGE = 1   # wdActiveEndAdjustedPageNumber：反映 pgNumType 重设
 
 
 def main():
-    src = os.path.abspath(sys.argv[1])
+    args = [a for a in sys.argv[1:] if a != '--bookmarks']
+    prefix = ''
+    if '--bookmarks' in sys.argv:
+        prefix = sys.argv[sys.argv.index('--bookmarks') + 1]
+        args = [a for a in args if a != prefix]
+    src = os.path.abspath(args[0])
     out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_toc_pages.json')   # 书目录
 
     app = win32.DispatchEx('Word.Application')
@@ -29,7 +35,14 @@ def main():
         # 正文起始页（第 2 节第 1 页）的物理页号，用于换算成正文页码
 
         data = {}
-        for p in doc.Paragraphs:
+        if prefix:   # 书签模式：键为书签名，同名标题不再串页
+            for bm in doc.Bookmarks:
+                if bm.Name.startswith(prefix):
+                    try:
+                        data[bm.Name] = int(bm.Range.Information(WD_ADJUSTED_PAGE))
+                    except Exception:
+                        continue
+        for p in ([] if prefix else doc.Paragraphs):
             try:
                 if p.Style.NameLocal not in ('Heading 1', '标题 1'):
                     continue

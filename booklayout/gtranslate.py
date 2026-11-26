@@ -35,6 +35,9 @@ RANK_RE = re.compile(
 LETTERS_RE = re.compile(r"[^\W\d_]", re.U)
 # "Genus species Author, 1956" whose genus is not in WoRMS (junior synonym, e.g. Petitia) must still be kept
 AUTHOR_YEAR_RE = re.compile(r"\s+\(?[A-Z][^\n]{0,70}?\b(?:1[6-9]\d\d|20[0-2]\d)\b")
+# italic Latin name in the source markup, genus not in WoRMS (fossil, junior synonym): "*Phragmochaeta canicularis,*"
+ITALIC_NAME_RE = re.compile(r"(?<=\*)(?P<n>(?:[A-Z][a-z]{3,}|[A-Z]\.)(?:\s+[a-z]{3,}){0,2})(?=[,;.:]?\s*\*)")
+CREDIT_RE = re.compile(r"^(?:Modified|Redrawn|Adapted|After|Based on|Reproduced|Courtesy|Photos?|Photographs?|Drawings?)\b")
 NOMEN_RE = re.compile(r"\b(?:comb|sp|gen|nom|stat)\.\s*(?:n|nov)\.")  # comb. n., sp. nov. stay Latin
 KEY_HEADINGS = {  # Spanish source headings Google mistranslates ("Clave de géneros" -> "类型键", "ÍNDICE" -> "指数")
     "clave de familias": ("Family key", "科检索表"), "clave de subfamilias": ("Subfamily key", "亚科检索表"),
@@ -48,6 +51,7 @@ RANK_WORDS = {  # Spanish rank word -> (English, Chinese)
     "género": ("Genus", "属"), "subgénero": ("Subgenus", "亚属"),
 }
 RANK_LINE_RE = re.compile(r"^(?P<r>" + "|".join(RANK_WORDS) + r")\s+(?P<n>[A-ZÁÉÍÓÚ][^\n]{3,90})$", re.I)
+CAP_LABEL_RE = re.compile(r"^(?P<b>\*\*)?\s*Fig(?:ure)?\.?\s*(?P<n>\d+(?:\.\d+)*[A-Za-z]?)\s*[:.]?\s*(?:\*\*)?[ \t]*(?P<rest>.*)$", re.S)
 _ES_STOP = re.compile(r"\b(?:el|la|los|las|de|del|que|con|por|para|una|un|es|se)\b")
 
 
@@ -90,6 +94,13 @@ def mask_names(text: str, genera: frozenset[str]) -> tuple[str, dict[str, str]]:
 
     text = BINOM_RE.sub(sub, text)
 
+    def italic_sub(m: re.Match[str]) -> str:
+        tok = f"Zq{len(table):03d}x"
+        table[tok] = m.group("n")
+        return tok
+
+    text = ITALIC_NAME_RE.sub(italic_sub, text)  # after BINOM so already-masked pairs are not re-wrapped
+
     def nomen_sub(m: re.Match[str]) -> str:
         tok = f"Zq{len(table):03d}x"
         table[tok] = m.group(0)
@@ -127,12 +138,41 @@ class Translator:
         self.tl = tl
         self.genera = worms_genera()
         self.name_check: list[dict[str, str]] = []
+        self.hard: list[tuple[str, str]] = []
+        self.fixes: list[Any] = []
+        self.glossary_applied: dict[str, int] = {}
+
+    def set_glossary(self, texts: list[str], domain: str = "分类学") -> int:
+        """Load yiku HARD terms found in `texts` plus skill/google_fixes.tsv (issue #68)."""
+        table = self.g.yiku_table("\n".join(texts), domain)
+        self.hard, _ = self.g.parse_table(table)
+        self.fixes = self.g.load_fixes()
+        return len(self.hard)
+
+    def apply_glossary(self, zh: str, en: str) -> str:
+        """Swap Google's default rendering of each HARD term for the yiku name, then the fixes table."""
+        if self.hard:
+            hard = [(e, z) for e, z in self.hard if self.g.term_count(en, e)]
+            zh, done = self.g.replace_google_terms(zh, hard, self.google.term)
+            for d in done:
+                self.glossary_applied[d] = self.glossary_applied.get(d, 0) + 1
+        if self.fixes:
+            zh, done = self.g.apply_fixes(zh, en, self.fixes)
+            for d in done:
+                self.glossary_applied[d] = self.glossary_applied.get(d, 0) + 1
+        return zh
 
     def plan(self, text: str) -> list[tuple[str, str]]:
         """Split a block into (kind, string): kind 'tr' is translated, 'keep' is copied."""
         out: list[tuple[str, str]] = []
-        for line in text.split("\n"):
-            fx = fixed_heading(line, getattr(self, "tl", ""))
+        for k, line in enumerate(text.split("\n")):
+            tl = getattr(self, "tl", "")
+            cm = CAP_LABEL_RE.match(line) if k == 0 and tl.lower().startswith("zh") else None
+            if cm and _needs_translation(cm.group("rest")):  # Google turns "Fig. 3.1:" into "如图。 3.1:" (#69)
+                lab = f"图 {cm.group('n')}：" if not cm.group("b") else f"**图 {cm.group('n')}：**"
+                out += [("keep", lab + " "), ("tr", cm.group("rest")), ("keep", "\n")]
+                continue
+            fx = fixed_heading(line, tl)
             if fx is not None:
                 out += [("keep", fx), ("keep", "\n")]
                 continue
@@ -170,7 +210,7 @@ class Translator:
                 tr = self.google.translate(s)
                 self.name_check.append({"block_id": block_id, "source": s, "output": tr})
             parts.append(tr)
-        return "".join(parts)
+        return self.apply_glossary("".join(parts), text)
 
 
 _ZH_PAREN = re.compile(r"\(([^()（）]*)[）)](?=\s*[一-鿿，。；：、])|\(([^()（）]*)）|（([^()（）]*)\)")
@@ -186,7 +226,9 @@ def zh_punct(s: str) -> str:
     s = re.sub(r"(?<=[一-鿿A-Za-z0-9])[ \t]+(?=（)", "", s)
     s = re.sub(r"(?<=[），。；：、])[ \t]+(?=[一-鿿])", "", s)
     s = re.sub(r"(?<=[一-鿿])[ \t]+(?=[一-鿿])", "", s)
-    return re.sub(r"(?<=图)[ \t]+(?=\d)", "", s)
+    s = re.sub(r"(?<=图)[ \t]+(?=\d)", "", s)
+    # markdown italics around pure Chinese ("*等人*" for "et al.") would typeset slanted hanzi: drop the stars
+    return re.sub(r"\*([一-鿿][一-鿿 ]*)\*", r"\1", s)
 
 
 def join_continuations(data: dict[str, Any]) -> int:
@@ -194,7 +236,7 @@ def join_continuations(data: dict[str, Any]) -> int:
     terminal punctuation, next page's first body block starts lower-case) into one
     source block *before* translation, so the translation is not cut mid-sentence
     (a split sentence translates as two capitalised fragments)."""
-    from .structure import _TERMINAL, _flow
+    from .structure import _TERMINAL, _flow, starts_continuation, tail_is_open
 
     genera = worms_genera()
     pages = data["pages"]
@@ -203,37 +245,44 @@ def join_continuations(data: dict[str, Any]) -> int:
         bl = pg.get("blocks") or []
         for k in range(len(bl) - 1, 0, -1):
             cap, tail = bl[k - 1], bl[k]
-            if (cap.get("role") == "caption" or cap.get("text", "").startswith("Fig.")) and tail.get("role") == "body" \
-                    and tail.get("text", "")[:1].islower() and not _TERMINAL.search(cap.get("text", "").rstrip()):
+            is_cap = cap.get("role") == "caption" or cap.get("text", "").startswith("Fig.")
+            credit = CREDIT_RE.match(tail.get("text", "")) and len(tail.get("text", "")) < 300  # "Modified from X (2009)."
+            if is_cap and tail.get("role") == "body" and (credit or (
+                    tail.get("text", "")[:1].islower() and not _TERMINAL.search(cap.get("text", "").rstrip()))):
                 cap["text"] = cap["text"].rstrip() + " " + tail["text"].lstrip()
                 cap["translation"] = cap["text"]
                 del bl[k]
                 n += 1
-    prev = None  # last page with running text; plates (caption-only pages) in between do not break a paragraph
-    for nxt in pages:
-        b_flow = _flow(nxt.get("blocks") or [])
-        if not b_flow:
-            continue
-        a_flow = _flow(prev.get("blocks") or []) if prev else []
-        last, prev = prev, nxt
-        if not a_flow or last is None:
-            continue
-        a, b = a_flow[-1], b_flow[0]
-        if a.get("role") != "body" or b.get("role") != "body":
-            continue
-        at, bt = a.get("text", "").rstrip(), b.get("text", "").lstrip()
-        if not at or not bt or _TERMINAL.search(at):
-            continue
-        first_word = re.match(r"[^\W\d_]+", bt)
-        # lower-case start, or a genus name ("... se han estudiado | Polybostrichus al microscopio")
-        if not (bt[:1].islower() or (first_word and first_word.group(0) in genera)):
-            continue
-        a["text"] = (at[:-1] + bt) if re.search(r"[^\W\d_]-$", at) else at + " " + bt
-        a["translation"] = a["text"]
-        nxt["blocks"].remove(b)
-        if not _flow(nxt["blocks"]):
-            prev = last  # nothing of this page is left: the joined paragraph now ends on the earlier page
-        n += 1
+    for _ in range(4):  # a figure can split one paragraph into several blocks: re-check the page top after a join
+        joined = 0
+        prev = None  # last page with running text; plates (caption-only pages) in between do not break a paragraph
+        for nxt in pages:
+            b_flow = _flow(nxt.get("blocks") or [])
+            if not b_flow:
+                continue
+            a_flow = _flow(prev.get("blocks") or []) if prev else []
+            last, prev = prev, nxt
+            if not a_flow or last is None:
+                continue
+            a, b = a_flow[-1], b_flow[0]
+            if a.get("role") != "body" or b.get("role") != "body":
+                continue
+            at, bt = a.get("text", "").rstrip(), b.get("text", "").lstrip()
+            if not at or not bt or _TERMINAL.search(at):
+                continue
+            first_word = re.match(r"[^\W\d_]+", bt)
+            # lower-case start, or a genus name ("... se han estudiado | Polybostrichus al microscopio")
+            if not (starts_continuation(bt) or tail_is_open(at) or (first_word and first_word.group(0) in genera)):
+                continue
+            a["text"] = (at[:-1] + bt) if re.search(r"[^\W\d_]-$", at) else at + " " + bt
+            a["translation"] = a["text"]
+            nxt["blocks"].remove(b)
+            if not _flow(nxt["blocks"]):
+                prev = last  # nothing of this page is left: the joined paragraph now ends on the earlier page
+            joined += 1
+        if not joined:
+            break
+        n += joined
     return n
 
 
@@ -257,7 +306,7 @@ def use_translation_as_source(data: dict[str, Any]) -> int:
 
 def translate_aligned(aligned: Path, out: Path, sl: str, tl: str, pages: tuple[int, int] | None = None,
                       workers: int = 8, report: Path | None = None,
-                      source_field: str = "text") -> dict[str, Any]:
+                      source_field: str = "text", glossary: str | None = None) -> dict[str, Any]:
     t0 = time.time()
     data = json.loads(aligned.read_text(encoding="utf8"))
     promoted = use_translation_as_source(data) if source_field == "translation" else 0
@@ -268,6 +317,7 @@ def translate_aligned(aligned: Path, out: Path, sl: str, tl: str, pages: tuple[i
         if pages and not pages[0] <= p["page"] <= pages[1]:
             continue
         todo += [b for b in p["blocks"] if b.get("role") in ROLES and b.get("text", "").strip()]
+    n_terms = tr.set_glossary([b["text"] for b in todo], glossary) if glossary else 0
     n_new = tr.prefetch([b["text"] for b in todo])
     t1 = time.time()
     for b in todo:
@@ -285,7 +335,8 @@ def translate_aligned(aligned: Path, out: Path, sl: str, tl: str, pages: tuple[i
            "joined_across_pages": joined, "blocks": len(todo), "chars": sum(len(b["text"]) for b in todo),
            "google_requests": tr.google.requests, "prefetched": n_new, "cache_hits": tr.google.hits,
            "prefetch_s": round(t1 - t0, 1), "translate_s": round(time.time() - t1, 1),
-           "total_s": round(time.time() - t0, 1), "name_check": tr.name_check}
+           "total_s": round(time.time() - t0, 1), "name_check": tr.name_check,
+           "glossary": glossary, "glossary_terms": n_terms, "glossary_applied": tr.glossary_applied}
     if report:
         report.write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf8")
     return rep
@@ -301,6 +352,8 @@ def add_parser(sub: Any) -> None:
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--source-field", choices=["text", "translation"], default="text",
                    help="translation: start from the proofread source-language edition (patched 'translation') instead of raw OCR 'text'")
+    p.add_argument("--glossary", nargs="?", const="分类学", metavar="DOMAIN",
+                   help="apply yiku HARD terms of DOMAIN (default 分类学) + skill/google_fixes.tsv to the output")
     p.add_argument("--report", type=Path)
     p.set_defaults(func=run)
 
@@ -310,7 +363,7 @@ def run(args: Any) -> int:
     if args.pages:
         a, _, b = args.pages.partition("-")
         pages = (int(a), int(b or a))
-    rep = translate_aligned(args.aligned, args.out, args.sl, args.tl, pages, args.workers, args.report, args.source_field)
+    rep = translate_aligned(args.aligned, args.out, args.sl, args.tl, pages, args.workers, args.report, args.source_field, args.glossary)
     print(json.dumps({k: v for k, v in rep.items() if k != "name_check"}, ensure_ascii=False))
     if rep["name_check"]:
         print(f"name_check: {len(rep['name_check'])} blocks re-translated unmasked")

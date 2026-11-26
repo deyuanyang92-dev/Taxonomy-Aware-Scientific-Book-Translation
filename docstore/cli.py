@@ -576,12 +576,48 @@ def cmd_attach(st: Store, a) -> None:
 def cmd_split(a) -> None:
     from . import pdfsplit
 
+    if a.list_targets:
+        for name, p in sorted(pdfsplit.load_profiles().items()):
+            mb = p.get("max_bytes", 0) / 1e6
+            print(f"{name}\tmax {mb:g} MB\tmax_pages {p.get('max_pages', '-')}\trec_pages {p.get('rec_pages', '-')}"
+                  f"\t{p.get('encode', 'none')}\t{p.get('note', '')}")
+        return
+    if not a.pdfs or not a.out:
+        raise SystemExit("split：需要 pdfs 与 --out（或用 --list-targets）")
+    prof = pdfsplit.load_profile(a.target) if a.target else {}
+    pr = None
+    if a.pages:
+        lo, _, hi = a.pages.partition("-")
+        pr = (int(lo), int(hi or lo))
+    max_bytes = int(a.max_mb * 1e6) if a.max_mb else prof.get("max_bytes")
+    size = a.size if a.size else prof.get("rec_pages") or (None if prof else 50)
+    dpi = a.render_dpi or prof.get("render_dpi", 200)
+    encode = "flate" if a.render_dpi else prof.get("encode", "none")
     out = Path(a.out)
     for x in a.pdfs:
-        rows = pdfsplit.split_pdf(Path(x), out, size=a.size, overwrite=a.overwrite)
+        rows = pdfsplit.split_pdf(
+            Path(x), out, size=size, overwrite=a.overwrite, pages_range=pr, max_bytes=max_bytes,
+            max_pages=prof.get("max_pages"), render_dpi=dpi, encode=encode, target=a.target or "",
+        )
         n = sum(r["pages"] for r in rows)
         w = sum(r["status"] == "written" for r in rows)
-        print(f"{rows[0]['tag']}\t{n} 页 → {len(rows)} 块（新写 {w}）\t{out / rows[0]['tag']}")
+        bad = sum(not r["ok"] for r in rows)
+        print(f"{rows[0]['tag']}\t{n} 页 → {len(rows)} 块（新写 {w}，超限 {bad}）\t{out / rows[0]['tag']}")
+        if a.target or max_bytes:
+            for r in rows:
+                print(f"  {r['file']}\t{r['pages']} 页\t{r['bytes'] / 1e6:.2f} MB\tok={r['ok']}")
+
+
+def cmd_probe(a) -> None:
+    from . import probe
+
+    pages = probe.parse_pages(a.pages)
+    results = [probe.probe_pdf(Path(x), sample=a.sample, pages=pages or None, fonts=not a.no_fonts)
+               for x in a.pdfs]
+    for r in results:
+        print(probe.summary_line(r))
+    if a.json:
+        Path(a.json).write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -813,11 +849,24 @@ def main(argv: list[str] | None = None) -> int:
     ocr_batch.add_arguments(s)
 
     s = sub.add_parser("split", help="PDF 按每 N 页切块，每卷一个子目录 + manifest.tsv（零模型，不需要资料库）")
-    s.add_argument("pdfs", nargs="+")
-    s.add_argument("--out", required=True, help="输出根目录；每个 PDF 在其下建 <卷标>/ 子目录")
-    s.add_argument("--size", type=int, default=50, help="每块页数（默认 50）")
+    s.add_argument("pdfs", nargs="*")
+    s.add_argument("--out", help="输出根目录；每个 PDF 在其下建 <卷标>/ 子目录")
+    s.add_argument("--size", type=int, default=None, help="每块页数（默认 50；有 --target 时取 profile 的 rec_pages）")
+    s.add_argument("--target", help="目标服务 profile（见 --list-targets），按体积/页数上限装块")
+    s.add_argument("--pages", help="只切原 PDF 的 A-B 页（闭区间）")
+    s.add_argument("--max-mb", type=float, help="每块体积上限（10^6 字节为 1 MB），覆盖 profile")
+    s.add_argument("--render-dpi", type=int, help="灰度无损重编码的渲染 dpi（给出即启用重编码；profile 默认 200）")
+    s.add_argument("--list-targets", action="store_true", help="列出可用 profile 后退出")
     s.add_argument("--overwrite", action="store_true", help="已存在的块也重写（默认跳过）")
     s.set_defaults(fn=cmd_split)
+
+    s = sub.add_parser("probe", help="PDF 体检：原生/扫描/OCR 层、分栏、书签、字体（只抽样页，不需要资料库）")
+    s.add_argument("pdfs", nargs="+")
+    s.add_argument("--sample", type=int, default=5, help="抽样页数（默认 5）")
+    s.add_argument("--pages", help="额外指定 1 基页号，如 1,7,150 或 3-5")
+    s.add_argument("--json", help="完整结果写入该 json")
+    s.add_argument("--no-fonts", action="store_true", help="不做字体统计")
+    s.set_defaults(fn=cmd_probe)
 
     s = sub.add_parser("rename", help="改 key（登记表、pair、页面目录一起改）")
     s.add_argument("old")
@@ -829,6 +878,9 @@ def main(argv: list[str] | None = None) -> int:
         print("提醒：未指定 --by，也未设 DOCSTORE_AGENT，写入者将记为 unknown。", file=sys.stderr)
     if a.cmd == "ocr-batch":  # 不需要资料库 Store
         return ocr_batch.dispatch(a)
+    if a.cmd == "probe":  # 不需要资料库 Store
+        cmd_probe(a)
+        return 0
     if a.cmd == "split":  # 不需要资料库 Store
         cmd_split(a)
         return 0
