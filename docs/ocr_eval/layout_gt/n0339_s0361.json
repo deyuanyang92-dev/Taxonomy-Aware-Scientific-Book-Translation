@@ -1,0 +1,968 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 339,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0339-b00",
+   "role": "heading",
+   "level": 1,
+   "bbox_pt": [
+    260.3,
+    72.5,
+    357.3,
+    90.5
+   ],
+   "bbox_rel": [
+    0.4182,
+    0.09249,
+    0.57401,
+    0.11545
+   ],
+   "text": "GLOSSARY",
+   "italic_words": [],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.37763,
+    0.09124,
+    0.54165,
+    0.11551
+   ]
+  },
+  {
+   "id": "p0339-b01",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    133.5,
+    562.7,
+    155.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.17025,
+    0.90401,
+    0.19832
+   ],
+   "text": "This glossary of annelid terminology is an edited and shortened version of that written by Glasby *et al*. (2000) and Rouse and Pleijel (2001).",
+   "italic_words": [
+    "et",
+    "al"
+   ],
+   "col": -1,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.03932,
+    0.16477,
+    0.8871,
+    0.20072
+   ]
+  },
+  {
+   "id": "p0339-b02",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    163.4,
+    305.7,
+    197.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.20849,
+    0.49106,
+    0.25186
+   ],
+   "text": "abdomen: body region posterior to the thorax. Varies among annelid groups and should not be generally regarded as indicating homologous regions.",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.03851,
+    0.20254,
+    0.45276,
+    0.24939
+   ]
+  },
+  {
+   "id": "p0339-b03",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    202.4,
+    305.6,
+    269.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.25823,
+    0.49104,
+    0.34365
+   ],
+   "text": "abranchial: without branchiae. abyssal: oceanic waters between depths of 4000 m and 6000 m. achaetous: without chaetae. acicula, aciculae: stout supportive chaeta found internally in projecting parapodial rami.",
+   "italic_words": [],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.03712,
+    0.25166,
+    0.45198,
+    0.34005
+   ]
+  },
+  {
+   "id": "p0339-b04",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    274.4,
+    305.7,
+    323.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.35001,
+    0.49106,
+    0.4125
+   ],
+   "text": "acicular chaeta: stout, projecting chaeta. acrosome: membrane limited organelle at apex of spermatozoon head, covering the anterior surface of the nucleus; secretes enzymes thought to facilitate sperm entry.",
+   "italic_words": [],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.03607,
+    0.34231,
+    0.45062,
+    0.40805
+   ]
+  },
+  {
+   "id": "p0339-b05",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    328.4,
+    305.6,
+    350.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.41886,
+    0.49104,
+    0.44693
+   ],
+   "text": "adelphophagy: consumption by a developing larva of nurse eggs present in the same egg capsule.",
+   "italic_words": [],
+   "col": 0,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.03555,
+    0.41031,
+    0.44955,
+    0.44205
+   ]
+  },
+  {
+   "id": "p0339-b06",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    355.4,
+    305.7,
+    392.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.45329,
+    0.49106,
+    0.50047
+   ],
+   "text": "aileron: accessory jaw plate in *Glyceridae*. aliform: elongate narrow lobe, used to refer to a pair of notopodia of some *Chaetopteridae*.",
+   "italic_words": [
+    "Glyceridae",
+    "Chaetopteridae"
+   ],
+   "col": 0,
+   "order": 6,
+   "bbox_scan_rel": [
+    0.03474,
+    0.44432,
+    0.44905,
+    0.49493
+   ]
+  },
+  {
+   "id": "p0339-b07",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    397.3,
+    305.7,
+    419.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.50684,
+    0.49106,
+    0.5349
+   ],
+   "text": "anal plaque: depressed (or sunken) plate-like pygidium of some *Maldanidae* and other annelids.",
+   "italic_words": [
+    "Maldanidae"
+   ],
+   "col": 0,
+   "order": 7,
+   "bbox_scan_rel": [
+    0.03422,
+    0.49721,
+    0.44824,
+    0.52894
+   ]
+  },
+  {
+   "id": "p0339-b08",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    424.3,
+    305.7,
+    446.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.54126,
+    0.49106,
+    0.56933
+   ],
+   "text": "anal sacs: paired posterior evaginations from the hindgut in *Thalassematidae*, possibly homologous with metanephridia.",
+   "italic_words": [
+    "Thalassematidae"
+   ],
+   "col": 0,
+   "order": 8,
+   "bbox_scan_rel": [
+    0.0337,
+    0.53121,
+    0.44772,
+    0.56294
+   ]
+  },
+  {
+   "id": "p0339-b09",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    451.3,
+    305.6,
+    473.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.57569,
+    0.49104,
+    0.60375
+   ],
+   "text": "androecium: small cavity within the metanephridial sac of *Bonelliinae*, where the dwarf males are often found.",
+   "italic_words": [
+    "Bonelliinae"
+   ],
+   "col": 0,
+   "order": 9,
+   "bbox_scan_rel": [
+    0.03318,
+    0.56521,
+    0.44718,
+    0.59694
+   ]
+  },
+  {
+   "id": "p0339-b10",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    478.3,
+    305.7,
+    500.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.61012,
+    0.49106,
+    0.63818
+   ],
+   "text": "annulated: ringed or marked with grooves delineating segments.",
+   "italic_words": [],
+   "col": 0,
+   "order": 10,
+   "bbox_scan_rel": [
+    0.03266,
+    0.59922,
+    0.44668,
+    0.63094
+   ]
+  },
+  {
+   "id": "p0339-b11",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    505.3,
+    305.6,
+    527.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.64454,
+    0.49104,
+    0.67261
+   ],
+   "text": "antenna, antennae: sensory projection arising from the dorsal, lateral, or frontal surface of the prostomium.",
+   "italic_words": [],
+   "col": 0,
+   "order": 11,
+   "bbox_scan_rel": [
+    0.03214,
+    0.63321,
+    0.44614,
+    0.66495
+   ]
+  },
+  {
+   "id": "p0339-b12",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    532.3,
+    305.7,
+    593.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.67897,
+    0.49106,
+    0.75677
+   ],
+   "text": "antennular auricle: see auricule. anterior cirri: dorsal and/or ventral cirri of parapodia of cephalized segments; often more elongate than those of more posterior parapodia; confused in the literature with peristomial cirri. (See tentacular cirri).",
+   "italic_words": [],
+   "col": 0,
+   "order": 12,
+   "bbox_scan_rel": [
+    0.03086,
+    0.66722,
+    0.44564,
+    0.74807
+   ]
+  },
+  {
+   "id": "p0339-b13",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    598.3,
+    305.7,
+    632.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.76313,
+    0.49106,
+    0.8065
+   ],
+   "text": "anterior cirri formula: notation indicating the arrangement of the anterior cirri and chaetae; originally used for *Phyllodocidae*, now also extended to other *Phyllodocida*.",
+   "italic_words": [
+    "Phyllodocidae",
+    "Phyllodocida"
+   ],
+   "col": 0,
+   "order": 13,
+   "bbox_scan_rel": [
+    0.03011,
+    0.75034,
+    0.44436,
+    0.79719
+   ]
+  },
+  {
+   "id": "p0339-b14",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    637.2,
+    305.7,
+    689.2
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.81286,
+    0.49108,
+    0.87916
+   ],
+   "text": "apical tooth: see primary tooth. apodous: segments without parapodia. apomorphy: a derived, or less general state; see synapomorphy and compare with plesiomorphy.",
+   "italic_words": [],
+   "col": 0,
+   "order": 14,
+   "bbox_scan_rel": [
+    0.02901,
+    0.79946,
+    0.44363,
+    0.86895
+   ]
+  },
+  {
+   "id": "p0339-b15",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    694.2,
+    305.6,
+    743.2
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.88553,
+    0.49105,
+    0.94802
+   ],
+   "text": "arborescent: branching like a tree. architomy: form of schizotomy involving fragmentation of the body, without any prior cephalization of the various fragments; compare with paratomy.",
+   "italic_words": [],
+   "col": 0,
+   "order": 15,
+   "bbox_scan_rel": [
+    0.02797,
+    0.87123,
+    0.4425,
+    0.93696
+   ]
+  },
+  {
+   "id": "p0339-b16",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    163.2,
+    562.7,
+    185.2
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.20821,
+    0.904,
+    0.23628
+   ],
+   "text": "aristate chaeta: simple chaeta with smooth shaft and a tuft of hairs or a single spine.",
+   "italic_words": [],
+   "col": 1,
+   "order": 16,
+   "bbox_scan_rel": [
+    0.47252,
+    0.20647,
+    0.88652,
+    0.23821
+   ]
+  },
+  {
+   "id": "p0339-b17",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    190.2,
+    562.7,
+    212.2
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.24264,
+    0.90403,
+    0.2707
+   ],
+   "text": "article: demarcated sections of chaetae or cirri separated by joints.",
+   "italic_words": [],
+   "col": 1,
+   "order": 17,
+   "bbox_scan_rel": [
+    0.472,
+    0.24048,
+    0.88603,
+    0.27221
+   ]
+  },
+  {
+   "id": "p0339-b18",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    217.2,
+    562.7,
+    239.2
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.27707,
+    0.90401,
+    0.30513
+   ],
+   "text": "articulate: jointed, as in antennae, tentacular cirri, palps, and dorsal cirri.",
+   "italic_words": [],
+   "col": 1,
+   "order": 18,
+   "bbox_scan_rel": [
+    0.47147,
+    0.27448,
+    0.88548,
+    0.30621
+   ]
+  },
+  {
+   "id": "p0339-b19",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    244.2,
+    562.7,
+    281.2
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.31149,
+    0.90401,
+    0.35868
+   ],
+   "text": "achaetigerous: see achaetous. atoke: non-sexual, unmodified state of an individual; pertaining to taxa that undergo epitoky.",
+   "italic_words": [],
+   "col": 1,
+   "order": 19,
+   "bbox_scan_rel": [
+    0.47065,
+    0.30848,
+    0.88496,
+    0.3591
+   ]
+  },
+  {
+   "id": "p0339-b20",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    286.2,
+    562.7,
+    308.2
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.36504,
+    0.90401,
+    0.3931
+   ],
+   "text": "auricule: paired ear-shaped processes at the base of an antenna (ceratophore) characteristic of some *Sigalionidae*.",
+   "italic_words": [
+    "Sigalionidae"
+   ],
+   "col": 1,
+   "order": 20,
+   "bbox_scan_rel": [
+    0.47013,
+    0.36137,
+    0.88415,
+    0.3931
+   ]
+  },
+  {
+   "id": "p0339-b21",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    313.2,
+    562.7,
+    361.5
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.39947,
+    0.90401,
+    0.46109
+   ],
+   "text": "avicular: beaked; shaped like a bird’s head; used to describe hooked chaetae, uncini. B",
+   "italic_words": [],
+   "col": 1,
+   "order": 21,
+   "bbox_scan_rel": [
+    0.4691,
+    0.39537,
+    0.88363,
+    0.46025
+   ]
+  },
+  {
+   "id": "p0339-b22",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    368.5,
+    420.9,
+    378.5
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.46999,
+    0.6763,
+    0.48275
+   ],
+   "text": "basal lappet: see auricule.",
+   "italic_words": [],
+   "col": 1,
+   "order": 22,
+   "bbox_scan_rel": [
+    0.46877,
+    0.46502,
+    0.64338,
+    0.47932
+   ]
+  },
+  {
+   "id": "p0339-b23",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    384.4,
+    457.3,
+    394.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.49038,
+    0.73471,
+    0.50314
+   ],
+   "text": "benthic: pertaining to the sea floor.",
+   "italic_words": [],
+   "col": 1,
+   "order": 23,
+   "bbox_scan_rel": [
+    0.46847,
+    0.48516,
+    0.70442,
+    0.50005
+   ]
+  },
+  {
+   "id": "p0339-b24",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    400.4,
+    562.7,
+    422.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.51077,
+    0.904,
+    0.53883
+   ],
+   "text": "biarticulate: with two joints; pertaining to antennae, tentacular cirri, palps, and dorsal cirri.",
+   "italic_words": [],
+   "col": 1,
+   "order": 24,
+   "bbox_scan_rel": [
+    0.46793,
+    0.5053,
+    0.88194,
+    0.53703
+   ]
+  },
+  {
+   "id": "p0339-b25",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    427.4,
+    506.9,
+    452.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.5452,
+    0.81437,
+    0.57707
+   ],
+   "text": "bidentate chaeta: chaeta with two teeth distally. bifid: distally split in two.",
+   "italic_words": [],
+   "col": 1,
+   "order": 25,
+   "bbox_scan_rel": [
+    0.46735,
+    0.53931,
+    0.78727,
+    0.57388
+   ]
+  },
+  {
+   "id": "p0339-b26",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    458.4,
+    558.1,
+    483.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.58471,
+    0.89659,
+    0.61658
+   ],
+   "text": "bifurcate chaeta: simple chaeta with two prongs. bilimbate chaeta: simple chaeta with two wings; see limbate.",
+   "italic_words": [],
+   "col": 1,
+   "order": 26,
+   "bbox_scan_rel": [
+    0.46675,
+    0.57833,
+    0.87303,
+    0.61375
+   ]
+  },
+  {
+   "id": "p0339-b27",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    489.4,
+    562.7,
+    511.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.62422,
+    0.90401,
+    0.65228
+   ],
+   "text": "biramous parapodium: parapodium with two branches, a notopodium and a neuropodium.",
+   "italic_words": [],
+   "col": 1,
+   "order": 27,
+   "bbox_scan_rel": [
+    0.46621,
+    0.61735,
+    0.88023,
+    0.64908
+   ]
+  },
+  {
+   "id": "p0339-b28",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    517.3,
+    562.7,
+    539.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.65991,
+    0.90401,
+    0.68798
+   ],
+   "text": "blade: distal, flattened portion of a compound or simple chaeta.",
+   "italic_words": [],
+   "col": 1,
+   "order": 28,
+   "bbox_scan_rel": [
+    0.46567,
+    0.6526,
+    0.87969,
+    0.68434
+   ]
+  },
+  {
+   "id": "p0339-b29",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    544.3,
+    562.7,
+    566.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.69434,
+    0.90401,
+    0.7224
+   ],
+   "text": "boss: small projection or knob-like process in compound and simple chaetae.",
+   "italic_words": [],
+   "col": 1,
+   "order": 29,
+   "bbox_scan_rel": [
+    0.46515,
+    0.68661,
+    0.87917,
+    0.71834
+   ]
+  },
+  {
+   "id": "p0339-b30",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    571.3,
+    562.7,
+    593.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.72877,
+    0.90401,
+    0.75683
+   ],
+   "text": "brain: ganglionic mass situated at least in part in the prostomium.",
+   "italic_words": [],
+   "col": 1,
+   "order": 30,
+   "bbox_scan_rel": [
+    0.46463,
+    0.72061,
+    0.87865,
+    0.75234
+   ]
+  },
+  {
+   "id": "p0339-b31",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    598.3,
+    562.7,
+    632.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.76319,
+    0.904,
+    0.80656
+   ],
+   "text": "branchia, branchiae: extension of the body wall with a loop of the vascular system; usually well equipped with capillary blood-vessels.",
+   "italic_words": [],
+   "col": 1,
+   "order": 31,
+   "bbox_scan_rel": [
+    0.46387,
+    0.75461,
+    0.87812,
+    0.80146
+   ]
+  },
+  {
+   "id": "p0339-b32",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    637.3,
+    562.7,
+    689.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.81293,
+    0.904,
+    0.87923
+   ],
+   "text": "branchial crown: see radiolar crown. branchiferous: term referring to segments bearing branchiae. brush-tipped chaeta: simple chaeta with a brush-like tip (also known as penicillate chaeta).",
+   "italic_words": [],
+   "col": 1,
+   "order": 32,
+   "bbox_scan_rel": [
+    0.46277,
+    0.80374,
+    0.87736,
+    0.87323
+   ]
+  },
+  {
+   "id": "p0339-b33",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    694.3,
+    562.7,
+    743.3
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.88559,
+    0.90402,
+    0.94808
+   ],
+   "text": "buccal cavity: mouth cavity. buccal organ: anterior part of alimentary canal derived from the larval stomodeum, comprising a complex set of folds, musculature, and glands; see pharynx.",
+   "italic_words": [],
+   "col": 1,
+   "order": 33,
+   "bbox_scan_rel": [
+    0.46173,
+    0.8755,
+    0.87628,
+    0.94123
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 212,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 212,
+  "median_residual_px": 0.73,
+  "status": "ok",
+  "affine": [
+   [
+    1.050403,
+    -0.015137,
+    -0.059896
+   ],
+   [
+    0.010195,
+    0.987671,
+    -0.004373
+   ]
+  ]
+ },
+ "stratum": "glossary",
+ "scan_page": 361
+}

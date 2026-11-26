@@ -22,6 +22,7 @@ from typing import Any
 
 from docx import Document
 from docx.enum.section import WD_SECTION
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_BREAK, WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -30,7 +31,7 @@ from docx.image.image import Image as DocxImage
 from docx.text.run import Run
 
 from booklayout.english import is_english_word, worms_genera
-from booklayout.profile import StyleProfile
+from booklayout.profile import PARA_STYLE_DEFAULTS, StyleProfile
 
 BODY_FONT = "Garamond"
 # 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
@@ -425,7 +426,7 @@ def setup(doc: Any):
     st.paragraph_format.space_before = Pt(0)
     st.paragraph_format.space_after = Pt(0)
     st.paragraph_format.line_spacing = 1.0
-    define_heading_styles(doc)
+    define_styles(doc)
     # Justified text without hyphenation produces rivers and huge word gaps,
     # especially around long taxonomic names and citations.
     rpr = st._element.get_or_add_rPr()
@@ -691,6 +692,156 @@ def define_heading_styles(doc: Any, profile: Any = None) -> None:
         pf.alignment = _ALIGN[cfg["align"]]
 
 
+_PARA_ALIGN = {**_ALIGN, "justify": WD_ALIGN_PARAGRAPH.JUSTIFY}
+
+
+def style_pt(name: str, profile: Any = None) -> float:
+    """Effective point size of paragraph style `name` (what define_styles writes)."""
+    prof = profile or PROFILE
+    cfg = prof.para_style(name)
+    size = cfg["size"]
+    if cfg["size_follows_body"]:
+        size = prof.body_size + (size - 10.5)
+    return round(size * prof.body_size / 10.5, 2)
+
+
+STRUT_STYLES = frozenset({"Key Table"})
+
+
+def define_styles(doc: Any, profile: Any = None) -> None:
+    """(Re)write every named paragraph style (design 2026-11-26 C) and the heading styles.
+
+    Paragraphs only reference these styles, so ``booklayout restyle`` / editing a style in
+    Word restyles all paragraphs of that role at once.  A style that python-docx's default
+    template already has (Caption, Quote ...) is reset first so no template colour or
+    bold leaks in.
+    """
+    prof = profile or PROFILE
+    for name in PARA_STYLE_DEFAULTS:
+        cfg = prof.para_style(name)
+        try:
+            st = doc.styles[name]
+            for tag in ("w:rPr", "w:pPr"):
+                for el in st.element.findall(qn(tag)):
+                    st.element.remove(el)
+        except KeyError:
+            st = doc.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+        st.base_style = doc.styles["Normal"]
+        st.quick_style = True
+        font = st.font
+        font.name = BODY_FONT
+        font.size = Pt(style_pt(name, prof))
+        if name in STRUT_STYLES and doc.styles["Normal"].font.size is not None:
+            # LibreOffice sizes every row of a table by the paragraph style's own font (its
+            # "strut") plus the runs: a 9.2 pt style made key-table rows 0.2 pt shorter than
+            # the old Normal-based paragraphs, 2.6 pt over a page (T3b).  Keep the strut at
+            # Normal's size; key_table() writes the real size on its runs.
+            font.size = doc.styles["Normal"].font.size
+        font.bold = bool(cfg["bold"])
+        font.italic = bool(cfg["italic"])
+        st.element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), CJK_FONT)
+        pf = st.paragraph_format
+        pf.space_before, pf.space_after = Pt(cfg["before"]), Pt(cfg["after"])
+        pf.line_spacing = cfg["line"]
+        pf.first_line_indent = Mm(cfg["first"])
+        pf.left_indent = Mm(cfg["left"])
+        pf.keep_with_next = bool(cfg["keep_with_next"])
+        pf.keep_together = bool(cfg["keep_together"])
+        pf.widow_control = True
+        pf.alignment = _PARA_ALIGN[cfg["align"]]
+    define_heading_styles(doc, prof)
+
+
+def norm_runs(par, cfg: dict) -> None:
+    """Drop direct bold/italic that merely repeats the style, so a style change reaches the runs."""
+    for run in par.runs:
+        if run.bold is not None and run.bold == bool(cfg["bold"]):
+            run.bold = None
+        if run.italic is not None and run.italic == bool(cfg["italic"]):
+            run.italic = None
+
+
+def pin_glue(par, doc) -> None:
+    """Keep tab/line-break runs at the Normal size, as the pre-style builder did.
+
+    Those runs never carried a size, so their (invisible) height came from Normal;
+    leaving them to inherit the smaller key/index style would change leader width and
+    line height (design 2026-11-26 C.4: output must not move).
+    """
+    size = doc.styles["Normal"].font.size
+    if size is None:
+        return
+    for r in par.runs:
+        if r.text and set(r.text) <= {"\t", "\n"} and r.font.size is None:
+            r.font.size = size
+
+
+def pin_mark_size(par, doc) -> None:
+    """Pin the paragraph-mark size to Normal's (a table row's height follows it), see pin_glue."""
+    size = doc.styles["Normal"].font.size
+    if size is None:
+        return
+    ppr = par._p.get_or_add_pPr()
+    rpr = OxmlElement("w:rPr")
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), str(int(round(size.pt * 2))))
+    rpr.append(sz)
+    ppr.append(rpr)
+
+
+def run_size(style: str, size: float) -> float | None:
+    """None (inherit from the style) when `size` is the style's own size, else the explicit size."""
+    return None if abs(size - style_pt(style)) < 0.005 else size
+
+
+def fill_styled(par, text: str, cfg: dict, genera=None, color=None, invert=False) -> None:
+    add_runs(par, text, None, bool(cfg["bold"]), bool(cfg["italic"]), color, genera, invert)
+    norm_runs(par, cfg)
+
+
+def _add_par(doc, style: str):
+    """doc.add_paragraph(style=...), defining the named styles first on a bare document."""
+    if "Body" not in [s.name for s in doc.styles]:
+        define_styles(doc)
+    return doc.add_paragraph(style=style)
+
+
+def _add_par_style(doc, name: str):
+    if "Body" not in [s.name for s in doc.styles]:
+        define_styles(doc)
+    return doc.styles[name]
+
+
+def spara(doc, text: str, style: str, genera=None, color=None, invert=False, **over):
+    """A paragraph that only references named style `style`.
+
+    `over` are direct overrides, applied only when they differ from the style: first, left,
+    before, after, line (numbers), align (WD_ALIGN_PARAGRAPH), keep (keep_with_next).
+    """
+    cfg = PROFILE.para_style(style)
+    p = _add_par(doc, style)
+    pf = p.paragraph_format
+    if _KEY_STATE.pop("gap", False):
+        over["before"] = max(over.get("before", cfg["before"]), 7.0)  # air between a key table and what follows
+    for k, f in (("first", "first_line_indent"), ("left", "left_indent")):
+        if k in over and abs(over[k] - cfg[k]) > 1e-9:
+            setattr(pf, f, Mm(over[k]))
+    for k in ("before", "after"):
+        if k in over and abs(over[k] - cfg[k]) > 1e-9:
+            setattr(pf, "space_" + k, Pt(over[k]))
+    if "line" in over and abs(over["line"] - cfg["line"]) > 1e-9:
+        pf.line_spacing = over["line"]
+    if over.get("keep") is not None and bool(over["keep"]) != bool(cfg["keep_with_next"]):
+        pf.keep_with_next = bool(over["keep"])
+    if over.get("align") is not None and over["align"] != _PARA_ALIGN[cfg["align"]]:
+        p.alignment = over["align"]
+    if text:
+        fill_styled(p, text, cfg, genera, color, invert)
+    if PROFILE.lang_east_asia.lower().startswith("zh"):
+        _suppress_hyphenation(p)
+    return p
+
+
 def heading(doc, text, level, genera, chapter_start=False):
     """A heading paragraph: style reference only, all looks live in the style."""
     p = doc.add_paragraph(style=f"Heading {level}")
@@ -839,13 +990,10 @@ def tabbed(doc, left, right, size, left_indent=0.0, genera=None, bold_left=False
     """
     name, target = split_key_target(right)
     name, target = italicize_key_address(name), italicize_key_address(target)
-    p = doc.add_paragraph()
+    p = _add_par(doc, "Key")
     pf = p.paragraph_format
-    pf.left_indent = Mm(0)
-    pf.first_line_indent = Mm(left_indent) if left_indent else None
-    pf.space_before, pf.space_after = Pt(0), Pt(0)
-    pf.line_spacing = 1.0
-    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    if left_indent:
+        pf.first_line_indent = Mm(left_indent)
     two_slots = bool(name and target)
     if not force_break and (name or target):
         # Estimate where the text's last line ends.  When it runs past the name
@@ -864,7 +1012,8 @@ def tabbed(doc, left, right, size, left_indent=0.0, genera=None, bold_left=False
         pf.tab_stops.add_tab_stop(
             Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT,
             WD_TAB_LEADER.SPACES if two_slots else WD_TAB_LEADER.DOTS)
-    add_runs(p, left, size, bold=bold_left, genera=genera)
+    rsize = run_size("Key", size)
+    add_runs(p, left, rsize, bold=bold_left, genera=genera)
     if force_break:
         # A couplet whose leader would be shorter than MIN_KEY_LEADER_MM gets
         # the same treatment as an over-long target: the whole address moves
@@ -873,14 +1022,16 @@ def tabbed(doc, left, right, size, left_indent=0.0, genera=None, bold_left=False
     p.add_run('\t')
     slot_start = len(p.runs)
     if name:
-        add_runs(p, name, size, genera=genera)
+        add_runs(p, name, rsize, genera=genera)
         _atomic_target(p, slot_start)
     if target:
         if name:
             p.add_run('\t')
         target_start = len(p.runs)
-        add_runs(p, target, size, genera=genera)
+        add_runs(p, target, rsize, genera=genera)
         _atomic_target(p, target_start)
+    norm_runs(p, PROFILE.para_style("Key"))
+    pin_glue(p, doc)
     _suppress_hyphenation(p)
     return p
 
@@ -1002,27 +1153,30 @@ def couplet_para(doc, block: dict, text: str, genera, mark_mm: float = 9.0, hang
     marker = (c.get("marker") or c.get("lead") or "").strip()
     right = " ".join(italicize_key_address(x) for x in (c.get("name"), c.get("target")) if x)
     size = PROFILE.body_size
-    p = doc.add_paragraph()
+    ccfg = PROFILE.para_style("Key Couplet")
+    p = _add_par(doc, "Key Couplet")
     pf = p.paragraph_format
-    pf.left_indent, pf.first_line_indent = Mm(hang_mm), Mm(mark_mm - hang_mm)
-    pf.space_before, pf.space_after, pf.line_spacing = Pt(0), Pt(0), 1.15
-    pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    if abs(hang_mm - ccfg["left"]) > 1e-9:
+        pf.left_indent = Mm(hang_mm)
+    if abs(mark_mm - hang_mm - ccfg["first"]) > 1e-9:
+        pf.first_line_indent = Mm(mark_mm - hang_mm)
     pf.tab_stops.add_tab_stop(Mm(hang_mm - 0.1))
     pf.tab_stops.add_tab_stop(Mm(TEXT_W), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-    # Rule 7 (keyrender KR7): a lead never breaks over a page, and "n." stays
-    # on the page of its "—" partner.
-    pf.keep_together = True
+    # Rule 7 (keyrender KR7): a lead never breaks over a page (style Key Couplet:
+    # keep_together), and "n." stays on the page of its "—" partner.
+    rsize = run_size("Key Couplet", size)
+    pf.keep_together = True  # also in the style; set directly so readers of the paragraph see it
     pf.keep_with_next = marker not in ("—", "-", "–")
     # Rules 1-2 (KR1/KR2): the marker tab must be its own run.  add_runs()
     # passes text through clean_text(), which turns a tab into a space; then
     # the text of "1." started at x=86 pt, of "—" at x=90 pt, and wrapped lines
     # at x=96 pt (Imajima keys, 2026-11-23).
     if marker:
-        add_runs(p, marker, size, genera=genera)
+        add_runs(p, marker, rsize, genera=genera)
         if not marker.isascii():  # "—": typeset by the CJK font, as in the text
             p.runs[-1]._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
         p.add_run("\t")
-    add_runs(p, join_number_measure(text), size, genera=genera)
+    add_runs(p, join_number_measure(text), rsize, genera=genera)
     _widen_glue(p, 0)
     if right:
         line_w = TEXT_W - hang_mm
@@ -1036,8 +1190,10 @@ def couplet_para(doc, block: dict, text: str, genera, mark_mm: float = 9.0, hang
             p.add_run().add_break()
         p.add_run("\t")
         start = len(p.runs)
-        add_runs(p, right, size, genera=genera)
+        add_runs(p, right, rsize, genera=genera)
         _atomic_target(p, start)
+    norm_runs(p, ccfg)
+    pin_glue(p, doc)
     _suppress_hyphenation(p)
     return p
 
@@ -1119,7 +1275,8 @@ KEY_TARGET_MM = 40.0
 
 def key_table(doc, rows: list[tuple[str, str, str]], genera, header: bool) -> None:
     """A run of key couplets as one borderless table (marker | text | target)."""
-    size = _sz(9.2)
+    size = _sz(9.2)  # explicit on runs: the style itself stays at Normal's size
+    kcfg = PROFILE.para_style("Key Table")
     heads = PROFILE.key_headers
     use_header = header and any(heads)
     n = len(rows) + (1 if use_header else 0)
@@ -1156,15 +1313,16 @@ def key_table(doc, rows: list[tuple[str, str, str]], genera, header: bool) -> No
             cell = row.cells[ci]
             cell.text = ""
             par = cell.paragraphs[0]
+            par.style = _add_par_style(doc, "Key Table")
             pf = par.paragraph_format
-            pf.space_before, pf.space_after, pf.line_spacing = Pt(0), Pt(0), 1.1
             pf.alignment = aligns[ci]
-            pf.keep_together = True
             if ci == 1 and not is_head:
                 pf.right_indent = Mm(2)
             if txt:
                 add_runs(par, txt, size, bold=is_head or ci in (0, 2), genera=genera)
+                norm_runs(par, kcfg)
             _suppress_hyphenation(par)
+            pin_mark_size(par, doc)
             if ci == 2 and not is_head:
                 _atomic_target(par, 0)
             _cell_border(cell, ("2F3B52", 8) if is_head else (_KEY_ROW_BORDER, 4))
@@ -1209,8 +1367,7 @@ def key_para(doc, text, genera, key_breaks: set[str] | None = None):
     # set them ragged-right like the source, flush with the couplet markers
     # (no first-line indent, issue #35).  Justifying them would reintroduce
     # the wide word gaps the keys are meant to avoid.
-    return para(doc, text, size=9.5, first=0.0, line=1.0,
-                align=WD_ALIGN_PARAGRAPH.LEFT, genera=genera)
+    return spara(doc, text, "Key Note", genera=genera)
 
 
 def image_para(doc, path: Path, max_w=118.0, max_h=150.0):
@@ -1267,10 +1424,9 @@ def caption(doc, text, genera):
     # justified caption has to hyphenate long words ("Re-drawn") to fill the
     # measure; ragged-right keeps the caption readable and avoids those
     # accidental-looking hyphens in the printed book.
-    p = para(doc, text, size=9.5, italic=False, align=WD_ALIGN_PARAGRAPH.LEFT,
-             before=12, after=7, line=1.05, genera=genera)
-    # A caption that splits over a page break reads as two unrelated fragments.
-    p.paragraph_format.keep_together = True
+    # keep_together (a caption split over a page break reads as two unrelated
+    # fragments) lives in the Caption style.
+    p = spara(doc, text, "Caption", genera=genera)
     _suppress_hyphenation(p)
     return p
 
@@ -1479,7 +1635,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             # Word TOC page after the first word_toc_after_page source pages (cover etc.)
             if doc.paragraphs:
                 page_break(doc)
-            para(doc, PROFILE.word_toc_title, size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=12)
+            spara(doc, PROFILE.word_toc_title, "Section Title", after=12)
             TOC_MARK.append(para(doc, "", size=2))  # its page break rides on the last entry
             rendered_any, prev_own = False, False
         img_page = p["page"] in meta.image_pages
@@ -1595,9 +1751,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     # A source call-out or boxed note was often tagged as a
                     # heading by the aligner.  Typesetting it as a chapter
                     # heading turns it into a huge all-caps block.
-                    para(doc, text, size=9.5, italic=True,
-                         align=WD_ALIGN_PARAGRAPH.JUSTIFY, first=5,
-                         before=4, after=4, genera=genera)
+                    spara(doc, text, "Note", genera=genera)
                 else:
                     level = b.get("level", 2)
                     try:
@@ -1617,27 +1771,24 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 # note_italic=False: set exactly like a caption (roman, ragged-right,
                 # no indent) so notes and captions look the same.
                 roman = not PROFILE.note_italic
-                para(doc, text, size=9.5, italic=PROFILE.note_italic,
-                     align=WD_ALIGN_PARAGRAPH.LEFT if roman else WD_ALIGN_PARAGRAPH.JUSTIFY,
-                     first=0 if roman else 5, before=4, after=4, genera=genera)
+                spara(doc, text, "Note Roman" if roman else "Note", genera=genera)
                 prev_body = None
             elif role == "body":
                 # merge a page-split sentence
                 if prev_body is not None and can_join(prev_body[0], text):
                     joined = join_texts(prev_body[0], text)
                     prev_body[1].clear()
-                    add_runs(prev_body[1], joined, _sz(10.5), genera=genera)
+                    fill_styled(prev_body[1], joined, PROFILE.para_style("Body"), genera)
                     prev_body = (joined, prev_body[1])
                 else:
                     # A lower-case opening is a paragraph continued after an
                     # intervening figure or caption; indenting it would print
                     # a paragraph break in the middle of a sentence.
-                    first = 0 if text[:1].islower() else 5
-                    par = para(doc, text, size=10.5, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                               first=first, line=1.02, genera=genera)
+                    par = spara(doc, text, "Body Cont" if text[:1].islower() else "Body",
+                                genera=genera)
                     prev_body = (text, par)
             elif role == "citation":
-                para(doc, text, size=9.2, left=4, first=-4, before=PROFILE.citation_before, line=1.0, genera=genera)
+                spara(doc, text, "Citation", genera=genera)
                 prev_body = None
             elif role == "key":
                 if PROFILE.key_style == "table" and is_key_page(p):
@@ -1651,19 +1802,19 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 couplet_para(doc, b, text, genera)
                 prev_body = None
             elif role == "ref":
-                para(doc, text, size=7.6, left=4, first=-4, after=1.5, line=0.95, genera=genera)
+                spara(doc, text, "Ref", genera=genera)
                 prev_body = None
             elif role == "entry":
                 for prefix in meta.entry_prefixes:
                     text = re.sub(prefix, "", text, count=1, flags=re.I)
                 if not text:
                     continue
-                size = 9.2 if p["kind"] in ("appendix",) else 10.2
-                para(doc, text, size=size, left=4, first=-4, after=2.0, line=1.0, genera=genera)
+                spara(doc, text, "Entry Appendix" if p["kind"] in ("appendix",) else "Entry",
+                      genera=genera)
                 prev_body = None
             elif role == "taxon":
-                para(doc, text, size=10, align=WD_ALIGN_PARAGRAPH.LEFT, left=4.5 * int(b.get("rank", 0)),
-                     before=_taxon_gap(text, int(b.get("rank", 0))), after=0.4, keep=True, genera=genera)
+                spara(doc, text, "Taxon", left=4.5 * int(b.get("rank", 0)),
+                      before=_taxon_gap(text, int(b.get("rank", 0))), genera=genera)
                 prev_body = None
             elif role == "index":
                 if meta.contents_in_place:
@@ -1768,19 +1919,17 @@ def render_generic_block(doc, b: dict, genera) -> None:
             cant = OxmlElement("w:cantSplit")
             table.rows[ri]._tr.get_or_add_trPr().append(cant)
         if text:
-            para(doc, text, size=size - 1.5, italic=True, before=2, after=6, genera=genera)
+            spara(doc, text, "Table Note", genera=genera)
         else:
             para(doc, "", after=4)
     elif role == "list":
         for i, item in enumerate(b["items"], 1):
             label = f"{i}. " if b.get("ordered") else "\u2022 "
-            para(doc, label + clean_text(str(item)), size=size, left=6, first=-4, after=1,
-                 genera=genera)
+            spara(doc, label + clean_text(str(item)), "List Item", genera=genera)
     elif role == "quote":
-        para(doc, text, size=size - 0.5, italic=True, left=8, before=3, after=3,
-             align=WD_ALIGN_PARAGRAPH.JUSTIFY, genera=genera)
+        spara(doc, text, "Quote", genera=genera)
     elif role == "box":
-        p = para(doc, text, size=size - 0.5, left=3, before=4, after=4, genera=genera)
+        p = spara(doc, text, "Box Text", genera=genera)
         ppr = p._p.get_or_add_pPr()
         bdr = OxmlElement("w:pBdr")
         for side in ("top", "left", "bottom", "right"):
@@ -1791,7 +1940,7 @@ def render_generic_block(doc, b: dict, genera) -> None:
             bdr.append(e)
         ppr.append(bdr)
     elif role == "footnote":
-        para(doc, text, size=size - 2, before=1, after=1, genera=genera)
+        spara(doc, text, "Footnote Text", genera=genera)
 
 
 def can_join(a: str, b: str) -> bool:
@@ -1912,9 +2061,9 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
         else:
             intro = raw_intro[:400]
     doc.add_page_break()
-    para(doc, meta.index_title, size=13, bold=True, align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
+    spara(doc, meta.index_title, "Section Title")
     if intro:
-        para(doc, intro, size=8.8, italic=True, align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=8)
+        spara(doc, intro, "Index Intro")
     sec = doc.add_section(WD_SECTION.CONTINUOUS)
     sec.page_width, sec.page_height = Mm(PAGE_W), Mm(PAGE_H)
     sec.top_margin, sec.bottom_margin = Mm(PROFILE.margin_top), Mm(PROFILE.margin_bottom)
@@ -1931,35 +2080,32 @@ def render_index(doc, data, genera, page_map, meta: BookMeta):
                 left, right = m2.group(1).strip(), m2.group(2).strip()
                 right = remap_refs(right, page_map, left, printed_pages,
                                    block_rows, word_pages)
-                p = doc.add_paragraph()
-                p.paragraph_format.space_before = p.paragraph_format.space_after = Pt(0)
-                p.paragraph_format.line_spacing = 1.0
+                p = _add_par(doc, "Index")
                 p.paragraph_format.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-                add_runs(p, left, 8.6, genera=genera)
+                add_runs(p, left, None, genera=genera)
                 if fixed:
                     p.add_run('†')
                 p.add_run('\t')
-                add_runs(p, right, 8.6)
+                add_runs(p, right, None)
+                norm_runs(p, PROFILE.para_style("Index"))
+                pin_glue(p, doc)
                 continue
         if m:
             left = text[:m.start()].strip()
             right = text[m.end():].strip()
             right = remap_refs(right, page_map, left, printed_pages,
                                block_rows, word_pages)
-            p = doc.add_paragraph()
-            pf = p.paragraph_format
-            pf.left_indent = Mm(0)
-            pf.space_before, pf.space_after = Pt(0), Pt(0)
-            pf.line_spacing = 1.0
-            pf.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
-            add_runs(p, left, 8.6, genera=genera)
+            p = _add_par(doc, "Index")
+            p.paragraph_format.tab_stops.add_tab_stop(Mm(62), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+            add_runs(p, left, None, genera=genera)
             if fixed:
                 p.add_run('†')
             p.add_run('\t')
-            add_runs(p, right, 8.6)
+            add_runs(p, right, None)
+            norm_runs(p, PROFILE.para_style("Index"))
+            pin_glue(p, doc)
         else:
-            para(doc, text + ('†' if fixed else ''), size=8.6, line=1.0,
-                 genera=genera)
+            spara(doc, text + ('†' if fixed else ''), "Index", genera=genera)
     render_corrections(doc, meta, genera)
 
 
@@ -1969,19 +2115,16 @@ def render_corrections(doc, meta: BookMeta, genera=None):
     if not fixes:
         return
     doc.add_page_break()
-    para(doc, meta.corrections_title, size=13, bold=True,
-         align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
+    spara(doc, meta.corrections_title, "Section Title")
     if meta.corrections_intro:
-        para(doc, meta.corrections_intro, size=8.8, italic=True,
-             align=WD_ALIGN_PARAGRAPH.JUSTIFY, after=8)
+        spara(doc, meta.corrections_intro, "Index Intro")
     for old, new, note in fixes:
         old_clean = old.strip('()')
         new_clean = new.strip('()')
         line = f"† Index entry “{old_clean}” corrected to “{new_clean}”."
         if note:
             line += " " + note
-        para(doc, line, size=8.8, left=4, first=-4, after=3, line=1.0,
-             genera=genera)
+        spara(doc, line, "Index Correction", genera=genera)
 
 
 def remap_refs(right: str, page_map: dict[str, int | str],

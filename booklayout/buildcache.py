@@ -7,12 +7,14 @@ Two independent keys, both stored in a sidecar `<out>.buildcache.json`:
   * docx key  = hash of every input file, figure tree (name, size, mtime_ns),
     the booklayout source code, the effective output path and CLI options.
     Equal key and an existing DOCX -> skip `build()`, reuse the stored report.
+    The code part is the builder-group fingerprint only (see `fingerprints`).
   * pdf key   = sha256 of the DOCX bytes.  Equal key and an existing PDF ->
     skip LibreOffice.
 Any change to any input changes the key, so a stale artifact is never reused.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -30,13 +32,88 @@ def _sha_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def code_fingerprint() -> str:
-    """Hash of the booklayout package source: new code must rebuild."""
+def _hash_files(paths: Iterable[Path]) -> str:
     h = hashlib.sha256()
-    for p in sorted(_PKG.rglob("*.py")):
+    for p in sorted(paths):
         h.update(str(p.relative_to(_PKG)).encode())
         h.update(_sha_file(p).encode())
     return h.hexdigest()
+
+
+def code_fingerprint() -> str:
+    """Hash of the whole booklayout package source (kept for callers that want everything)."""
+    return _hash_files(_PKG.rglob("*.py"))
+
+
+def file_fingerprint(module: str) -> str:
+    """sha256 of one package module's source (cache keys of per-page results)."""
+    return _hash_files(_module_files(module))
+
+
+def _imports_of(path: Path, top_level_only: bool = False) -> set[str]:
+    """Top-level module names (inside this package) that `path` imports, at any nesting depth."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, ValueError):
+        return set()
+    found: set[str] = set()
+    nodes = tree.body if top_level_only else ast.walk(tree)
+    for node in nodes:
+        if isinstance(node, ast.ImportFrom):
+            if node.level >= 1 and not node.module:            # from . import x, y
+                found.update(a.name for a in node.names)
+            elif node.level >= 1 and node.module:               # from .x import y
+                found.add(node.module.split(".")[0])
+            elif node.module == "booklayout":                   # from booklayout import x
+                found.update(a.name for a in node.names)
+            elif node.module and node.module.startswith("booklayout."):
+                found.add(node.module.split(".")[1])
+        elif isinstance(node, ast.Import):
+            found.update(a.name.split(".")[1] for a in node.names if a.name.startswith("booklayout."))
+    return {m for m in found if (_PKG / f"{m}.py").is_file() or (_PKG / m / "__init__.py").is_file()}
+
+
+def _module_files(name: str) -> list[Path]:
+    f = _PKG / f"{name}.py"
+    return [f] if f.is_file() else sorted((_PKG / name).rglob("*.py"))
+
+
+def module_closure(roots: Iterable[str]) -> set[str]:
+    """Package modules reachable from `roots` by static imports (lazy, in-function imports included)."""
+    seen: set[str] = set()
+    todo = list(roots)
+    while todo:
+        m = todo.pop()
+        if m in seen:
+            continue
+        seen.add(m)
+        for f in _module_files(m):
+            todo.extend(_imports_of(f) - seen)
+    return seen
+
+
+BUILD_ROOTS = ("builder", "profile", "keymodel")   # what turns aligned.json into a DOCX
+SOURCE_ROOTS = ("sourcecheck",)                    # what judges the PDF against the source scans
+
+
+def fingerprints() -> dict[str, str]:
+    """Per-module-group code fingerprints.
+
+    builder: BUILD_ROOTS' static import closure plus cli.py/__init__.py/__main__.py (they hold the
+             build command itself) and the modules cli.py imports at module level (normalize, styles,
+             furniture...).  Editing qa.py, stylecheck.py or sourcecheck.py does NOT change
+             it unless the builder imports them, so a gate edit no longer rebuilds the DOCX.
+    source:  sourcecheck's closure (Tesseract triage, figure regions, folio).
+    all:     every .py file.
+    """
+    def group(roots: Iterable[str], extra: Iterable[str] = ()) -> str:
+        mods = module_closure(list(roots) + [m for e in extra for m in _imports_of(_PKG / f"{e}.py", True)])
+        mods |= set(extra)
+        files = [f for m in mods for f in _module_files(m)]
+        return _hash_files(files)
+
+    return {"builder": group(BUILD_ROOTS, ("cli", "__init__", "__main__")),
+            "source": group(SOURCE_ROOTS), "all": code_fingerprint()}
 
 
 def tree_fingerprint(root: Path) -> str:
@@ -58,7 +135,7 @@ def input_key(files: Iterable[Path | None], dirs: Iterable[Path | None], options
         h.update(b"D" + (str(d).encode() if d else b"-"))
         h.update(tree_fingerprint(d).encode() if d else b"-")
     h.update(json.dumps(options, sort_keys=True, default=str).encode())
-    h.update(code_fingerprint().encode())
+    h.update(fingerprints()["builder"].encode())
     return h.hexdigest()
 
 

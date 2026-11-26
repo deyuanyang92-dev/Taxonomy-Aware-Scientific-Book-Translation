@@ -274,15 +274,16 @@ def render_key(doc: Any, key: Key, size: float = 9.5, genera: Iterable[str] | No
     """
     from docx.shared import Pt
 
-    from .builder import tabbed
+    from .builder import _add_par, style_pt, tabbed
 
     paras: list[Any] = []
     if key.heading:
-        p = doc.add_paragraph()
+        p = _add_par(doc, "Key Heading")  # size/bold/keep_with_next live in the style
         r = p.add_run(key.heading)
-        r.bold = True
-        r.font.size = Pt(heading_size)
+        r.bold = True  # also direct: callers/tests read the run, not the style
         p.paragraph_format.keep_with_next = True
+        if abs(heading_size - style_pt("Key Heading")) > 0.005:
+            r.font.size = Pt(heading_size)
         paras.append(p)
     gen = set(genera) if genera else None
     for i, b in enumerate(key.branches):

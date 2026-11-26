@@ -1,0 +1,354 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 17,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0017-b01",
+   "role": "caption",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    304.4,
+    562.7,
+    346.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.38825,
+    0.90401,
+    0.44183
+   ],
+   "text": "FIGURE 2.1: Basic annelid organisation. (a) The correlation between body regions in a larval and an adult annelid; (b) *Nereis virens* (*Nereididae*) dissected at various levels to show the nerve cord and segmental nerves and muscles of body wall and parapodia; (c) Segment of a generalised annelid; (d) Ventral most uncinus of second chaetigerous segment of *Spirorbis spirorbis* (Sabellidae). [(a), modified from Rouse (2000a) and Nielsen (1995); (b), from Smith (1957); (c), modified from Fransen (1988); (d), from Bartolomaeus (1995a)].",
+   "italic_words": [
+    "Nereis",
+    "virens",
+    "Nereididae",
+    "Spirorbis",
+    "spirorbis"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.03687,
+    0.37853,
+    0.88502,
+    0.43224
+   ]
+  },
+  {
+   "id": "p0017-b02",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    367.8,
+    305.7,
+    473.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.46911,
+    0.49106,
+    0.60432
+   ],
+   "text": "each chaeta with apical, dynamic microvilli (Fig. 2.1d) (O’Clair and Cloney, 1974). This formation mechanism results in the characteristic chaetal ultrastructure with bundles of parallel longitudinal canals, the walls of which are the polymerized chitin. Even though the basic principles of chaetal formation are in all cases similar, the cellular machinery of chaetogenesis is highly plastic and allows the construction of the plethora of chaetal types (Tilic, *et al*., 2015a; Tilic *et al*., 2016; Tilic *et al*., 2017; Tilic *et al*., 2019b; Tilic *et al*., 2021a) (Fig. 2.4).",
+   "italic_words": [
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.03696,
+    0.45834,
+    0.45105,
+    0.5922
+   ]
+  },
+  {
+   "id": "p0017-b03",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    60.6,
+    502.3,
+    190.5,
+    516.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.64069,
+    0.3061,
+    0.65855
+   ],
+   "text": "External body features",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.03714,
+    0.6277,
+    0.25666,
+    0.64554
+   ]
+  },
+  {
+   "id": "p0017-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    528.9,
+    305.7,
+    562.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.67465,
+    0.49107,
+    0.71802
+   ],
+   "text": "The major external body features of *Annelida* are described here, though some, such as branchiae, sensory organs, and reproductive organs, are dealt with in other sections.",
+   "italic_words": [
+    "Annelida"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.03717,
+    0.66122,
+    0.45119,
+    0.70443
+   ]
+  },
+  {
+   "id": "p0017-b05",
+   "role": "heading",
+   "level": 3,
+   "bbox_pt": [
+    60.6,
+    590.7,
+    183.5,
+    602.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.75353,
+    0.29482,
+    0.76884
+   ],
+   "text": "Head and head structures",
+   "italic_words": [],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.03726,
+    0.73908,
+    0.24492,
+    0.75439
+   ]
+  },
+  {
+   "id": "p0017-b06",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    613.5,
+    305.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.78261,
+    0.49107,
+    0.94844
+   ],
+   "text": "The ‘head’ is composed of the prostomium, peristomium, and, in some cases, anterior segments (Fig. 2.2). The prostomium contains at least part of the brain, and often has eyes, antennae, and palps. Prostomia vary a great deal in shape from conical or semi-spherical, T-shaped structures, to elongate lobes that extend back along the body. In some cases, the prostomium may appear to be composed of two elements owing to a fissure line. In other taxa, the prostomium is transformed into a mass of palps or a radiolar crown and is hardly identifiable as a separate structure (Figs. 2.2c, h). In many cases the prostomium may be fused to the peristomium (Figs. 2.2a, i, k). In some cases, such",
+   "italic_words": [],
+   "col": 0,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.03729,
+    0.76778,
+    0.45143,
+    0.93187
+   ]
+  },
+  {
+   "id": "p0017-b07",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    367.8,
+    562.7,
+    557.8
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.46911,
+    0.90403,
+    0.71147
+   ],
+   "text": "as *Maldanidae* and *Paraonidae*, the joint structure is well separated from the rest of the body as a distinct head. In taxa such as *Paraonidae*, *Phyllodocida*, and *Amphinomida,* the only adult peristomial structure visible is the area immediately surrounding the mouth, and so the head is essentially prostomial, except where segments are incorporated into the head (most *Phyllodocida*, see below). In many taxa the peristomium is one (e.g. *Arenicolidae*, *Cossura*, *Scalibregmatidae*, *Sabellidae*), or two (e.g. *Eunicidae*) complete rings separating the prostomium from the first segment (Figs. 2.2b, c, d, e, f, j). In taxa such as *Acrocirridae* and *Spionidae*, the peristomium may be difficult to see dorsally, but still appears to form a ring (Fig. 2.2d). Rouse and Fauchald (1997) scored many annelid groups as having a limited peristomium, as seen in *Phyllodocida*. While this is still accepted here for taxa such as *Phyl-* *lodocida* and *Amphinomida*, this interpretation has been revised for many other taxa following Rouse and Pleijel (2001).",
+   "italic_words": [
+    "Maldanidae",
+    "Paraonidae",
+    "Paraonidae",
+    "Phyllodocida",
+    "Amphinomida",
+    "Phyllodocida",
+    "Arenicolidae",
+    "Cossura",
+    "Scalibregmatidae",
+    "Sabellidae",
+    "Eunicidae",
+    "Acrocirridae",
+    "Spionidae",
+    "Phyllodocida",
+    "Phyl-",
+    "lodocida",
+    "Amphinomida"
+   ],
+   "col": 1,
+   "order": 6,
+   "bbox_scan_rel": [
+    0.4711,
+    0.45876,
+    0.88533,
+    0.69839
+   ]
+  },
+  {
+   "id": "p0017-b08",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    317.6,
+    567.2,
+    391.5,
+    579.2
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.72355,
+    0.62902,
+    0.73886
+   ],
+   "text": "*Head appendages*",
+   "italic_words": [
+    "Head",
+    "appendages"
+   ],
+   "col": 1,
+   "order": 7,
+   "bbox_scan_rel": [
+    0.47137,
+    0.70991,
+    0.59624,
+    0.72514
+   ]
+  },
+  {
+   "id": "p0017-b09",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    589.5,
+    562.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.752,
+    0.90402,
+    0.94844
+   ],
+   "text": "Head appendages include antennae, palps, peristomial cirri, and, associated with one or more cephalized segments, anterior dorsal cirri. Antennae are always located on the prostomium. Up to three antennae may be present, including a pair of lateral antennae and one median antenna (Figs. 2.2a, b, i, k). Most common are simple, tapering or digitiform antennae (e.g. *Amphinomi-* *dae*, *Hesionidae*), though they may be articulated (e.g. *Eunicidae*), or consist of a basal ceratophore and a distal ceratostyle (e.g. *Polynoidae*). The lateral antennae may be located at or near the frontal edge of the prostomium (e.g. *Hesionidae*). In some cases, the lateral antennae are missing, leaving a single median antenna (e.g. *Aphroditidae*). Some non-*Aciculata* taxa, such as some *Paraonidae* (Fig. 2.2i) and *Spionidae*, do have a median antenna,",
+   "italic_words": [
+    "Amphinomi-",
+    "dae",
+    "Hesionidae",
+    "Eunicidae",
+    "Polynoidae",
+    "Hesionidae",
+    "Aphroditidae",
+    "Aciculata",
+    "Paraonidae",
+    "Spionidae"
+   ],
+   "col": 1,
+   "order": 8,
+   "bbox_scan_rel": [
+    0.4714,
+    0.73799,
+    0.88557,
+    0.93229
+   ]
+  },
+  {
+   "id": "p0017-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    31.4,
+    136.9,
+    43.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.0401,
+    0.21995,
+    0.05541
+   ],
+   "text": "10 anatomy",
+   "italic_words": [],
+   "col": 0,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.0365,
+    0.03489,
+    0.16545,
+    0.05012
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 150,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 150,
+  "median_residual_px": 0.74,
+  "status": "ok",
+  "affine": [
+   [
+    1.051317,
+    0.00106,
+    -0.065846
+   ],
+   [
+    0.001024,
+    0.987051,
+    -0.004794
+   ]
+  ]
+ },
+ "stratum": "figure_caption",
+ "scan_page": 23
+}

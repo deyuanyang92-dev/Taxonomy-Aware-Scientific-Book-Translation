@@ -1,0 +1,395 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 50,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0050-b01",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    61.1,
+    305.7,
+    119.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.07788,
+    0.49107,
+    0.15186
+   ],
+   "text": "also described the life history of *Pholoe anoculata* from North Carolina. Brood care within the elytra is known in *Laubierpholoe* (Figs. 7.3d, e) (Laubier, 1975; Pettibone, 1992; Westheide, 2001) and in brood sacs under the elytra in *Taylorpholoe* (Pettibone, 1992; Wolf, 1986b).",
+   "italic_words": [
+    "Pholoe",
+    "anoculata",
+    "Laubierpholoe",
+    "Taylorpholoe"
+   ],
+   "col": 0,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.09323,
+    0.07267,
+    0.50739,
+    0.14597
+   ]
+  },
+  {
+   "id": "p0050-b02",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    60.6,
+    138.9,
+    148.2,
+    152.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.1772,
+    0.23816,
+    0.19506
+   ],
+   "text": "Natural history",
+   "italic_words": [],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.09352,
+    0.1709,
+    0.24165,
+    0.18863
+   ]
+  },
+  {
+   "id": "p0050-b03",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    165.5,
+    305.7,
+    475.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.21116,
+    0.49107,
+    0.60659
+   ],
+   "text": "Natural history of *Sigalionidae* is poorly studied. They are found worldwide and occur from the intertidal to depths of several thousand metres. *Pisioninae* are mostly found in shallow waters, with *Pisione longipalpa* described from >900m (Uschakov, 1956) being the only exception. All *Pisioninae* and some *Pholoinae* (*Metaxypsamma*, *Laubierpholoe*, *Imajimapholoe*, *Taylorpholoe*) are interstitial. *Pisione garciavaldecasasi* is the only known freshwater species and was described from rivers in Panama (San Martin *et al*., 1998). In general, *Sigalionidae*, considering their jaw morphology, are expected to be carnivorous. However, feeding habits of *Sigalionidae* are largely unknown. Most *Sigalioninae* burrow in soft sediments and *Sthenelanella* inhabits self-constructed tubes. This indicates that they are likely to be sit-and-wait predators (Jumars *et al*., 2015). In fact, Pernet (2000) described such behaviour for *Sthenelais berkeleyi*, where the animals burrow into the sediment and use antero-dorsally oriented chaetae to form a ‘chaetal snorkel’ to maintain respiration. *Pholoinae* are most probably more active hunter predators. Pleijel (1983), in the only study on the feeding biology of *Pholoinae*, described *Pholoe balti-* *ca* (as *Pholoe minuta*) as an active predator on *Spionidae*, small crustaceans, and forams. If active predation also occurs in other *Sigalionidae*, this remains to be shown. Heffernan *et al*. (1983) reported mean densities of about 100 per 0.1 m2 of *Pholoe baltica* (as *Pholoe minuta*) from Ireland. Gonzalez *et al*. (2017a) discuss the biogeographical distribution patterns of *Pisione.*",
+   "italic_words": [
+    "Sigalionidae",
+    "Pisioninae",
+    "Pisione",
+    "longipalpa",
+    "Pisioninae",
+    "Pholoinae",
+    "Metaxypsamma",
+    "Laubierpholoe",
+    "Imajimapholoe",
+    "Taylorpholoe",
+    "Pisione",
+    "garciavaldecasasi",
+    "et",
+    "al",
+    "Sigalionidae",
+    "Sigalionidae",
+    "Sigalioninae",
+    "Sthenelanella",
+    "et",
+    "al",
+    "Sthenelais",
+    "berkeleyi",
+    "Pholoinae",
+    "Pholoinae",
+    "Pholoe",
+    "balti-",
+    "ca",
+    "Pholoe",
+    "minuta",
+    "Spionidae",
+    "Sigalionidae",
+    "et",
+    "al",
+    "Pholoe",
+    "baltica",
+    "Pholoe",
+    "minuta",
+    "et",
+    "al",
+    "Pisione"
+   ],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.09363,
+    0.20428,
+    0.50875,
+    0.59498
+   ]
+  },
+  {
+   "id": "p0050-b04",
+   "role": "heading",
+   "level": 3,
+   "bbox_pt": [
+    60.6,
+    494.7,
+    116.6,
+    506.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.63107,
+    0.18734,
+    0.64638
+   ],
+   "text": "Systematics",
+   "italic_words": [],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.09488,
+    0.6191,
+    0.18957,
+    0.63427
+   ]
+  },
+  {
+   "id": "p0050-b05",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    517.5,
+    305.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.66016,
+    0.49107,
+    0.94844
+   ],
+   "text": "*Sigalionidae* have a convoluted taxonomic history. Historically, the group included scale-worms bearing compound neurochaetae, corresponding largely to today’s *Sigalioninae*. Rouse and Fauchald’s (1997) cladistic analyses recovered *Sigalionidae* as the sister group to other *Aphroditiformia* that lacked compound neurochaetae. However, subsequent analyses based on both morphology (Pleijel and Dahlgren, 1998; Rouse and Pleijel, 2001) and also sequence data (Gonzalez *et al*., 2018a; Norlinder *et al*., 2012; Struck *et al*., 2005b; Wiklund *et al*., 2005; Zhang, Y. *et al*., 2018a) repeatedly revealed the paraphyly of *Sigalionidae*, both with regard to *Pholoinae* and *Pisioninae*. In the most recent phylogenetic studies of *Aphroditiformia* by Zhang *et al*., (2018a) and Gonzalez *et al*. (2018a), *Sigalionidae* was recovered as the sister group to a clade comprising *Poly-* *noidae* + (*Iphionidae* + *Acoetidae*). Gonzalez *et al*. (2018a) also revised the classification of *Aphroditiformia* and there *Sigalionidae* was subdivided into *Pelogeniinae*, *Pisioninae*, *Pholoinae*, *Sigalioni-* *nae*, and *Sthenelanellinae.* We here follow their delineation of the group, though not all the names. This makes the first described",
+   "italic_words": [
+    "Sigalionidae",
+    "Sigalioninae",
+    "Sigalionidae",
+    "Aphroditiformia",
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al",
+    "et",
+    "al",
+    "Sigalionidae",
+    "Pholoinae",
+    "Pisioninae",
+    "Aphroditiformia",
+    "et",
+    "al",
+    "et",
+    "al",
+    "Sigalionidae",
+    "Poly-",
+    "noidae",
+    "Iphionidae",
+    "Acoetidae",
+    "et",
+    "al",
+    "Aphroditiformia",
+    "Sigalionidae",
+    "Pelogeniinae",
+    "Pisioninae",
+    "Pholoinae",
+    "Sigalioni-",
+    "nae",
+    "Sthenelanellinae"
+   ],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.09497,
+    0.64763,
+    0.50977,
+    0.93253
+   ]
+  },
+  {
+   "id": "p0050-b06",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    61.1,
+    562.7,
+    743.1
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.07788,
+    0.90403,
+    0.94783
+   ],
+   "text": "*Sigalionidae* to be *Pholoe longa* (Müller, 1776) (as *Aphrodita lon-* *ga*). The phylogenetic relationships within *Sigalionidae* remain problematic and warrant further study (Gonzalez *et al*., 2018a). *Sthenelanellinae* is monotypic for *Sthenelanella*, making one of the names currently superfluous and we therefore use the latter only. The type species *Sthenelanella uniformis* was first named by Moore (1910) and later the genus was revised by Pettibone (1969b). Currently, there are only six recognized species of *Sthenelanella* (Read and Fauchald, 2021). Pettibone (1997) erected *Pelogeniinae* for *Pelogenia*, *Psammolyce*, *Neopsammolyce*, *Hartmanipsammolyce*, *Dayipsammolyce*, *Claparedepelogenia*, *Pottsipelogenia*, and *Heteropelogenia*, and these are the genera considered valid today (Gonzalez *et al*., 2018a). *Pisioninae* include the taxa *Anoplopisione*, *Pisione*, *Pisionella*, and *Pisionidens* (Gonzalez *et al*., 2017b). The most species-rich group within *Pisioninae* is *Pisione* with 46 species out of a total of 54 (Read and Fauchald, 2021). Generic diagnoses for all *Sigalionidae* (excl. *Pisioninae*) are provided in Eibye-Jacobsen *et al*. (2018) and separately for *Pisioninae* in Gonzalez *et al*. (2017b). Both *Pholoinae* and *Sigalioninae* also have complicated taxonomic histories. The former taxon currently includes *Ima-* *jimapholoe*, *Laubierpholoe*, *Metaxypsamma*, *Pholoe*, and *Taylor-* *pholoe*. *Pholoinae* were in earlier literature either treated as a subgroup within *Sigalionidae* (e.g. Chamberlin„ 1919; Levinsen, 1883), or as a separate group (see review in Pettibone, 1992). The family names *Pholoididae* and *Peisidicidae* were introduced by Fauchald (1977) and Darboux (1900), respectively, but synonymized with *Pholoidae* by Pettibone (1992). *Sigalioninae* correspond largely to what was referred to as *Sigalionidae* in earlier literature. *Sigalioninae* encompasses 14 genera, and now also include *Pholoides* (Gonzalez *et al*., 2018a). Read and Fauchald (2021) accept 249 species in *Sigalionidae sensu* Gonzalez *et al*. (2018a). Important early studies include Ehlers (1864) and Darboux (1899). Major taxonomic studies include a series of revisions by Pettibone (1969b; Pettibone 1970a; b; c; Pettibone 1971a; b), and Mackie and Chambers (1990). Regional studies on *Sigalionidae* are provided by Lana (1991b) for Brazil, Blake (1995b) for California, Wehe (2007) from around the Arabian Peninsula, and Chambers (1985), Hartmann-Schröder (1996), Chambers and Muir (1997) for northern Europe. *Sigalion* recorded from northern Europe were reviewed by Muir (1989). An annotated checklist of *Sigalionidae* and *Pholoidae* was published by Aungtonya and Eibye-Jacobsen (2014). Most recent taxonomic additions to the group include Martínez *et al*., (2008) and Petersen *et al*., (2016) for *Pisioninae*, Aungtonya (2007), Padovanni and Amaral (2014), Alalykina (2018), and Aungtonya and Eibye-Jacobsen (2018) for *Sigalioninae.* Barnich and Van Haaren (2021) have published a detailed revision of Northeast Atlantic and Mediterranean *Sigalioninae* and provide an updated identification key. Meissner *et al*., (2017) used an integrative taxonomic approach to address the diversity of Arctic *Pholoe* spp., including redescriptions of *Pholoe longa* and *Pholoe minuta*. *Dryptoscolex matthiesae* is a Carboniferous-aged fossil described by Thompson (1979). Fitzhugh *et al*. (1997) considered it as part of *Sigalionidae* owing to Thompson’s (1979) suggestion that compound chaetae were present.",
+   "italic_words": [
+    "Sigalionidae",
+    "Pholoe",
+    "longa",
+    "Aphrodita",
+    "lon-",
+    "ga",
+    "Sigalionidae",
+    "et",
+    "al",
+    "Sthenelanellinae",
+    "Sthenelanella",
+    "Sthenelanella",
+    "uniformis",
+    "Sthenelanella",
+    "Pelogeniinae",
+    "Pelogenia",
+    "Psammolyce",
+    "Neopsammolyce",
+    "Hartmanipsammolyce",
+    "Dayipsammolyce",
+    "Claparedepelogenia",
+    "Pottsipelogenia",
+    "Heteropelogenia",
+    "et",
+    "al",
+    "Pisioninae",
+    "Anoplopisione",
+    "Pisione",
+    "Pisionella",
+    "Pisionidens",
+    "et",
+    "al",
+    "Pisioninae",
+    "Pisione",
+    "Sigalionidae",
+    "Pisioninae",
+    "et",
+    "al",
+    "Pisioninae",
+    "et",
+    "al",
+    "Pholoinae",
+    "Sigalioninae",
+    "Ima-",
+    "jimapholoe",
+    "Laubierpholoe",
+    "Metaxypsamma",
+    "Pholoe",
+    "Taylor-",
+    "pholoe",
+    "Pholoinae",
+    "Sigalionidae",
+    "Pholoididae",
+    "Peisidicidae",
+    "Pholoidae",
+    "Sigalioninae",
+    "Sigalionidae",
+    "Sigalioninae",
+    "Pholoides",
+    "et",
+    "al",
+    "Sigalionidae",
+    "sensu",
+    "et",
+    "al",
+    "Sigalionidae",
+    "Sigalion",
+    "Sigalionidae",
+    "Pholoidae",
+    "et",
+    "al",
+    "et",
+    "al",
+    "Pisioninae",
+    "Sigalioninae",
+    "Sigalioninae",
+    "et",
+    "al",
+    "Pholoe",
+    "Pholoe",
+    "longa",
+    "Pholoe",
+    "minuta",
+    "Dryptoscolex",
+    "matthiesae",
+    "et",
+    "al",
+    "Sigalionidae"
+   ],
+   "col": 1,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.52734,
+    0.07241,
+    0.94389,
+    0.93167
+   ]
+  },
+  {
+   "id": "p0050-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    125.5,
+    31.4,
+    562.7,
+    43.4
+   ],
+   "bbox_rel": [
+    0.2016,
+    0.0401,
+    0.90401,
+    0.05541
+   ],
+   "text": "errantia, aciculata, phyllodocida, aphroditiformia, sigalionidae 43",
+   "italic_words": [],
+   "col": -1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.20275,
+    0.03511,
+    0.9412,
+    0.05067
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 236,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 236,
+  "median_residual_px": 0.79,
+  "status": "ok",
+  "affine": [
+   [
+    1.051247,
+    0.002993,
+    -0.009303
+   ],
+   [
+    -0.000629,
+    0.987425,
+    -0.003919
+   ]
+  ]
+ },
+ "stratum": "body_headings",
+ "scan_page": 56
+}

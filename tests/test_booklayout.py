@@ -444,11 +444,28 @@ def test_check_ignores_words_moved_by_cross_page_merge(tmp_path: Path) -> None:
     assert json.loads(report.read_text(encoding="utf-8"))["coverage_problems"] == []
 
 
+def _eff(par, attr):
+    """Paragraph-format value, falling back through the named style chain (T3: formatting lives in styles)."""
+    v = getattr(par.paragraph_format, attr) if attr != "alignment" else par.alignment
+    st = par.style
+    while v is None and st is not None:
+        v = getattr(st.paragraph_format, attr) if attr != "alignment" else st.paragraph_format.alignment
+        st = st.base_style
+    return v
+
+
+def _eff_size(run, par):
+    v, st = run.font.size, par.style
+    while v is None and st is not None:
+        v, st = st.font.size, st.base_style
+    return v
+
+
 def test_caption_does_not_split_across_pages() -> None:
     doc = Document()
     p = caption(doc, "Fig. 1. A long caption that must stay in one piece.", None)
-    assert p.paragraph_format.keep_together is True
-    assert p.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert _eff(p, "keep_together") is True
+    assert _eff(p, "alignment") == WD_ALIGN_PARAGRAPH.LEFT
     assert p._p.pPr.find(qn("w:suppressAutoHyphens")) is not None
 
 
@@ -675,7 +692,7 @@ def test_caption_has_space_above_it() -> None:
     doc = Document()
     p = caption(doc, "Fig. 1. A caption.", None)
     # The Spanish original keeps at least 10.88 pt between figure and caption.
-    assert p.paragraph_format.space_before.pt >= 10
+    assert _eff(p, "space_before").pt >= 10
 
 
 def test_page_break_does_not_add_a_second_break() -> None:
@@ -721,7 +738,7 @@ def test_long_heading_is_rendered_as_a_note(tmp_path: Path) -> None:
     build(out, {}, BookPaths(aligned=aligned, figures_dir=figs), meta)
     match = [p for p in Document(out).paragraphs if p.text.startswith("This is a long boxed note")]
     assert len(match) == 1
-    assert match[0].runs[0].font.size.pt == 9.5
+    assert _eff_size(match[0].runs[0], match[0]).pt == 9.5
     assert match[0].runs[0].bold is not True
 
 
@@ -752,10 +769,10 @@ def test_key_para_pulls_ellipsis_target_to_right_margin() -> None:
         key_para(doc, text, set())
     for paragraph in doc.paragraphs:
         pf = paragraph.paragraph_format
-        assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+        assert _eff(paragraph, "alignment") == WD_ALIGN_PARAGRAPH.LEFT
         # Issue #35: the source book has no first-line indent in keys.
         assert not pf.first_line_indent
-        assert pf.left_indent.mm == pytest.approx(0.0)
+        assert _eff(paragraph, "left_indent").mm == pytest.approx(0.0)
         stops = list(pf.tab_stops)
         assert stops[-1].alignment == WD_TAB_ALIGNMENT.RIGHT
         assert stops[-1].position.mm == pytest.approx(134.0, abs=0.01)
@@ -805,7 +822,7 @@ def test_key_para_keeps_long_couplet_as_one_tabbed_line() -> None:
     left = "3. Pseudocompound hooks bi-, tri- and quadricentate " * 3
     key_para(doc, left + " ......... O. anadonae (p. 69)", set())
     paragraph = doc.paragraphs[0]
-    assert paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    assert _eff(paragraph, "alignment") == WD_ALIGN_PARAGRAPH.LEFT
     assert paragraph.text.replace("\u202f", " ").endswith("\tO. anadonae\t(p. 69)")
 
 

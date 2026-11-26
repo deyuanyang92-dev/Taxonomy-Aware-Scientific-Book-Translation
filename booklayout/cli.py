@@ -161,12 +161,15 @@ def _report(data: dict, figures_dir: Path, meta: BookMeta | None = None) -> dict
     for page in data["pages"]:
         if page["chapter"] not in chapters:
             chapters.append(page["chapter"])
+    from .pdffigures import CAPTION_RE  # tolerant of leading **bold** label and FIGURE/Figure openers
+
     bad_captions = [
         b.get("block_id") or b.get("text", "")[:50]
         for b in blocks
         if b.get("role") == "caption"
-        and not re.match(rf"^(?:{builder_module.PROFILE.caption_prefixes})(?![A-Za-z])",
+        and not re.match(rf"^[\s*_]*(?:{builder_module.PROFILE.caption_prefixes})(?![A-Za-z])",
                          (b.get("translation") or b.get("text") or "").strip(), re.I)
+        and not CAPTION_RE.match((b.get("translation") or b.get("text") or "").strip())
     ]
     body_blocks = [
         b
@@ -367,21 +370,19 @@ def cmd_build(args: argparse.Namespace) -> int:
 
 
 def cmd_restyle(args: argparse.Namespace) -> int:
-    """Re-apply the heading styles of a profile to a finished DOCX (no re-typesetting)."""
+    """Re-apply all named styles of a profile (+ --style overrides) to a finished DOCX (no re-typesetting)."""
     import time
 
-    from docx import Document
-
-    from .builder import apply_profile, define_heading_styles
     from .profile import StyleProfile
+    from .restyle import restyle_docx
 
     t0 = time.time()
     prof = StyleProfile.from_file(args.profile)
-    apply_profile(prof)
-    doc = Document(str(args.docx))
-    define_heading_styles(doc, prof)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(args.out))
+    try:
+        prof = restyle_docx(args.docx, args.out, prof, getattr(args, "style", None))
+    except ValueError as exc:
+        print(f"restyle: {exc}", file=sys.stderr)
+        return 2
     t_docx = time.time() - t0
     msg = f"restyled={args.out} docx_s={t_docx:.2f}"
     if args.pdf:
@@ -2040,6 +2041,8 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--pdf", action="store_true", help="also convert to PDF")
     rs.add_argument("--pdf-out", type=Path)
     rs.add_argument("--html", type=Path, help="also write HTML (CSS from the same profile)")
+    rs.add_argument("--style", action="append", default=[], metavar="NAME.FIELD=VALUE",
+                    help="override one style field, e.g. Body.size=11 or 'Heading 2.before=12' (repeatable)")
     rs.set_defaults(func=cmd_restyle)
     ht = sub.add_parser("html", help="HTML from a finished DOCX; CSS generated from the profile")
     ht.add_argument("--docx", type=Path, required=True)
@@ -2151,6 +2154,7 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--out", type=Path)
     g.set_defaults(func=cmd_gate)
     from . import alignmd, keymodel, pdffigures
+    from . import fontlevels as fontlevels_module
     from . import make as make_module
 
     make_module.add_parser(sub)
@@ -2174,6 +2178,9 @@ def build_parser() -> argparse.ArgumentParser:
     sourcefix_module.add_parser(sub)
     treatments_module.add_parser(sub)
     pdffigures.add_parser(sub)
+    fontlevels_module.add_parser(sub)
+    from . import ingest_native as ingest_native_module
+    ingest_native_module.add_parser(sub)
     keymodel.add_parser(sub)
     styles_module.add_parser(sub)
 

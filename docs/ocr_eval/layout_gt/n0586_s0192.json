@@ -1,0 +1,84 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 586,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 784.059326171875,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0586-b00",
+   "role": "caption",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    661.1,
+    562.7,
+    703.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.84313,
+    0.90402,
+    0.8967
+   ],
+   "text": "PLATE 1: (a) *Protodrilida. Pharyngocirrus tridentiger* from Lord Howe Island, Australia. (b) *Polygordius. Polygordius kurthsusanae* from French Polynesia. (c) *Syllidae. Odontosyllis fulgurans* from Bergen, Norway. (d) *Syllidae. Amblyosyllis spectabilis* from Plymouth, UK. (e) *Syllidae. Myrianida* *pachycera* from Sydney, Australia. (f) *Syllidae. Proceraea picta* from Plymouth, UK. Female stolon. (g) *Aphroditidae. Aphrodita aculeata* from Sweden. (h) *Sigalionidae. Psammolyce* from Belize. [Photographs (a), (b), (e), G. Rouse; (c), (d), (f–h), F. Pleijel].",
+   "italic_words": [
+    "Protodrilida",
+    "Pharyngocirrus",
+    "tridentiger",
+    "Polygordius",
+    "Polygordius",
+    "kurthsusanae",
+    "Syllidae",
+    "Odontosyllis",
+    "fulgurans",
+    "Syllidae",
+    "Amblyosyllis",
+    "spectabilis",
+    "Syllidae",
+    "Myrianida",
+    "pachycera",
+    "Syllidae",
+    "Proceraea",
+    "picta",
+    "Aphroditidae",
+    "Aphrodita",
+    "aculeata",
+    "Sigalionidae",
+    "Psammolyce"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.08422,
+    0.82551,
+    0.93216,
+    0.87957
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 28,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 28,
+  "median_residual_px": 0.69,
+  "status": "ok",
+  "affine": [
+   [
+    1.050926,
+    -0.002877,
+    -0.015469
+   ],
+   [
+    0.000453,
+    1.00239,
+    -0.01968
+   ]
+  ]
+ },
+ "stratum": "plate",
+ "scan_page": 192
+}

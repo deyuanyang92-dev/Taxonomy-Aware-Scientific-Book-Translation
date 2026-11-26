@@ -1,0 +1,218 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 120,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0120-b00",
+   "role": "heading",
+   "level": 1,
+   "bbox_pt": [
+    224.2,
+    75.3,
+    399.1,
+    154.6
+   ],
+   "bbox_rel": [
+    0.36016,
+    0.09604,
+    0.64117,
+    0.19719
+   ],
+   "text": "CHAPTER 30 *ONUPHIDAE* KINBERG, 1865",
+   "italic_words": [
+    "ONUPHIDAE"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.36308,
+    0.08533,
+    0.66,
+    0.1872
+   ]
+  },
+  {
+   "id": "p0120-b01",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    235.9,
+    305.7,
+    449.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.30085,
+    0.49107,
+    0.57382
+   ],
+   "text": "Quillworms (*Hyalinoecia*) and the Australian beachworms (*Australonuphis*) are among the better known *Onuphidae*; the former with highly characteristic tubes (Pl. 6f) and the latter for their size (up to several metres) and occurrence on sandy beaches and their importance as bait in fisheries. Overall, *Onuphidae* vary in size from a few millimetres to several metres, although sizes around a few centimetres are common. The anteriormost part is often cylindrical and widest, becoming medially and posteriorly more flattened. Many of these animals are tubicolous. Some (e.g. *Australonuphis*) have a thin and ephemeral tube. In others the tube is tough and may be highly characteristic, such as in *Hyalinoecia*, which construct a cylindrical, translucent, and quill-like tube (Pl. 6f), or in *Nothria conchylega* where it is distinctly flattened with an inner lining of parchment and large pieces of shells on the outside (Pl. 6h). Live specimens are iridescent and may have characteristic red or brown pigmentation patterns, often as transverse segmental bands; others are unpigmented (Pl. 6f–h).",
+   "italic_words": [
+    "Hyalinoecia",
+    "Australonuphis",
+    "Onuphidae",
+    "Onuphidae",
+    "Australonuphis",
+    "Hyalinoecia",
+    "Nothria",
+    "conchylega"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.08978,
+    0.28871,
+    0.50779,
+    0.56111
+   ]
+  },
+  {
+   "id": "p0120-b02",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    60.6,
+    485.3,
+    221.9,
+    499.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.619,
+    0.35646,
+    0.63686
+   ],
+   "text": "Morphology and physiology",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.0945,
+    0.60396,
+    0.36721,
+    0.62339
+   ]
+  },
+  {
+   "id": "p0120-b03",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    511.9,
+    305.7,
+    725.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.65296,
+    0.49107,
+    0.92594
+   ],
+   "text": "The prostomium is oval and anteriorly has a pair of rounded or elongated frontal lips, a pair of antero-lateral palps and three more posterior antennae (Figs. 30.1a, 30.2a). The palps and antennae are of similar shape with large and ringed ceratophores. What here are called frontal lips were in earlier literature referred to as palps and what here are called palps were referred to as antennae; *Onuphidae* were then considered to have five antennae and a small pair of frontal palps or buccal lips. Based on innervation studies, Orrhage (1995) argued that the anterior lateral pair of these ‘antennae’ is homologous to the palps in other annelids and accordingly should be referred to as such. The other structures were then referred to as buccal lips by Orrhage (1995) and the upper pair renamed as frontal lips by Paxton (1998). Eyes, when present, occur as a pair of dorso-laterally situated spots, usually small. There appears to be an often overlooked, second, smaller pair of eyes located more anteriorly, in front of the antennae (von Palubitzki and Purschke, 2020). Ultrastructure of the pigmented eyes in",
+   "italic_words": [
+    "Onuphidae"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.095,
+    0.63658,
+    0.51301,
+    0.90899
+   ]
+  },
+  {
+   "id": "p0120-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    235.9,
+    562.7,
+    725.9
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.30085,
+    0.90402,
+    0.92589
+   ],
+   "text": "*Aponuphis bilineata* is described in von Palubitzki and Purschke (2020). The nuchal organs form ciliated bands along the dorsoposterior side of the prostomium, mid-dorsally separated (Paxton, 1986a; b). The peristomium forms a complete ring, with (Figs. 30.1a, 30.2a) or without a pair of dorso-lateral elongated peristomial cirri (sometimes referred to as ‘tentacular cirri’). Notopodia are represented only by dorsal cirri with or without embedded aciculae (Figs. 30.1b, c). Emergent notochaetae are absent. The neuropodia have acicular, pre- and postchaetal lobes, and ventral cirri. Branchiae occur in most *Onuphidae* as simple or elaborate extensions of the dorsal cirri (Figs. 30.1b, c, 30.2b). Neurochaetae include multiple aciculae, dorsally situated limbate chaetae, pectinate chaetae, ventrally situated limbate chaetae, and simple or ‘pseudocompound’ uni-, bi- or tridentate hooks, which typically are hooded (Figs. 30.1d, 30.2d). Anterior segments deviate from following ones in many taxa, both in the structure of parapodia and chaetae, and in being directed forward. The pygidium has one or two pairs of cirri; in the latter case the dorsal pair is smaller. The pharynx of *Onuphidae* is a ventral muscular proboscis with an elaborate jaw apparatus (Haffner, 1959; Kielan- Jaworowska, 1966; Paxton, 1986b). The mandibles (Fig. 30.1e) consist of two elongated shafts, anteriorly ending in cutting plates that are connected via a ligament (e.g. see Paxton, 1986b, fig. 10). The maxillary apparatus (Fig. 30.1f) is of the eulabidognath type (Paxton, 2009) and consists of a pair of short carriers and a variable number of maxillae which exhibit some differences between the left and right side. They are labelled from posterior to anterior as MIL (maxillae I left) to MVL and MIR to MVR (e.g. Paxton, 1986b, fig. 10b). The degree of sclerotization of the jaws is highly variable; they are mineralized with aragonite (Colbath, 1986). Morphogenesis of the jaws, their larval shedding and ultrastructure is described in Vortsepneva *et al.*, (2017) and in Paxton and Safarik (2008). The internal anatomy of *Onuphidae* has been poorly studied. A gular membrane is absent, and the gut is a straight tube (Fauchald and Rouse, 1997). Corpora pedunculata are absent (Bullock and Horridge, 1965: and references within). Details of the circulation system are unknown, although dorsal and ventral blood vessels are present (pers. obs.). Segmental filtration nephridia are metanephridia (Goodrich, 1945).",
+   "italic_words": [
+    "Aponuphis",
+    "bilineata",
+    "Onuphidae",
+    "Onuphidae",
+    "et",
+    "al",
+    "Onuphidae"
+   ],
+   "col": 1,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.52391,
+    0.28585,
+    0.94715,
+    0.90609
+   ]
+  },
+  {
+   "id": "p0120-b05",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    750.1,
+    379.2,
+    769.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.95684,
+    0.6093,
+    0.98107
+   ],
+   "text": "*Annelida*. Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic, Oxford University Press. © Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic (2022). DOI: 10.1093/oso/9780199692309.003.0030",
+   "italic_words": [
+    "Annelida"
+   ],
+   "col": -1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.09951,
+    0.93598,
+    0.63812,
+    0.96346
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 203,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 203,
+  "median_residual_px": 0.78,
+  "status": "ok",
+  "affine": [
+   [
+    1.051304,
+    0.01483,
+    -0.016986
+   ],
+   [
+    -0.006914,
+    0.987954,
+    -0.005121
+   ]
+  ]
+ },
+ "stratum": "body_headings",
+ "scan_page": 126
+}

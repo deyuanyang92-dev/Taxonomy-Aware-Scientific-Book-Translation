@@ -1,0 +1,84 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 589,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 784.059326171875,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0589-b00",
+   "role": "caption",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    661.1,
+    562.7,
+    703.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.84313,
+    0.90403,
+    0.8967
+   ],
+   "text": "PLATE 4: (a) *Nereididae*. *Alitta virens* from Sweden. (b) *Nereididae. Nereididae* epitoke from Costa Rica (Pacific). (c) *Nereididae*. *Neanthes fucata* from Plymouth, UK. (d) *Glyceridae*. *Glycera tesselata* from Banyuls, France. (e) *Glyceridae*. *Glycera unicornis* from Sweden. (e) *Goniadidae*. *Goniada maculata* from Sweden. (g) *Sphaerodoridae. Sphaerodoropsis minuta* from Oslofjord, Norway. (h) *Sphaerodoridae. Sphaerodordium antarcticum* from Antarctica. [Photographs (a), (c–g), F. Pleijel; (b), E. Tilic; (h), G. Rouse].",
+   "italic_words": [
+    "Nereididae",
+    "Alitta",
+    "virens",
+    "Nereididae",
+    "Nereididae",
+    "Nereididae",
+    "Neanthes",
+    "fucata",
+    "Glyceridae",
+    "Glycera",
+    "tesselata",
+    "Glyceridae",
+    "Glycera",
+    "unicornis",
+    "Goniadidae",
+    "Goniada",
+    "maculata",
+    "Sphaerodoridae",
+    "Sphaerodoropsis",
+    "minuta",
+    "Sphaerodoridae",
+    "Sphaerodordium",
+    "antarcticum"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.04853,
+    0.82266,
+    0.89502,
+    0.88135
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 22,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 22,
+  "median_residual_px": 0.61,
+  "status": "ok",
+  "affine": [
+   [
+    1.048985,
+    -0.004584,
+    -0.049432
+   ],
+   [
+    -0.006851,
+    0.992425,
+    -0.007893
+   ]
+  ]
+ },
+ "stratum": "plate",
+ "scan_page": 195
+}

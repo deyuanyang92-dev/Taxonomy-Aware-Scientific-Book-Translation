@@ -1,0 +1,237 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 60,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0060-b01",
+   "role": "caption",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    368.2,
+    562.7,
+    399.2
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.46969,
+    0.90402,
+    0.50923
+   ],
+   "text": "FIGURE 11.2: *Syllidae*. (a) *Sphaerosyllis* from Sweden (LM); (b, c) *Exogone* from Japan (SEM); (d) *Plakosyllis* from California (LM). (a) Entire specimen, dorsal view, female with attached embryos; (b) Entire specimen, lateral view, female with attached embryos; (c) Close-up of attached embryos; (d) Entire specimen, dorsal view. [(a), (c), G. Rouse; (b), (d), F. Pleijel].",
+   "italic_words": [
+    "Syllidae",
+    "Sphaerosyllis",
+    "Exogone",
+    "Plakosyllis"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.09225,
+    0.45467,
+    0.93934,
+    0.49643
+   ]
+  },
+  {
+   "id": "p0060-b02",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    420.7,
+    305.7,
+    742.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.53659,
+    0.49108,
+    0.94733
+   ],
+   "text": "animal in several respects, most notably in enlargement of eyes, reduction of the gut, addition of natatory chaetae, and reorganization of the musculature, with the most drastic changes occurring in *Autolytinae*. The stolons die after breeding. Different stolon types are characterized based on their head shape and appendages: illustrations and a summary on different stolons can be found in San Martin (2014). Schizogamy, in turn, may be divided in two types; scissiparity where stolons are developed from already existing segments, and gemmiparity where the stolon formation is achieved by newly added segments. Both types occur within *Autolytinae* and *Syllinae*. Reproduction takes place in the free water, either by broadcast spawning, or as in the nuptial dance of some *Autolytinae* where the male stolon swims around and entangles the female stolon with sperm in mucus threads (Gidholm, 1965). A striking pattern of stolonization occurs in *Syllis ramosa* and in *Ramisyllis multicaudata*; both animals live in sponges where many stolons are formed in a complex branching pattern and penetrate the canal system of their host sponge (Glasby *et al*., 2012; Okada, 1937; Schroeder *et al*., 2017). The internal anatomy of *Ramisyllis multicaudata* and the implications of the external bifurcated branching on the myoanatomy and the neuroanatomy were recently described in detail by Ponz-Segrelles *et al*. (2021). Ponz-Segrelles *et al*. (2018; 2020) have also studied the gene expression during the different reproductive stages of syllids and have found similar gene expression profiles for female and non-reproducing individuals, while male gene expression was different.",
+   "italic_words": [
+    "Autolytinae",
+    "Autolytinae",
+    "Syllinae",
+    "Autolytinae",
+    "Syllis",
+    "ramosa",
+    "Ramisyllis",
+    "multicaudata",
+    "et",
+    "al",
+    "et",
+    "al",
+    "Ramisyllis",
+    "multicaudata",
+    "et",
+    "al",
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.09284,
+    0.52213,
+    0.5098,
+    0.9291
+   ]
+  },
+  {
+   "id": "p0060-b03",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    420.7,
+    562.7,
+    634.7
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.53659,
+    0.90403,
+    0.80956
+   ],
+   "text": "There is evidence for direct sperm transfer with spermatophores and even internal fertilization with male copulatory chaetae in several small, interstitial *Syllidae* (Franke, 1999; Kuper and Westheide, 1997a; b). Brooding is also common and variable. Epigamic *Syllidae* have direct development where the eggs and sometimes the larvae may remain attached to the female (in *Exogoninae* and *Eusyllinae*) (Figs. 11.1b, d). In schizogamic *Syl-* *lidae*, such as *Autolytus*, the female stolons brood the larvae in ventral egg sacs for some time before dying. An extreme mode is displayed by *Syllis vivipara* that broods the young in the coelom in the posterior part of the body. In due course, the juveniles emerge by breaking off from the posterior end. The endocrine control of *Syllidae* reproduction appears to involve prostomial stolon—or epigamy-promoting hormones and proventricular hormones that inhibit the sexual development (see Franke and Pfannenstiel (1984) and references within). All known *Syllidae* have non-feeding larvae and records of planktotrophy until now appear to be erroneous (Rouse, 2000c).",
+   "italic_words": [
+    "Syllidae",
+    "Syllidae",
+    "Exogoninae",
+    "Eusyllinae",
+    "Syl-",
+    "lidae",
+    "Autolytus",
+    "Syllis",
+    "vivipara",
+    "Syllidae",
+    "Syllidae"
+   ],
+   "col": 1,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.52628,
+    0.52074,
+    0.94202,
+    0.79165
+   ]
+  },
+  {
+   "id": "p0060-b04",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    317.6,
+    658.9,
+    405.3,
+    672.9
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.84049,
+    0.65111,
+    0.85835
+   ],
+   "text": "Natural history",
+   "italic_words": [],
+   "col": 1,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.52898,
+    0.82172,
+    0.67698,
+    0.83984
+   ]
+  },
+  {
+   "id": "p0060-b05",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    685.5,
+    562.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.87445,
+    0.90402,
+    0.94844
+   ],
+   "text": "The majority of *Syllidae* live on hard substrata, although many, notably *Exogoninae*, are found also on soft bottoms. The majority of *Syllidae* are known from shelf depths; however, there are several species described from the deep sea (Barroso *et al*., 2017; Böggemann and Purschke, 2005; San Martin, 2004) and",
+   "italic_words": [
+    "Syllidae",
+    "Exogoninae",
+    "Syllidae",
+    "et",
+    "al"
+   ],
+   "col": 1,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.52928,
+    0.85441,
+    0.94324,
+    0.92881
+   ]
+  },
+  {
+   "id": "p0060-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    122.1,
+    31.4,
+    562.7,
+    43.4
+   ],
+   "bbox_rel": [
+    0.19612,
+    0.0401,
+    0.90401,
+    0.05541
+   ],
+   "text": "annelida, polychaeta, errantia, aciculata, phyllodocida, syllidae 53",
+   "italic_words": [],
+   "col": -1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.19215,
+    0.03041,
+    0.9353,
+    0.04791
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 154,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 154,
+  "median_residual_px": 0.91,
+  "status": "ok",
+  "affine": [
+   [
+    1.049621,
+    0.008881,
+    -0.014061
+   ],
+   [
+    -0.003359,
+    0.987601,
+    -0.006158
+   ]
+  ]
+ },
+ "stratum": "figure_caption",
+ "scan_page": 66
+}

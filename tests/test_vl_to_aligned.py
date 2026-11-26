@@ -127,3 +127,158 @@ def test_merge_caption_columns_joins_three_column_caption():
     assert [b["role"] for b in out] == ["caption", "body"]
     assert out[0]["text"] == "Fig. 1. Cladograma cerebroideos hacia segmentos 15: ventosa"
     assert out[1]["text"].startswith("que aparezcan")
+
+
+# ---- T6：aligned/2、标题层级组合、空块回退 ----
+import json  # noqa: E402
+
+
+def _layout(blocks, w=1000, h=1400):
+    return {"pruned_result": {"width": w, "height": h, "parsing_res_list": blocks}}
+
+
+def _blk(label, text, bbox):
+    return {"block_label": label, "block_content": text, "block_bbox": bbox}
+
+
+def _mk_dirs(tmp_path, blocks, w=1000, h=1400):
+    from PIL import Image
+    lay, png = tmp_path / "lay", tmp_path / "png"
+    lay.mkdir()
+    png.mkdir()
+    (lay / "p0001.json").write_text(json.dumps(_layout(blocks, w, h)), encoding="utf-8")
+    Image.new("RGB", (w, h), "white").save(png / "p0001.png")
+    return lay, png
+
+
+def test_number_depth_and_rule_levels():
+    assert V.number_depth("1 Introduction") == 1
+    assert V.number_depth("1.2 Gut") == 2
+    assert V.number_depth("3.2.1. Foregut") == 3
+    assert V.number_depth("General features") is None
+    assert V.number_depth("2019 was a year") is None
+    assert V.heading_rule_level("1.2 Gut") == (2, "number")
+    assert V.heading_rule_level("CHAPTER 24 PHYLLODOCIDAE") == (1, "taxon")
+    assert V.heading_rule_level("GLOSSARY") == (1, "taxon")
+    assert V.heading_rule_level("Familia Syllidae Grube, 1850") == (1, "taxon")
+    assert V.heading_rule_level("Género Exogone Oersted, 1845") == (2, "taxon")
+    assert V.heading_rule_level("Morphology and physiology") is None  # 不能被当成双名法种名
+    assert V.heading_rule_level("General features", "paragraph_title") is None
+    assert V.heading_rule_level("Whatever", "doc_title") == (1, "engine")
+
+
+def test_kmeans_tiers_orders_and_merges():
+    t = V.kmeans_tiers([1.8, 1.82, 1.78, 1.4, 1.38, 1.42, 1.1, 1.08, 1.12], k=3)
+    assert len(t) == 3 and t == sorted(t, reverse=True)
+    assert len(V.kmeans_tiers([1.30, 1.31, 1.29, 1.30], k=3)) == 1  # 几乎等大：一层
+    assert V.kmeans_tiers([]) == []
+
+
+def _page(p, heads, body_chars=600):
+    """body: 1 个正文块（框 400x300，600 字 -> 单位 sqrt(200)=14.1）；heads: [(text, w, h, label)]。"""
+    bl = [{"role": "body", "label": "text", "text": "x" * body_chars, "y0": 0, "src": {"bbox": [0, 0, 400, 300]}}]
+    for i, (t, w, h, lab) in enumerate(heads):
+        bl.append({"role": "heading", "label": lab, "text": t, "y0": 10 + i, "level": 2,
+                   "src": {"bbox": [0, 400 + 50 * i, w, 400 + 50 * i + h]}})
+    return {"page": p, "blocks": bl}
+
+
+def test_assign_heading_levels_combines_number_rule_and_size():
+    # 单位 14.1：字数 10 的标题，框面积 = (ratio*14.1)^2 * 10
+    def box(ratio, n=10):
+        a = (ratio * 14.1) ** 2 * n
+        return int(a ** 0.5 * 4), int(a ** 0.5 / 4)  # w=4h
+    heads = [("Alpha beta", *box(1.8), "paragraph_title"), ("Gamma delta", *box(1.4), "paragraph_title"),
+             ("Epsilon zeta", *box(1.1), "paragraph_title"), ("1.2 Numbered", *box(1.1), "paragraph_title"),
+             ("CHAPTER 3", *box(2.5), "doc_title")]
+    pages = [_page(1, heads), _page(2, heads)]
+    st = V.assign_heading_levels(pages)
+    lv = {b["text"]: (b["level"], b["level_source"]) for b in pages[0]["blocks"] if b["role"] == "heading"}
+    assert lv["CHAPTER 3"] == (1, "taxon")
+    assert lv["1.2 Numbered"] == (2, "number")
+    assert [lv[k][0] for k in ("Alpha beta", "Gamma delta", "Epsilon zeta")] == [2, 3, 4]
+    assert all(lv[k][1] == "font" for k in ("Alpha beta", "Gamma delta", "Epsilon zeta"))
+    assert st["font"] == 6 and st["number"] == 2 and len(st["tiers"]) == 3
+
+
+def test_convert_ocr_fields_levels_and_validate(tmp_path):
+    from booklayout.profile import validate_aligned
+    blocks = [_blk("paragraph_title", "CHAPTER 2 ANATOMY", [100, 100, 600, 160]),
+              _blk("text", "word " * 120, [100, 200, 900, 400]),
+              _blk("figure_title", "Fig. 1. Something", [100, 800, 900, 840]),
+              _blk("header", "running head", [100, 10, 900, 40])]
+    lay, png = _mk_dirs(tmp_path, blocks)
+    out = tmp_path / "o"
+    V.convert(lay, png, out, heading_levels="auto", tess_fallback=False)
+    al = json.loads((out / "aligned.json").read_text(encoding="utf-8"))
+    assert al["schema"] == "aligned/2" and al["source"]["kind"] == "scan"
+    bs = al["pages"][0]["blocks"]
+    assert len(bs) == 3  # header 被跳过
+    h = bs[0]
+    assert h["role"] == "heading" and h["level"] == 1 and h["level_source"] == "taxon"
+    assert h["src"]["origin"] == "ocr" and h["src"]["label"] == "paragraph_title" and h["src"]["bbox"] == [100, 100, 600, 160]
+    assert h["src"]["engine"] == "paddleocr-vl" and h["block_id"] == "p001_b00"
+    assert validate_aligned(al) == []
+
+
+def test_convert_flat_keeps_old_level(tmp_path):
+    lay, png = _mk_dirs(tmp_path, [_blk("paragraph_title", "CHAPTER 2", [100, 100, 600, 160])])
+    V.convert(lay, png, tmp_path / "o", tess_fallback=False)
+    b = json.loads((tmp_path / "o" / "aligned.json").read_text(encoding="utf-8"))["pages"][0]["blocks"][0]
+    assert b["level"] == 2
+
+
+def test_empty_block_falls_back_to_tesseract_or_is_recorded(tmp_path, monkeypatch):
+    blocks = [_blk("text", "", [100, 200, 900, 400]), _blk("text", "real text here", [100, 500, 900, 600]),
+              _blk("image", "", [100, 700, 900, 900])]
+    lay, png = _mk_dirs(tmp_path, blocks)
+    calls = []
+
+    def fake(im, box, lang="eng", psm=6):
+        calls.append(box)
+        return "filled by tesseract"
+    monkeypatch.setattr(V, "tesseract_text", fake)
+    out = tmp_path / "o1"
+    V.convert(lay, png, out)
+    pg = json.loads((out / "aligned.json").read_text(encoding="utf-8"))["pages"][0]
+    assert calls == [(100, 200, 900, 400)]  # 只对文本块调用，图不调
+    assert pg["blocks"][0]["text"] == "filled by tesseract"
+    assert pg["blocks"][0]["src"]["empty"] is True and pg["blocks"][0]["src"]["fallback"] == "tesseract"
+    assert "empty" not in pg["blocks"][1]["src"]
+    # 补不出：不入块，记 empty_blocks
+    monkeypatch.setattr(V, "tesseract_text", lambda *a, **k: "")
+    out2 = tmp_path / "o2"
+    V.convert(lay, png, out2)
+    pg2 = json.loads((out2 / "aligned.json").read_text(encoding="utf-8"))["pages"][0]
+    assert [b["text"] for b in pg2["blocks"]] == ["real text here"]
+    assert pg2["empty_blocks"] == [{"label": "text", "bbox": [100, 200, 900, 400]}]
+    # 关闭回退
+    calls.clear()
+    monkeypatch.setattr(V, "tesseract_text", fake)
+    V.convert(lay, png, tmp_path / "o3", tess_fallback=False)
+    assert calls == []
+
+
+def test_tesseract_text_absent_returns_empty(monkeypatch):
+    from PIL import Image
+    monkeypatch.setattr(V.shutil, "which", lambda n: None)
+    assert V.tesseract_text(Image.new("RGB", (50, 50), "white"), (0, 0, 50, 50)) == ""
+
+
+def test_load_pruned_accepts_cached_layout_wrapper(tmp_path):
+    f = tmp_path / "p0003.json"
+    f.write_text(json.dumps({"layout": {"width_px": 5, "pruned_result": {"width": 5, "height": 6, "parsing_res_list": []}}}), encoding="utf-8")
+    assert V.load_pruned(f)["width"] == 5
+
+
+def test_structv3_wrapper_maps_tables_and_labels(tmp_path):
+    import structv3_to_aligned as S3
+    blocks = [_blk("doc_title", "CHAPTER 1", [100, 100, 600, 160]), _blk("table", "<table></table>", [100, 200, 900, 400]),
+              _blk("table_title", "Table 1. Counts", [100, 420, 900, 450]), _blk("reference", "Smith 1999", [100, 500, 900, 530])]
+    lay, png = _mk_dirs(tmp_path, blocks)
+    out = tmp_path / "o"
+    r = S3.convert(lay, png, out, tess_fallback=False)
+    bs = json.loads((out / "aligned.json").read_text(encoding="utf-8"))["pages"][0]["blocks"]
+    assert [b["role"] for b in bs] == ["heading", "caption", "ref"]
+    assert bs[0]["src"]["engine"] == "pp-structurev3"
+    assert len(r["figures"]) == 1 and (out / r["figures"][0]["crop"]).exists()

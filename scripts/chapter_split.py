@@ -71,6 +71,37 @@ def bookmarks_from_pdf(pdf: Path, level: int = 1) -> list[tuple[str, int]]:
         doc.close()
 
 
+def bookmarks_usable(bm: list[Any], first: int = 1) -> bool:
+    """书签可用：去重起始页 >=2 且超过一半起始页 != 首页（Vol1 式 2 条同页书签 → False）。
+    元素可为 (标题, 页) 或 (层级, 标题, 页)，页取最后一项。"""
+    pgs = [int(b[-1]) for b in bm]
+    if len(set(pgs)) < 2:
+        return False
+    return sum(1 for p in pgs if p != first) * 2 > len(pgs)
+
+
+def contents_from_pdf(pdf: Path, scan: int = 15) -> list[tuple[str, int, int]]:
+    """行几何法读 PDF 前 scan 页的印刷目录；返回 [(标题, 印刷页, level)]。>=3 条的页才算目录页。"""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import fitz  # type: ignore[import-untyped]
+    from booklayout.contents import contents_from_pdf_page
+    doc = fitz.open(str(pdf))
+    out: list[tuple[str, int, int]] = []
+    try:
+        for i in range(min(scan, doc.page_count)):
+            es = contents_from_pdf_page(doc.load_page(i))
+            rows = [(e.title, int(e.source_page), e.level) for e in es
+                    if e.source_page and e.source_page.isdigit()]
+            if len(rows) < 3:
+                continue
+            if out and rows[0][1] < out[-1][1]:
+                continue                                  # 页码回退：非续页
+            out += rows
+    finally:
+        doc.close()
+    return out
+
+
 def contents_from_pages(pages: dict[int, str], scan: int = 30) -> list[tuple[str, int]]:
     """在前 scan 页里解析印刷目录：连续 >=3 行「标题 ...... 页码」的那页/相邻页视为目录。返回 [(标题, 印刷页码)]。"""
     best: list[tuple[str, int]] = []
@@ -150,14 +181,35 @@ def build_plan(src: Path, pdf: Path | None = None, level: int = 1) -> dict[str, 
     first, last = nums[0], nums[-1]
     notes: list[str] = []
     chs: list[dict[str, Any]] = []
+    chapter_source = "single"
     if pdf is not None:
         try:
             bm = [(t, p) for t, p in bookmarks_from_pdf(pdf, level) if first <= p <= last]
         except Exception as exc:  # noqa: BLE001
             bm = []
             notes.append(f"书签读取失败：{exc}")
-        if len(bm) >= 2:
+        if bookmarks_usable(bm, first):
             chs = _chapters(bm, first, last, "bookmarks", "high")
+            chapter_source = "bookmarks"
+        elif bm:
+            notes.append(f"书签 {len(bm)} 条不可用（起始页过少或都在首页），回退目录页")
+        if not chs:
+            try:
+                ptoc = contents_from_pdf(pdf)
+            except Exception as exc:  # noqa: BLE001
+                ptoc = []
+                notes.append(f"PDF 目录页读取失败：{exc}")
+            if len(ptoc) >= 3:
+                from collections import Counter
+                lvc = Counter(lv for _t, _n, lv in ptoc)
+                top = min((lv for lv, k in lvc.items() if k >= 2), default=min(lvc))
+                toc2 = [(t, n) for t, n, lv in ptoc if lv == top]
+                off, frac = toc_offset(toc2, pages)
+                notes.append(f"PDF 目录页 {len(toc2)} 条（level {top}），页码偏移 {off:+d}，标题验证比例 {frac:.0%}")
+                ents = [(t, n + off) for t, n in toc2 if first <= n + off <= last]
+                if len(ents) >= 2:
+                    chs = _chapters(ents, first, last, "contents", "high" if frac >= 0.6 else "low")
+                    chapter_source = "contents"
     if not chs:
         toc = contents_from_pages(pages)
         if len(toc) >= 3:
@@ -166,18 +218,21 @@ def build_plan(src: Path, pdf: Path | None = None, level: int = 1) -> dict[str, 
             ents = [(t, n + off) for t, n in toc if first <= n + off <= last]
             if len(ents) >= 2:
                 chs = _chapters(ents, first, last, "contents", "high" if frac >= 0.6 else "low")
+                chapter_source = "contents"
     if not chs:
         hd = headings_from_pages(pages)
         if len(hd) >= 2:
             chs = _chapters(hd, first, last, "headings", "low")
+            chapter_source = "headings"
             notes.append("仅按页首标题行探测，需人工确认")
     if not chs:
         chs = [{"id": "01-book", "title": "Whole book", "start": first, "end": last,
                 "source": "single", "confidence": "low"}]
+        chapter_source = "single"
         notes.append("未探测到章边界，回退为单章")
     needs = any(c["confidence"] == "low" for c in chs)
     plan = {"source": str(src), "first_page": first, "last_page": last, "chapters": chs,
-            "needs_review": needs, "confirmed": False, "notes": notes}
+            "chapter_source": chapter_source, "needs_review": needs, "confirmed": False, "notes": notes}
     validate_plan(plan)
     return plan
 

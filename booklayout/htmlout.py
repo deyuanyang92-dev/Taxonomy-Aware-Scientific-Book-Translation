@@ -34,6 +34,34 @@ def heading_css(profile) -> str:
     return "\n".join(rules)
 
 
+def style_class(name: str) -> str:
+    """CSS class of a named paragraph style: 'Body Cont' -> 's-body-cont'."""
+    return "s-" + name.lower().replace(" ", "-")
+
+
+def para_css(profile) -> str:
+    """One rule per named paragraph style, from the same profile that defines the Word styles."""
+    from .builder import style_pt
+    from .profile import PARA_STYLE_DEFAULTS
+
+    rules = []
+    for name in PARA_STYLE_DEFAULTS:
+        c = profile.para_style(name)
+        decl = [f"font-size:{style_pt(name, profile):g}pt",
+                f"font-weight:{'bold' if c['bold'] else 'normal'}",
+                f"font-style:{'italic' if c['italic'] else 'normal'}",
+                f"text-align:{c['align']}",
+                f"margin:{c['before']:g}pt 0 {c['after']:g}pt {c['left']:g}mm",
+                f"text-indent:{c['first']:g}mm",
+                f"line-height:{c['line']:g}"]
+        if c["keep_together"]:
+            decl.append("break-inside:avoid")
+        if c["keep_with_next"]:
+            decl.append("break-after:avoid")
+        rules.append(f"p.{style_class(name)}{{{';'.join(decl)}}}")
+    return "\n".join(rules)
+
+
 def page_css(profile) -> str:
     return (
         f"@page{{size:{profile.page_w}mm {profile.page_h}mm;margin:{profile.margin_top}mm "
@@ -102,6 +130,8 @@ def _par_html(par: Paragraph, doc, out_dir: Path, counter: list[int]) -> str:
             continue
         (right if seen_tab else left).append(_run_html(r, base))
     pf = par.paragraph_format
+    from .profile import PARA_STYLE_DEFAULTS
+    cls = [style_class(style)] if style in PARA_STYLE_DEFAULTS else []
     css = []
     al = pf.alignment
     if al is not None:
@@ -116,11 +146,12 @@ def _par_html(par: Paragraph, doc, out_dir: Path, counter: list[int]) -> str:
         css.append(f"margin-bottom:{pf.space_after.pt:g}pt")
     st = f" style='{';'.join(css)}'" if css else ""
     if seen_tab:
-        return f"<p class='tl'{st}><span>{''.join(left)}</span><span class='lead'></span><span>{''.join(right)}</span></p>"
+        return f"<p class='{' '.join(['tl', *cls])}'{st}><span>{''.join(left)}</span><span class='lead'></span><span>{''.join(right)}</span></p>"
     body = "".join(left)
     if not body and not imgs:
         return ""
-    return f"<p{st}>{imgs}{body}</p>"
+    cattr = f" class='{' '.join(cls)}'" if cls else ""
+    return f"<p{cattr}{st}>{imgs}{body}</p>"
 
 
 def docx_to_html(docx: Path, out_html: Path, profile, title: str = "") -> dict:
@@ -147,7 +178,7 @@ def docx_to_html(docx: Path, out_html: Path, profile, title: str = "") -> dict:
             parts.append("".join(rows))
     doc_html = (
         "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
-        f"<title>{html.escape(title)}</title><style>\n{page_css(profile)}\n{heading_css(profile)}\n</style></head>"
+        f"<title>{html.escape(title)}</title><style>\n{page_css(profile)}\n{heading_css(profile)}\n{para_css(profile)}\n</style></head>"
         "<body>\n" + "\n".join(parts) + "\n</body></html>")
     out_html.write_text(doc_html, encoding="utf-8")
     return {"html": str(out_html), "images": counter[0], "paragraphs": len(parts)}

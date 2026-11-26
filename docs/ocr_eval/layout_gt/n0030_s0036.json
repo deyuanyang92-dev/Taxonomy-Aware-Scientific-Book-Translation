@@ -1,0 +1,494 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 30,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0030-b01",
+   "role": "heading",
+   "level": 3,
+   "bbox_pt": [
+    60.6,
+    59.7,
+    142.9,
+    71.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.07618,
+    0.22956,
+    0.09148
+   ],
+   "text": "Feeding methods",
+   "italic_words": [],
+   "col": 0,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.08887,
+    0.06978,
+    0.22802,
+    0.08571
+   ]
+  },
+  {
+   "id": "p0030-b02",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    82.5,
+    305.7,
+    164.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.10526,
+    0.49107,
+    0.20986
+   ],
+   "text": "The diversity of feeding structures in annelids can be classified into several functional categories. These feeding categories are not indicative of phylogenetic relationships but are useful for ecological purposes. A given functional category can contain taxa that have different buccal organs. The categories used here are derived from Fauchald and Jumars (1979) and Jumars *et al*. (2015).",
+   "italic_words": [
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.08917,
+    0.09686,
+    0.50408,
+    0.2026
+   ]
+  },
+  {
+   "id": "p0030-b03",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    60.6,
+    181.7,
+    179.3,
+    193.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.23183,
+    0.28812,
+    0.24714
+   ],
+   "text": "*Non-selective deposit feeders*",
+   "italic_words": [
+    "Non-selective",
+    "deposit",
+    "feeders"
+   ],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.09046,
+    0.22311,
+    0.29116,
+    0.23942
+   ]
+  },
+  {
+   "id": "p0030-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    204.0,
+    305.7,
+    478.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.26028,
+    0.49107,
+    0.60979
+   ],
+   "text": "Many annelids eat mud or sand and may show little discrimination in the size or type of particles eaten. The sediment is ingested, and any digestible organic material is assimilated as it passes through the alimentary canal. This form of feeding is also called non-selective deposit feeding. Most groups using this method have a ventral simple proboscis or simple axial proboscis. Of the annelid groups that are non-selective deposit feeders some, such as *Arenicolidae* (Fig. 2.10a) and *Maldanidae*, live in relatively permanent burrows or tubes and ingest the sediment in such a way that a continuous fall of sand or mud occurs in front of them to eat. Others, such as *Orbiniidae*, do not have permanent burrows or tubes but move through the sediment, eating it as they tunnel. The amount of nutritional value in sediment varies but shallow-water mud deposits tend to carry the largest numbers of non-selective deposit feeders. The total organic matter in such areas can be as low 1–2% and most of the deposit feeders must eat continually. The processing time (from ingestion to passage through to the rectum) for the sediment can be as little as 15 minutes in taxa such as *Arenicola* *marina* (Kermack, 1955). As is discussed in some of the chapters dealing with specific taxa, it has been shown that several the socalled non-selective deposit feeders have sophisticated selective and sorting mechanisms.",
+   "italic_words": [
+    "Arenicolidae",
+    "Maldanidae",
+    "Orbiniidae",
+    "Arenicola",
+    "marina"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.09075,
+    0.24994,
+    0.50818,
+    0.59752
+   ]
+  },
+  {
+   "id": "p0030-b05",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    60.6,
+    495.3,
+    159.8,
+    507.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.63177,
+    0.25681,
+    0.64707
+   ],
+   "text": "*Selective deposit feeders*",
+   "italic_words": [
+    "Selective",
+    "deposit",
+    "feeders"
+   ],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.09456,
+    0.61823,
+    0.26236,
+    0.63433
+   ]
+  },
+  {
+   "id": "p0030-b06",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    517.6,
+    305.7,
+    731.6
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.66021,
+    0.49107,
+    0.93319
+   ],
+   "text": "Some deposit feeders do not ingest sediment haphazardly but use their palps or buccal organs to sort organic material from the sediment prior to ingestion. Others select sediment particles of a particular size range, usually the smaller particles. Smaller particles have a greater surface area to volume ratio than large particles, and so may be more proportionally covered with food. Many selective deposit feeders live in tubes, though the method of sorting varies according to the types of palps that are present. *Terebelliformia* can have their multiple palps, with the longitudinal ciliated grooves containing mucus, laid out over the sediment surface. The palps are extended by ‘creeping’ on cilia and detritus is selected or rejected. The selected particles stick to the mucus and are carried along the groove by ciliary action to the base of the palp. Each palp is wiped periodically on the lower lip where cilia carry the mucus plus detritus into the mouth. Annelids with only a single pair of grooved palps, such as *Spionidae*, use a similar method of feeding, sweeping the palps over the sediment surface or waving them in the water column",
+   "italic_words": [
+    "Terebelliformia",
+    "Spionidae"
+   ],
+   "col": 0,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.09486,
+    0.64485,
+    0.5115,
+    0.91686
+   ]
+  },
+  {
+   "id": "p0030-b07",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    61.1,
+    562.7,
+    95.1
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.07788,
+    0.90401,
+    0.12125
+   ],
+   "text": "to gather food. Other selective deposit feeders include *Oweni-* *idae* (some) and possibly *Opheliidae* (Fauchald and Jumars, 1979; Jumars *et al*., 2015).",
+   "italic_words": [
+    "Oweni-",
+    "idae",
+    "Opheliidae",
+    "et",
+    "al"
+   ],
+   "col": 1,
+   "order": 6,
+   "bbox_scan_rel": [
+    0.5229,
+    0.06726,
+    0.93718,
+    0.11253
+   ]
+  },
+  {
+   "id": "p0030-b08",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    317.6,
+    111.4,
+    391.0,
+    123.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.14216,
+    0.62819,
+    0.15747
+   ],
+   "text": "*Raptorial feeding*",
+   "italic_words": [
+    "Raptorial",
+    "feeding"
+   ],
+   "col": 1,
+   "order": 7,
+   "bbox_scan_rel": [
+    0.52356,
+    0.13245,
+    0.64766,
+    0.1483
+   ]
+  },
+  {
+   "id": "p0030-b09",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    133.7,
+    562.7,
+    227.7
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.17061,
+    0.90402,
+    0.29051
+   ],
+   "text": "This term refers to annelids that use their proboscis, usually an eversible muscular ventral or muscular axial organ, to seize their food items. The two groups of annelids that have evolved jaws (*Eunicida* and *Phyllodocida*) use them to either seize live animals (carnivores), to tear off pieces of algae (herbivores), or to grasp dead and decaying matter (scavengers). Some of the raptorial groups such as the *Phyllodocidae* lack jaws and use their eversible proboscis to grasp prey.",
+   "italic_words": [
+    "Eunicida",
+    "Phyllodocida",
+    "Phyllodocidae"
+   ],
+   "col": 1,
+   "order": 8,
+   "bbox_scan_rel": [
+    0.52385,
+    0.15882,
+    0.93892,
+    0.27967
+   ]
+  },
+  {
+   "id": "p0030-b10",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    317.6,
+    244.1,
+    371.0,
+    256.1
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.31143,
+    0.59602,
+    0.32673
+   ],
+   "text": "*Filter feeders*",
+   "italic_words": [
+    "Filter",
+    "feeders"
+   ],
+   "col": 1,
+   "order": 9,
+   "bbox_scan_rel": [
+    0.5253,
+    0.2998,
+    0.61559,
+    0.31544
+   ]
+  },
+  {
+   "id": "p0030-b11",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    266.4,
+    562.7,
+    480.4
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.33987,
+    0.90403,
+    0.61285
+   ],
+   "text": "Several annelid groups can collect particles suspended in the water column. All known filter-feeders live in some sort of tube or burrow. The best-known are *Chaetopteridae, Sabellari-* *idae, Sabellida*, and *Urechis* (*Thalassematidae*). When the radiolar crown of *Sabellida* is expanded out of the tube a funnel is formed (Fig. 2.10j). The cilia beat and create a current in the surrounding water, which passes upwards through the crown into the funnel and swirls around the base of the funnel and then upwards and outwards. Food particles are trapped on the pinnules and carried into the groove by cilia. The ciliary current carries the particles towards the base of the crown where the material is sorted. Small particles are swallowed while large ones are pushed away from the mouth and drop into the water (Nicol, 1931). Some *Sabellida* sort the particles into threesizes,withmidsized particles being used in the construction of the tube (Mayer, 1994). The suspension mechanisms of *Chaetopteridae* (Barnes, 1964; Barnes, 1965; MacGinitie, 1939) and *Urechis* have been well studied (Osovitz and Julian, 2002).",
+   "italic_words": [
+    "Chaetopteridae",
+    "Sabellari-",
+    "idae",
+    "Sabellida",
+    "Urechis",
+    "Thalassematidae",
+    "Sabellida",
+    "Sabellida",
+    "Chaetopteridae",
+    "Urechis"
+   ],
+   "col": 1,
+   "order": 10,
+   "bbox_scan_rel": [
+    0.52559,
+    0.32596,
+    0.94224,
+    0.59797
+   ]
+  },
+  {
+   "id": "p0030-b12",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    317.6,
+    503.5,
+    396.6,
+    517.5
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.64224,
+    0.63726,
+    0.6601
+   ],
+   "text": "Reproduction",
+   "italic_words": [],
+   "col": 1,
+   "order": 11,
+   "bbox_scan_rel": [
+    0.5287,
+    0.6262,
+    0.66235,
+    0.64463
+   ]
+  },
+  {
+   "id": "p0030-b13",
+   "role": "heading",
+   "level": 3,
+   "bbox_pt": [
+    317.6,
+    530.8,
+    420.9,
+    542.8
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.67705,
+    0.67624,
+    0.69236
+   ],
+   "text": "Asexual reproduction",
+   "italic_words": [],
+   "col": 1,
+   "order": 12,
+   "bbox_scan_rel": [
+    0.52905,
+    0.66033,
+    0.70365,
+    0.67648
+   ]
+  },
+  {
+   "id": "p0030-b14",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    553.6,
+    562.7,
+    731.6
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.70613,
+    0.90402,
+    0.93319
+   ],
+   "text": "Asexual reproduction in annelids is widespread and occurs in several different forms. It involves the subdivision of the body and regeneration of the missing parts and comes under a general term, schizotomy (Schroeder and Hermans, 1975). Schizotomy has been further divided by Schroeder and Hermans into two processes that are termed paratomy and architomy. Paratomy refers to the formation of a recognizable complete individual that then separates from the ‘parent’ stock, whereas architomy is simple fission or fragmentation of the body with no prior cephalization. There is, however, a grade between these two extremes. Paratomy occurs in annelid taxa such as *Cten-* *odrilus* (Pl. 13f) and some *Spionidae* (Fig. 42.4b) but is most well known in the *Serpulidae* and *Sabellidae*. In *Serpulidae*, such as *Filograna*, paratomy has been well studied (Faulkner, 1930). Schroeder and Hermans (1975) list various *Sabellidae* as being",
+   "italic_words": [
+    "Cten-",
+    "odrilus",
+    "Spionidae",
+    "Serpulidae",
+    "Sabellidae",
+    "Serpulidae",
+    "Filograna",
+    "Sabellidae"
+   ],
+   "col": 1,
+   "order": 13,
+   "bbox_scan_rel": [
+    0.52935,
+    0.68763,
+    0.94551,
+    0.91429
+   ]
+  },
+  {
+   "id": "p0030-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    485.9,
+    31.4,
+    562.7,
+    43.4
+   ],
+   "bbox_rel": [
+    0.7807,
+    0.0401,
+    0.90401,
+    0.05541
+   ],
+   "text": "anatomy 23",
+   "italic_words": [],
+   "col": 1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.80675,
+    0.02995,
+    0.9365,
+    0.04584
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 177,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 177,
+  "median_residual_px": 0.78,
+  "status": "ok",
+  "affine": [
+   [
+    1.05101,
+    0.010254,
+    -0.014188
+   ],
+   [
+    -0.006227,
+    0.987457,
+    -0.004017
+   ]
+  ]
+ },
+ "stratum": "body_headings",
+ "scan_page": 36
+}

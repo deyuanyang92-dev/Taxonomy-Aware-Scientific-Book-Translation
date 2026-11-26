@@ -1,0 +1,1096 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 340,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0340-b01",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    61.1,
+    67.1,
+    71.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.07788,
+    0.10785,
+    0.09063
+   ],
+   "text": "C",
+   "italic_words": [],
+   "col": 0,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.08247,
+    0.07312,
+    0.09363,
+    0.08574
+   ]
+  },
+  {
+   "id": "p0340-b02",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    78.0,
+    305.7,
+    100.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.09954,
+    0.49106,
+    0.1276
+   ],
+   "text": "camerate: distinctive cross-banding found in some chaetae of *Orbiniidae*.",
+   "italic_words": [
+    "Orbiniidae"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.0826,
+    0.09342,
+    0.49671,
+    0.12226
+   ]
+  },
+  {
+   "id": "p0340-b03",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    105.0,
+    305.6,
+    127.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.13397,
+    0.49104,
+    0.16203
+   ],
+   "text": "capillary chaeta: slender, often long, chaeta tapering to a fine point.",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.08282,
+    0.12743,
+    0.4969,
+    0.15627
+   ]
+  },
+  {
+   "id": "p0340-b04",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    132.0,
+    305.7,
+    169.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.16839,
+    0.49106,
+    0.21557
+   ],
+   "text": "capillary, capillaries: see capillary chaeta. caruncle: projection from the posterior end of the prostomium carrying nuchal organs.",
+   "italic_words": [],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.08303,
+    0.16143,
+    0.49726,
+    0.20915
+   ]
+  },
+  {
+   "id": "p0340-b05",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    174.0,
+    305.6,
+    211.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.22194,
+    0.49104,
+    0.26912
+   ],
+   "text": "cauda: posterior end in *Sabellariidae*. cephalic cage: long, forwardly directed chaetae enclosing the head, as in some *Flabelligeridae*.",
+   "italic_words": [
+    "Sabellariidae",
+    "Flabelligeridae"
+   ],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.08336,
+    0.21432,
+    0.49757,
+    0.26205
+   ]
+  },
+  {
+   "id": "p0340-b06",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    216.0,
+    305.6,
+    238.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.27548,
+    0.49104,
+    0.30355
+   ],
+   "text": "cephalic keel: median ridge on the prostomium or head, as in some *Maldanidae*.",
+   "italic_words": [
+    "Maldanidae"
+   ],
+   "col": 0,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.08369,
+    0.26721,
+    0.49778,
+    0.29606
+   ]
+  },
+  {
+   "id": "p0340-b07",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    243.0,
+    305.6,
+    265.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.30991,
+    0.49104,
+    0.33797
+   ],
+   "text": "cephalic plaque: plate-like antero-dorsal surface of the head region in some *Maldanidae*. Also called cephalic plate.",
+   "italic_words": [
+    "Maldanidae"
+   ],
+   "col": 0,
+   "order": 6,
+   "bbox_scan_rel": [
+    0.0839,
+    0.30122,
+    0.49799,
+    0.33006
+   ]
+  },
+  {
+   "id": "p0340-b08",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    269.9,
+    305.6,
+    303.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.34434,
+    0.49106,
+    0.38771
+   ],
+   "text": "cephalic veil: Smooth or fringed structure surrounding the buccal region in *Pectinariidae*. Probably comprising the prostomium and peristomium.",
+   "italic_words": [
+    "Pectinariidae"
+   ],
+   "col": 0,
+   "order": 7,
+   "bbox_scan_rel": [
+    0.08411,
+    0.33522,
+    0.49832,
+    0.37919
+   ]
+  },
+  {
+   "id": "p0340-b09",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    308.9,
+    305.7,
+    330.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.39407,
+    0.49106,
+    0.42213
+   ],
+   "text": "cephalization: incorporation or modification of anterior segments to form a head.",
+   "italic_words": [],
+   "col": 0,
+   "order": 8,
+   "bbox_scan_rel": [
+    0.08442,
+    0.38435,
+    0.49853,
+    0.41318
+   ]
+  },
+  {
+   "id": "p0340-b10",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    335.9,
+    305.7,
+    387.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.4285,
+    0.49106,
+    0.4948
+   ],
+   "text": "ceratophore: basal part of an antenna. ceratostyle: distal part of an antenna. chaeta, chaetae: a chitinous bristle protruding from an epidermal pocket in the body wall.",
+   "italic_words": [],
+   "col": 0,
+   "order": 9,
+   "bbox_scan_rel": [
+    0.08463,
+    0.41835,
+    0.49898,
+    0.48496
+   ]
+  },
+  {
+   "id": "p0340-b11",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    392.9,
+    305.6,
+    414.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.50116,
+    0.49104,
+    0.52923
+   ],
+   "text": "chaetal inversion: presence of uncini on the notopodia, rather than the more usual position on the neuropodia.",
+   "italic_words": [],
+   "col": 0,
+   "order": 10,
+   "bbox_scan_rel": [
+    0.08508,
+    0.49012,
+    0.49917,
+    0.51897
+   ]
+  },
+  {
+   "id": "p0340-b12",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    419.9,
+    305.6,
+    456.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.53559,
+    0.49104,
+    0.58277
+   ],
+   "text": "chaetiger: segment bearing chaetae. chaetigerous lobe: that projection or part of the notopodium or neuropodium that bears the chaetae.",
+   "italic_words": [],
+   "col": 0,
+   "order": 11,
+   "bbox_scan_rel": [
+    0.08529,
+    0.52413,
+    0.4995,
+    0.57186
+   ]
+  },
+  {
+   "id": "p0340-b13",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    461.9,
+    305.6,
+    483.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.58914,
+    0.49104,
+    0.6172
+   ],
+   "text": "chaetoblast: cell that forms, together with follicle cells, a chaeta.",
+   "italic_words": [],
+   "col": 0,
+   "order": 12,
+   "bbox_scan_rel": [
+    0.08562,
+    0.57703,
+    0.49971,
+    0.60586
+   ]
+  },
+  {
+   "id": "p0340-b14",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    488.8,
+    305.7,
+    510.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.62356,
+    0.49106,
+    0.65162
+   ],
+   "text": "chemoautotroph: organism able to synthesize organic nutrients from inorganic sources, excluding photosynthesis.",
+   "italic_words": [],
+   "col": 0,
+   "order": 13,
+   "bbox_scan_rel": [
+    0.08584,
+    0.61102,
+    0.49995,
+    0.63986
+   ]
+  },
+  {
+   "id": "p0340-b15",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    515.8,
+    305.6,
+    537.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.65799,
+    0.49104,
+    0.68605
+   ],
+   "text": "chevron: V-shaped chitinized jaw piece at the base of the proboscis in some *Goniadidae*.",
+   "italic_words": [
+    "Goniadidae"
+   ],
+   "col": 0,
+   "order": 14,
+   "bbox_scan_rel": [
+    0.08605,
+    0.64503,
+    0.50014,
+    0.67387
+   ]
+  },
+  {
+   "id": "p0340-b16",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    542.8,
+    305.6,
+    564.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.69241,
+    0.49104,
+    0.72048
+   ],
+   "text": "chlorocruorin: respiratory blood pigment; changes in colour from green to red with increasing concentration.",
+   "italic_words": [],
+   "col": 0,
+   "order": 15,
+   "bbox_scan_rel": [
+    0.08626,
+    0.67903,
+    0.50035,
+    0.70788
+   ]
+  },
+  {
+   "id": "p0340-b17",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    569.8,
+    305.7,
+    591.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.72684,
+    0.49106,
+    0.7549
+   ],
+   "text": "chromatophil gland: densely staining gland in the ventral pinnule of *Tomopteris*; see also rosette gland.",
+   "italic_words": [
+    "Tomopteris"
+   ],
+   "col": 0,
+   "order": 16,
+   "bbox_scan_rel": [
+    0.08647,
+    0.71304,
+    0.50058,
+    0.74188
+   ]
+  },
+  {
+   "id": "p0340-b18",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    596.8,
+    305.6,
+    648.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.76127,
+    0.49104,
+    0.82757
+   ],
+   "text": "chromatophore: special cell or group of cells carrying pigment. ciliophore: distinct area or epidermal patch covered with cilia. circular muscle: muscle layer encircling the body between the epidermis and longitudinal muscle layer.",
+   "italic_words": [],
+   "col": 0,
+   "order": 17,
+   "bbox_scan_rel": [
+    0.08669,
+    0.74705,
+    0.50101,
+    0.81366
+   ]
+  },
+  {
+   "id": "p0340-b19",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    653.8,
+    305.6,
+    687.8
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.83393,
+    0.49105,
+    0.8773
+   ],
+   "text": "circumoesophageal connective: tracts of nervous tissue passing down from the brain on either side of the foregut and connecting to the ventral nerve cord.",
+   "italic_words": [],
+   "col": 0,
+   "order": 18,
+   "bbox_scan_rel": [
+    0.08713,
+    0.81882,
+    0.50133,
+    0.86278
+   ]
+  },
+  {
+   "id": "p0340-b20",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    692.8,
+    290.7,
+    732.7
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.88367,
+    0.46707,
+    0.93466
+   ],
+   "text": "cirriform: slender and cylindrical. cirrophore: basal projection on which a cirrus is mounted. cirrostyle: distal part of a cirrus.",
+   "italic_words": [],
+   "col": 0,
+   "order": 19,
+   "bbox_scan_rel": [
+    0.08744,
+    0.86802,
+    0.47647,
+    0.91944
+   ]
+  },
+  {
+   "id": "p0340-b21",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    61.1,
+    562.7,
+    107.1
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.07788,
+    0.90401,
+    0.13656
+   ],
+   "text": "cirrus, cirri: parapodial appendages; usually slender and cylindrical, can be elongate on anterior segments of some *Phyllodocida* (see anterior cirri). Also refers to peristomial structures in some *Eunicidae*.",
+   "italic_words": [
+    "Phyllodocida",
+    "Eunicidae"
+   ],
+   "col": 1,
+   "order": 20,
+   "bbox_scan_rel": [
+    0.5166,
+    0.07085,
+    0.93089,
+    0.12994
+   ]
+  },
+  {
+   "id": "p0340-b22",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    112.0,
+    562.7,
+    148.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.14292,
+    0.90401,
+    0.18883
+   ],
+   "text": "clade: a common ancestor and all its descendants. cladistics: systematics based on discovering synapomorphies to group organisms, in principle, recognizing only clades as taxa.",
+   "italic_words": [],
+   "col": 1,
+   "order": 21,
+   "bbox_scan_rel": [
+    0.517,
+    0.13509,
+    0.93121,
+    0.18156
+   ]
+  },
+  {
+   "id": "p0340-b23",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    153.0,
+    562.7,
+    187.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.19519,
+    0.90401,
+    0.23856
+   ],
+   "text": "clitellum: a thickened glandular area, that secrets a cocoon or egg capsule in *Clitellata*. The clitellum is located over several segments in the anterior third of the body.",
+   "italic_words": [
+    "Clitellata"
+   ],
+   "col": 1,
+   "order": 22,
+   "bbox_scan_rel": [
+    0.51732,
+    0.18672,
+    0.93152,
+    0.23069
+   ]
+  },
+  {
+   "id": "p0340-b24",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    191.0,
+    562.7,
+    225.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.24366,
+    0.90402,
+    0.28703
+   ],
+   "text": "coelom, coelomate: body cavity often with a peritoneal lining; formed in embryonic mesoderm; characteristic of many bilateral animals.",
+   "italic_words": [],
+   "col": 1,
+   "order": 23,
+   "bbox_scan_rel": [
+    0.51762,
+    0.2346,
+    0.93183,
+    0.27856
+   ]
+  },
+  {
+   "id": "p0340-b25",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    230.0,
+    562.7,
+    276.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.29339,
+    0.90402,
+    0.35207
+   ],
+   "text": "coelomoduct: a tubule derived from mesodermal tissue, connecting the coelom with the external environment and may have a coelomostome; said to combine with a nephridium and termed nephromixia or mixonephridia.",
+   "italic_words": [],
+   "col": 1,
+   "order": 24,
+   "bbox_scan_rel": [
+    0.51793,
+    0.28372,
+    0.93223,
+    0.34281
+   ]
+  },
+  {
+   "id": "p0340-b26",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    280.0,
+    562.7,
+    341.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.35716,
+    0.90402,
+    0.43496
+   ],
+   "text": "coelomostome: funnel at the inner end of a coelomoduct. cold seep: emergence of fluid from sedimentary rocks under pressure, such as in regions of continental subduction; may comprise hydrocarbons, such as methane, or water, bearing salts such as sulphides.",
+   "italic_words": [],
+   "col": 1,
+   "order": 25,
+   "bbox_scan_rel": [
+    0.51832,
+    0.34671,
+    0.93274,
+    0.42468
+   ]
+  },
+  {
+   "id": "p0340-b27",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    345.0,
+    562.7,
+    367.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.44005,
+    0.90401,
+    0.46811
+   ],
+   "text": "collar: anterior encircling fold or flap, such as that covering the base of the radiolar crown in *Sabellidae*.",
+   "italic_words": [
+    "Sabellidae"
+   ],
+   "col": 1,
+   "order": 26,
+   "bbox_scan_rel": [
+    0.51884,
+    0.42859,
+    0.93293,
+    0.45742
+   ]
+  },
+  {
+   "id": "p0340-b28",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    371.0,
+    562.7,
+    393.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.47321,
+    0.904,
+    0.50127
+   ],
+   "text": "comb chaeta: simple chaeta with a comb-like arrangement of teeth on the distal end; present in some *Eunicida*.",
+   "italic_words": [
+    "Eunicida"
+   ],
+   "col": 1,
+   "order": 27,
+   "bbox_scan_rel": [
+    0.51904,
+    0.46134,
+    0.93313,
+    0.49018
+   ]
+  },
+  {
+   "id": "p0340-b29",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    398.0,
+    562.7,
+    432.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.50763,
+    0.90401,
+    0.551
+   ],
+   "text": "commensalism: an association between two species that live together, which benefits individuals of one species without harming those of the other.",
+   "italic_words": [],
+   "col": 1,
+   "order": 28,
+   "bbox_scan_rel": [
+    0.51925,
+    0.49534,
+    0.93345,
+    0.5393
+   ]
+  },
+  {
+   "id": "p0340-b30",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    436.0,
+    562.7,
+    470.0
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.55609,
+    0.90403,
+    0.59946
+   ],
+   "text": "commissure: a transverse band of neural tissue linking paired ventral nerves or longitudinal nerve tracks; also, one of four main tracts of nervous tissue passing through the brain.",
+   "italic_words": [],
+   "col": 1,
+   "order": 29,
+   "bbox_scan_rel": [
+    0.51955,
+    0.5432,
+    0.93377,
+    0.58716
+   ]
+  },
+  {
+   "id": "p0340-b31",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    473.9,
+    562.7,
+    495.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.60456,
+    0.904,
+    0.63262
+   ],
+   "text": "companion chaetae: small, simple chaetae, accompanying, or alternating with larger chaetae, usually hooks of some kind.",
+   "italic_words": [],
+   "col": 1,
+   "order": 30,
+   "bbox_scan_rel": [
+    0.51985,
+    0.59108,
+    0.93394,
+    0.61992
+   ]
+  },
+  {
+   "id": "p0340-b32",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    500.9,
+    562.7,
+    522.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.63898,
+    0.904,
+    0.66705
+   ],
+   "text": "compound chaeta: chaeta having a terminal portion that articulates with the shaft.",
+   "italic_words": [],
+   "col": 1,
+   "order": 31,
+   "bbox_scan_rel": [
+    0.52006,
+    0.62508,
+    0.93415,
+    0.65393
+   ]
+  },
+  {
+   "id": "p0340-b33",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    527.9,
+    562.7,
+    576.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.67341,
+    0.90401,
+    0.7359
+   ],
+   "text": "compressed: flattened in one plane, usually laterally. corpora pedunculata: paired dorso-laterally situated mushroom-shaped bodies in the brain of *Aphroditiformia*, *Nereididae*, *Hesionoidea*, possibly *Nephtyidae* and *Serpulidae*.",
+   "italic_words": [
+    "Aphroditiformia",
+    "Nereididae",
+    "Hesionoidea",
+    "Nephtyidae",
+    "Serpulidae"
+   ],
+   "col": 1,
+   "order": 32,
+   "bbox_scan_rel": [
+    0.52027,
+    0.65909,
+    0.93459,
+    0.72193
+   ]
+  },
+  {
+   "id": "p0340-b34",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    581.9,
+    562.7,
+    603.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.74226,
+    0.90401,
+    0.77033
+   ],
+   "text": "crown: a bilaterally symmetrical branched structure in some annelids (*Oweniidae*, *Sabellida*) formed by prostomial palps.",
+   "italic_words": [
+    "Oweniidae",
+    "Sabellida"
+   ],
+   "col": 1,
+   "order": 33,
+   "bbox_scan_rel": [
+    0.5207,
+    0.72709,
+    0.9348,
+    0.75594
+   ]
+  },
+  {
+   "id": "p0340-b35",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    608.9,
+    562.7,
+    642.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.77669,
+    0.90401,
+    0.82006
+   ],
+   "text": "ctenidia: small ciliated pads on the notopodia between the elytrophores or dorsal tubercles and the notochaetae, or on the parapodia of some scale-worms.",
+   "italic_words": [],
+   "col": 1,
+   "order": 34,
+   "bbox_scan_rel": [
+    0.52091,
+    0.7611,
+    0.93511,
+    0.80506
+   ]
+  },
+  {
+   "id": "p0340-b36",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    647.9,
+    562.7,
+    693.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.82642,
+    0.90403,
+    0.8851
+   ],
+   "text": "ctenognaths: *Eunicida* in which the jaws comprise relatively large basal maxillae and symmetrically arranged rows of numerous anterior denticles in longitudinal series without carriers.",
+   "italic_words": [
+    "Eunicida"
+   ],
+   "col": 1,
+   "order": 35,
+   "bbox_scan_rel": [
+    0.52122,
+    0.81022,
+    0.93553,
+    0.86931
+   ]
+  },
+  {
+   "id": "p0340-b37",
+   "role": "entry",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    698.9,
+    562.7,
+    732.9
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.89146,
+    0.90401,
+    0.93483
+   ],
+   "text": "cupule, cupules: fused pair or pairs of notopodia in anterior body of some *Chaetopteridae*, appearing as an elaborate cup-shape.",
+   "italic_words": [
+    "Chaetopteridae"
+   ],
+   "col": 1,
+   "order": 36,
+   "bbox_scan_rel": [
+    0.52162,
+    0.87447,
+    0.93581,
+    0.91843
+   ]
+  },
+  {
+   "id": "p0340-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    478.2,
+    31.4,
+    562.7,
+    43.4
+   ],
+   "bbox_rel": [
+    0.76826,
+    0.0401,
+    0.90401,
+    0.05541
+   ],
+   "text": "glossary 333",
+   "italic_words": [],
+   "col": 1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.78758,
+    0.03353,
+    0.93039,
+    0.04904
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 261,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 261,
+  "median_residual_px": 0.78,
+  "status": "ok",
+  "affine": [
+   [
+    1.051267,
+    0.006169,
+    -0.020309
+   ],
+   [
+    -0.002851,
+    0.98775,
+    -0.003497
+   ]
+  ]
+ },
+ "stratum": "glossary",
+ "scan_page": 362
+}

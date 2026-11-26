@@ -42,8 +42,8 @@ VERSION = "booklayout-pdffigures 1"
 
 # Caption openers in the languages seen so far; pass ``caption_re`` to extend.
 CAPTION_RE = re.compile(
-    r"^\s*(?:Figs?\.?|Figures?|Figura|Figuras|L[aá]m(?:ina)?\.?|Plates?|Pl\.|Abb(?:ildung)?\.?|"
-    r"Fig\.|图|図|圖)\s*(?P<label>[0-9]+[A-Za-z]?(?:\s*[-–,]\s*[0-9]+[A-Za-z]?)*[’'′]?)",
+    r"^[\s*_]*(?:Figs?\.?|Figures?|Figura|Figuras|L[aá]m(?:ina)?\.?|Plates?|Pl\.|Abb(?:ildung)?\.?|"
+    r"Fig\.|图|図|圖)\s*(?P<label>[0-9]+(?:\.[0-9]+)*[A-Za-z]?(?:\s*[-–,]\s*[0-9]+(?:\.[0-9]+)*[A-Za-z]?)*[’'′]?)",
     re.I,
 )
 # Placements smaller than this (pt) are rules, bullets and logos, not figures.

@@ -1,0 +1,229 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 200,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0200-b00",
+   "role": "heading",
+   "level": 1,
+   "bbox_pt": [
+    228.0,
+    75.3,
+    393.0,
+    154.6
+   ],
+   "bbox_rel": [
+    0.36627,
+    0.09604,
+    0.63135,
+    0.19719
+   ],
+   "text": "CHAPTER 48 *CAPITELLIDAE* GRUBE, 1862",
+   "italic_words": [
+    "CAPITELLIDAE"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.36247,
+    0.08357,
+    0.64285,
+    0.18537
+   ]
+  },
+  {
+   "id": "p0200-b01",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    235.9,
+    305.7,
+    365.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.30085,
+    0.49107,
+    0.46668
+   ],
+   "text": "*Capitellidae* are commonly found, and it is a bit surprising there is no common name for the group. They are easily recognized, for the most part, by the division of the body into an anterior region with capillary chaetae only and a posterior region with long-handled hooks. However, the taxonomy within the group and assessing relationships among taxa presents significant difficulties. This may in part be due to their relative simplicity when it comes to external anatomy. The body is a simple cylindrical shape resembling that of many *Clitellata*. They range in size from less than 10 mm to more than 200 mm and, in life, the body is usually bright red (Pl. 10d).",
+   "italic_words": [
+    "Capitellidae",
+    "Clitellata"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.08304,
+    0.28685,
+    0.49979,
+    0.45346
+   ]
+  },
+  {
+   "id": "p0200-b02",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    60.6,
+    388.9,
+    221.9,
+    402.9
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.49611,
+    0.35646,
+    0.51397
+   ],
+   "text": "Morphology and physiology",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.08626,
+    0.48066,
+    0.35904,
+    0.50016
+   ]
+  },
+  {
+   "id": "p0200-b03",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    415.6,
+    305.7,
+    737.6
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.53007,
+    0.49107,
+    0.94081
+   ],
+   "text": "The head of *Capitellidae* has no appendages and is formed from the prostomium and peristomium (Eisig, 1887). The prostomium is highly variable in shape, but is often a short, blunt cone (Pl. 10d, Figs. 48.1a–c, 48.2a–c). On the prostomium, there may be one or more pairs of simple eyespots (Fig. 48.1c) and there is usually a pair of eversible nuchal organs (Eisig, 1887). Developmental studies (Bookhout, 1957) indicate that the peristomium forms a complete ring (Figs. 48.1a, c), *contra* Rouse and Fauchald (1997) who stated it is limited to the buccal region. The ringlike nature is very clear in most *Capitellidae*, but many older works state that the peristomium has chaetae. Warren (1991) has shown there is a ring-like peristomium in *Capitella* that is often obscured by contraction of the body during fixation. This needs to be considered when consulting most literature on the group. For example, *Baldia* is unusual in that the mouth supposedly has the peristomium in front of it and the first segment immediately behind (Garwood and Bamber, 1988); however, these authors also argue the same condition exists in *Capitella*. Possibly their specimens of *Baldia* may have suffered from the same contraction artefacts that appear to affect *Capitella*. *Capitellidae* have historically often been regarded as having an achaetous first segment (Fauchald, 1977), but in most cases this ‘segment’ is the peristomium. Given that the body is divided into a thorax (Figs. 48.1a, 48.2c) and abdomen, and that the former is of taxonomic value, many counts of the number of thoracic segment number may be in error. The presence of an achaetous first segment is accepted for *Leocapitellides*, some",
+   "italic_words": [
+    "Capitellidae",
+    "contra",
+    "Capitellidae",
+    "Capitella",
+    "Baldia",
+    "Capitella",
+    "Baldia",
+    "Capitella",
+    "Capitellidae",
+    "Leocapitellides"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.08682,
+    0.51323,
+    0.5076,
+    0.92172
+   ]
+  },
+  {
+   "id": "p0200-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    235.9,
+    562.7,
+    737.9
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.30085,
+    0.90403,
+    0.94119
+   ],
+   "text": "*Mastobranchus*, *Pseudonotomastus*, and *Scyphoproctus* (Magalhães and Blake, 2020; Silva and Zacagnini Amaral, 2019). The number of thoracic segments is often not easily determined because there may be transitional segments, or no change in the chaetal forms between the two body regions. This suggests that the division between thorax and abdomen is associated with internal features and may not correlate well with external anatomy. In some taxa, the epidermis may be thick and rugose over the thoracic region and changes to a much thinner epidermis in the abdomen. In some cases, use of stains like methyl green will show marked differences in glandular patterns that separate the thoracic and abdominal regions much more clearly than chaetal distributions (Ewing, 1984b). Difficulties in properly identifying the thoracic region notwithstanding, the thorax area usually has around 8–19 chaetigerous segments (Figs. 48.1a, b, 48.2a–c). The parapodia are essentially absent in that there are simple grooves from which the chaetae emerge. In general, these thoracic chaetae are simple or winged capillaries in both noto- and neuropodia (e.g. *Dasybranchus*), or there may be a uniramous first chaetiger (Fig. 48.1a). Also, in many taxa, there may be posterior thoracic chaetigers with long-handled hooded hooks in both noto- and neuropodia (e.g. *Mediomastus*), or there may be a mixture of hooded hooks and capillary chaetae (e.g. *Capitella*). In some taxa (e.g. *Capitella*), there are distinct genital spines in chaetigers 8 and9(Fig. 48.2a).*Amastigos*and*Baldia*areuniqueamong *Capitel-* *lidae* in lacking capillary chaetae in the thorax and instead have hooks all along this region and the remaining body, though thoracic and abdominal regions are still discernible (Garwood and Bamber, 1988; Piltz, 1976). The abdominal region has many more segments than the thorax and abdominal segments are usually longer. The parapodial rami are elongate tori (Pl. 10d, Figs. 48.1a, 48.2c), with those of the neuropodia usually longer than the notopodia. In general, both rami of all abdominal chaetigers bear long-handled hooded hooks (Fig. 48.1d), though in some cases there may be some capillary chaetae in the notopodia (e.g. *Mastobranchus*). In addition, several pre-anal segments of taxa such as *Scyphoproctus* may have stout spines in the notopodia. The long-handled hooks have a capitium (rows of fine teeth) over a rostrum (= main fang) and a distinctive hood with an opening for the rostrum (Fig. 48.1d) (Schweigkofler *et al.*, 1998). Extensions of the body wall, often",
+   "italic_words": [
+    "Mastobranchus",
+    "Pseudonotomastus",
+    "Scyphoproctus",
+    "Dasybranchus",
+    "Mediomastus",
+    "Capitella",
+    "Capitella",
+    "Amastigos",
+    "Baldia",
+    "Capitel-",
+    "lidae",
+    "Mastobranchus",
+    "Scyphoproctus",
+    "et",
+    "al"
+   ],
+   "col": 1,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.51724,
+    0.28388,
+    0.94181,
+    0.91912
+   ]
+  },
+  {
+   "id": "p0200-b05",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    750.1,
+    379.2,
+    769.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.95684,
+    0.6093,
+    0.98107
+   ],
+   "text": "*Annelida*. Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic, Oxford University Press. © Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic (2022). DOI: 10.1093/oso/9780199692309.003.0048",
+   "italic_words": [
+    "Annelida"
+   ],
+   "col": -1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.09385,
+    0.93387,
+    0.63258,
+    0.96148
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 169,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 169,
+  "median_residual_px": 0.78,
+  "status": "ok",
+  "affine": [
+   [
+    1.051442,
+    0.016474,
+    -0.024228
+   ],
+   [
+    -0.007189,
+    0.987617,
+    -0.006745
+   ]
+  ]
+ },
+ "stratum": "chapter_first",
+ "scan_page": 222
+}

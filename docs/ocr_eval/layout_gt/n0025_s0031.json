@@ -1,0 +1,304 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 25,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0025-b01",
+   "role": "caption",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    336.3,
+    562.7,
+    444.3
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.42897,
+    0.90401,
+    0.56673
+   ],
+   "text": "FIGURE 2.7: Annelid sensory structures: statocysts, lateral organs, nuchal organs, and eyes. (a) *Protoaricia oerstedi* (*Orbiniidae*); (b) *Loimia medusa* (*Terebellidae*); (c) *Scoloplos armiger* (*Orbiniidae*); (d) *Orbinia latreilli* (*Orbiniidae*); (e) *Ophelina gracile* (*Opheliidae*); (f) *Ophelia* (*Opheliidae*); (g) *Saccocirrus* (*Saccocirridae*); (h) *Acromegalomma vesiculosum* (*Sabellidae*); (i) *Sabella melanostigma* (*Sabellidae*). (a) Dorsal view of right side from segments 8–15, showing a series of statocysts next to branchiae in segments 9–13; (b) Transverse section of statocyst; (c) Abdominal parapodium showing lateral organ between rami; (d) Transverse section through lateral organ; (e) Dorsal view showing everted nuchal organs; (f) Adult nuchal organ viewed from anterior end with organ retracted; (g) Median section through ocelli; (h) Longitudinal section through radiole showing elements of compound eye; (i) Longitudinal section through an ommatidium from a compound eye. [(a), (c), from Eisig (1914); (b), (d), from Fauvel (1907); (e) from McIntosh (1885); (f), reprinted from Tissue and Cell, 10, West, D.L. Comparative ultrastructure of juvenile and adult nuchal organs of an annelid (Polychaeta: Opheliidae). 243–257, Figure 16, (1978) by permission of the publisher Churchill Livingstone.; (g), from Eakin *et al*. (1977); (h), modified from Hesse (1899); (i), from Nilsson (1994)].",
+   "italic_words": [
+    "Protoaricia",
+    "oerstedi",
+    "Orbiniidae",
+    "Loimia",
+    "medusa",
+    "Terebellidae",
+    "Scoloplos",
+    "armiger",
+    "Orbiniidae",
+    "Orbinia",
+    "latreilli",
+    "Orbiniidae",
+    "Ophelina",
+    "gracile",
+    "Opheliidae",
+    "Ophelia",
+    "Opheliidae",
+    "Saccocirrus",
+    "Saccocirridae",
+    "Acromegalomma",
+    "vesiculosum",
+    "Sabellidae",
+    "Sabella",
+    "melanostigma",
+    "Sabellidae",
+    "et",
+    "al"
+   ],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.02595,
+    0.41296,
+    0.87551,
+    0.55568
+   ]
+  },
+  {
+   "id": "p0025-b02",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    472.2,
+    305.7,
+    578.2
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.60227,
+    0.49107,
+    0.73748
+   ],
+   "text": "compound eyes are arranged along the radioles or at the extreme tips (Bok *et al*., 2016; Bok *et al*., 2017). Each compound eye is comprised of up to 50 separate units called ommatidia. Each ommatidium is composed of three cells: one receptor cell forming a ciliary receptive segment, and two pigment cells surrounding an extracellular lens (crystalline cone). The eyes cannot form images but are extremely sensitive to visual motion because, in concert, they cover such a wide area. Any motion will trigger retraction into the tube (Nilsson, 1994).",
+   "italic_words": [
+    "et",
+    "al",
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.02346,
+    0.58392,
+    0.43913,
+    0.72063
+   ]
+  },
+  {
+   "id": "p0025-b03",
+   "role": "heading",
+   "level": 4,
+   "bbox_pt": [
+    60.6,
+    591.2,
+    121.6,
+    603.2
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.75417,
+    0.19533,
+    0.76947
+   ],
+   "text": "*Lateral organs*",
+   "italic_words": [
+    "Lateral",
+    "organs"
+   ],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.02299,
+    0.73377,
+    0.1262,
+    0.74969
+   ]
+  },
+  {
+   "id": "p0025-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    613.5,
+    305.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.78261,
+    0.49107,
+    0.94844
+   ],
+   "text": "Lateral organs are internally ciliated pits or ciliated papillae present segmentally between the notopodia and neuropodia, or dorsal to the neuropodia when notopodia are missing (Figs. 2.7c, d). Lateral organs are known in the following major taxa: *Apistobranchidae, Capitellidae*, *Magelona*, *Maldanomorpha*, *Opheliidae*, *Orbiniidae*, *Paraonidae*, *Scalibregmatidae*, *Spionidae*, and *Terebelliformia* (Purschke and Hausen, 2007; Rullier, 1951). They may be present in *Amphinomida* (Purschke, 2005). Given this phylogenetic distribution they may represent convergently acquired structures or have been lost repeatedly within *Annelida* (Beckers *et al*., 2019a). Hayashi and Yamane (1994,",
+   "italic_words": [
+    "Apistobranchidae",
+    "Capitellidae",
+    "Magelona",
+    "Maldanomorpha",
+    "Opheliidae",
+    "Orbiniidae",
+    "Paraonidae",
+    "Scalibregmatidae",
+    "Spionidae",
+    "Terebelliformia",
+    "Amphinomida",
+    "Annelida",
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.02037,
+    0.76183,
+    0.43649,
+    0.92874
+   ]
+  },
+  {
+   "id": "p0025-b05",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    472.2,
+    562.7,
+    542.2
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.60227,
+    0.90402,
+    0.69156
+   ],
+   "text": "1997) described a probable sensory structure which they called the dorsal cirrus organ. It is a ciliated structure on the lower side of the notopodia in most *Eunicida*. These structures may well be homologous with lateral organs and should be further investigated (Purschke and Hausen, 2007; Rouse and Pleijel, 2001).",
+   "italic_words": [
+    "Eunicida"
+   ],
+   "col": 1,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.458,
+    0.58741,
+    0.87299,
+    0.67882
+   ]
+  },
+  {
+   "id": "p0025-b06",
+   "role": "heading",
+   "level": 3,
+   "bbox_pt": [
+    317.6,
+    566.7,
+    365.5,
+    578.7
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.72292,
+    0.58727,
+    0.73822
+   ],
+   "text": "Nephridia",
+   "italic_words": [],
+   "col": 1,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.45732,
+    0.70643,
+    0.53844,
+    0.72217
+   ]
+  },
+  {
+   "id": "p0025-b07",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    589.5,
+    562.7,
+    743.5
+   ],
+   "bbox_rel": [
+    0.51027,
+    0.752,
+    0.90402,
+    0.94844
+   ],
+   "text": "In most annelids there are usually two fluid systems, the coelom, and the circulatory system, and both (if present) are involved in the excretion of waste products. To achieve this excretion, there must be ducts to the exterior and these are generally referred to as nephridia. Two different kinds of filtration nephridia are described in *Annelida*: protonephridia and metanephridia. During the development of an annelid, larval protonephridia generally precede segmentally arranged metanephridia. The first pair of larval protonephridia that develop are also called head-kidneys (Hatschek, 1878). In annelids, the inner end of a nephridium projects or opens into the coelom of the segment in front of the one in which the nephridiopore is located. In protonephridia, the duct is internally closed by a filtration",
+   "italic_words": [
+    "Annelida"
+   ],
+   "col": 1,
+   "order": 6,
+   "bbox_scan_rel": [
+    0.45424,
+    0.73512,
+    0.8708,
+    0.93223
+   ]
+  },
+  {
+   "id": "p0025-b00",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    31.4,
+    136.9,
+    43.4
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.0401,
+    0.21995,
+    0.05541
+   ],
+   "text": "18 anatomy",
+   "italic_words": [],
+   "col": 0,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.03342,
+    0.02935,
+    0.16249,
+    0.04548
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 136,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 136,
+  "median_residual_px": 0.64,
+  "status": "ok",
+  "affine": [
+   [
+    1.050635,
+    -0.014607,
+    -0.068009
+   ],
+   [
+    0.008448,
+    0.986493,
+    -0.011035
+   ]
+  ]
+ },
+ "stratum": "figure_caption",
+ "scan_page": 31
+}

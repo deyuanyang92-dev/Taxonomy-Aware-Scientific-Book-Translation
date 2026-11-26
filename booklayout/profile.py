@@ -44,6 +44,44 @@ NEW_ROLES = frozenset({"table", "list", "quote", "box", "footnote", "figure_grou
 ROLES = LEGACY_ROLES | NEW_ROLES
 
 
+PARA_FIELDS = frozenset({"size", "bold", "italic", "align", "first", "left", "before", "after",
+                         "line", "keep_together", "keep_with_next", "size_follows_body"})
+PARA_FIELD_DEFAULTS: dict[str, Any] = {
+    "size": 10.5, "bold": False, "italic": False, "align": "left", "first": 0.0, "left": 0.0,
+    "before": 0.0, "after": 0.0, "line": 1.0, "keep_together": False, "keep_with_next": False,
+    "size_follows_body": False,
+}
+# Defaults equal the values the builder used to hard-code per role, so output is unchanged.
+PARA_STYLE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "Body": {"size": 10.5, "align": "justify", "first": 5.0, "line": 1.02},
+    "Body Cont": {"size": 10.5, "align": "justify", "line": 1.02},
+    "Note": {"size": 9.5, "italic": True, "align": "justify", "first": 5.0, "before": 4.0, "after": 4.0},
+    "Note Roman": {"size": 9.5, "align": "left", "before": 4.0, "after": 4.0},
+    "Citation": {"size": 9.2, "left": 4.0, "first": -4.0, "before": 1.0},
+    "Ref": {"size": 7.6, "left": 4.0, "first": -4.0, "after": 1.5, "line": 0.95},
+    "Entry": {"size": 10.2, "left": 4.0, "first": -4.0, "after": 2.0},
+    "Entry Appendix": {"size": 9.2, "left": 4.0, "first": -4.0, "after": 2.0},
+    "Taxon": {"size": 10.0, "after": 0.4, "keep_with_next": True},
+    "Caption": {"size": 9.5, "before": 12.0, "after": 7.0, "line": 1.05, "keep_together": True},
+    "Key": {"size": 8.3},
+    "Key Note": {"size": 9.5},
+    "Key Couplet": {"size": 10.5, "size_follows_body": True, "left": 16.0, "first": -7.0, "line": 1.15,
+                    "keep_together": True},
+    "Key Table": {"size": 9.2, "line": 1.1, "keep_together": True},
+    "Key Heading": {"size": 10.5, "bold": True, "keep_with_next": True},
+    "List Item": {"size": 10.5, "size_follows_body": True, "left": 6.0, "first": -4.0, "after": 1.0},
+    "Quote": {"size": 10.0, "size_follows_body": True, "italic": True, "align": "justify", "left": 8.0,
+              "before": 3.0, "after": 3.0},
+    "Box Text": {"size": 10.0, "size_follows_body": True, "left": 3.0, "before": 4.0, "after": 4.0},
+    "Footnote Text": {"size": 8.5, "size_follows_body": True, "before": 1.0, "after": 1.0},
+    "Table Note": {"size": 9.0, "size_follows_body": True, "italic": True, "before": 2.0, "after": 6.0},
+    "Index": {"size": 8.6},
+    "Index Intro": {"size": 8.8, "italic": True, "align": "justify", "after": 8.0},
+    "Index Correction": {"size": 8.8, "left": 4.0, "first": -4.0, "after": 3.0},
+    "Section Title": {"size": 13.0, "bold": True, "align": "center", "after": 10.0},
+}
+
+
 @dataclass
 class StyleProfile:
     version: int = PROFILE_VERSION
@@ -85,6 +123,14 @@ class StyleProfile:
     # (even: page number left, series right; odd: volume left, page number right),
     # no header; the first page carries no folio.
     footer_style: str = "center"
+    # Named Word paragraph styles for every non-heading role (design 2026-11-26 C).  One entry
+    # per style name; a paragraph only references its style.  Fields: size (pt for a 10.5 pt body,
+    # scaled with body_size), bold, italic, align (left|center|right|justify), first (first-line
+    # indent, mm), left (left indent, mm), before/after (pt), line (spacing multiple),
+    # keep_together, keep_with_next, size_follows_body (size is relative to body_size, as the
+    # builder's former hard-coded body_size - n sizes were).  Entries given here override the
+    # defaults of PARA_STYLE_DEFAULTS field by field.
+    para_styles: dict[str, dict[str, Any]] = field(default_factory=dict)
     # "source": use the level stored in the aligned JSON; "taxon": derive 1-4 from the
     # heading text (booklayout.headings.taxon_level), for sources with flat levels.
     heading_levels: str = "source"
@@ -140,6 +186,15 @@ class StyleProfile:
         base.update(self.heading_styles.get(str(level), {}))
         return base
 
+    def para_style(self, name: str) -> dict[str, Any]:
+        """Effective paragraph style `name` (PARA_STYLE_DEFAULTS, then profile overrides)."""
+        base = dict(PARA_FIELD_DEFAULTS)
+        base.update(PARA_STYLE_DEFAULTS[name])
+        if name == "Citation":
+            base["before"] = self.citation_before
+        base.update(self.para_styles.get(name, {}))
+        return base
+
     def validate(self) -> None:
         if self.version != PROFILE_VERSION:
             raise ValueError(f"unsupported profile version {self.version}")
@@ -155,6 +210,14 @@ class StyleProfile:
             raise ValueError("key_headers needs exactly 3 strings (marker, characters, target)")
         if self.footer_style not in ("center", "folio"):
             raise ValueError(f"footer_style must be 'center' or 'folio', not {self.footer_style!r}")
+        for key, st in self.para_styles.items():
+            if key not in PARA_STYLE_DEFAULTS:
+                raise ValueError(f"para_styles key {key!r}: unknown style (known: {sorted(PARA_STYLE_DEFAULTS)})")
+            bad = sorted(set(st) - PARA_FIELDS)
+            if bad:
+                raise ValueError(f"para_styles[{key}]: unknown fields {bad}")
+            if st.get("align", "left") not in ("left", "center", "right", "justify"):
+                raise ValueError(f"para_styles[{key}].align must be left/center/right/justify")
         for key, st in self.heading_styles.items():
             if key not in ("1", "2", "3", "4"):
                 raise ValueError(f"heading_styles key {key!r}: only levels 1-4 exist")
@@ -213,4 +276,40 @@ def validate_aligned(data: dict[str, Any]) -> list[str]:
                     errors.append(f"{where}: figure_group needs `figures`")
             elif "translation" not in b and "text" not in b:
                 errors.append(f"{where}: needs `text` or `translation`")
+            if data.get("schema") == ALIGNED_V2:
+                errors.extend(f"{where}: {e}" for e in _check_v2_block(b))
     return errors
+
+
+ALIGNED_V2 = "aligned/2"
+_LEVEL_SOURCES = frozenset({"font", "number", "taxon", "engine", "manual"})
+_ORIGINS = frozenset({"native", "ocr", "manual"})
+
+
+def _check_v2_block(b: dict[str, Any]) -> list[str]:
+    """Optional aligned/2 fields (design 2026-11-26 B.1); absent fields are fine, wrong ones are not."""
+    errs: list[str] = []
+    if "style" in b and not (b["style"] is None or isinstance(b["style"], str)):
+        errs.append("style must be a string or null")
+    if "level_source" in b and b["level_source"] not in _LEVEL_SOURCES:
+        errs.append(f"level_source {b['level_source']!r} not in {sorted(_LEVEL_SOURCES)}")
+    src = b.get("src")
+    if src is not None:
+        if not isinstance(src, dict):
+            errs.append("src must be an object")
+        else:
+            if src.get("origin") not in _ORIGINS:
+                errs.append(f"src.origin {src.get('origin')!r} not in {sorted(_ORIGINS)}")
+            bb = src.get("bbox")
+            if bb is not None and not (isinstance(bb, list) and len(bb) == 4
+                                       and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in bb)):
+                errs.append("src.bbox must be 4 numbers")
+            conf = src.get("conf")
+            if conf is not None and not (isinstance(conf, (int, float)) and 0 <= conf <= 1):
+                errs.append("src.conf must be within 0..1 or null")
+    if "font" in b and not (isinstance(b["font"], dict) and {"family", "size"} <= set(b["font"])):
+        errs.append("font needs family and size")
+    runs = b.get("runs")
+    if runs is not None and not (isinstance(runs, list) and all(isinstance(r, dict) and "t" in r for r in runs)):
+        errs.append("runs must be a list of {t, ...}")
+    return errs

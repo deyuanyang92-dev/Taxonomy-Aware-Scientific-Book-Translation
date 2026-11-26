@@ -59,8 +59,37 @@ def check_docx(path: str) -> dict[str, list[str]]:
     return res
 
 
+def direct_format_warnings(path: str) -> list[str]:
+    """Paragraphs of a named style that carry direct size/spacing/indent (design 2026-11-26 C.3).
+
+    Such paragraphs ignore `booklayout restyle` and Word style edits.  Tab/line-break-only
+    runs are exempt (the builder pins them at the Normal size on purpose).  A warning, not an
+    error: it does not change the exit code.
+    """
+    from .profile import PARA_STYLE_DEFAULTS
+
+    doc = Document(path)
+    out: list[str] = []
+    for p, _in_table, _after in _paras(doc):
+        name = p.style.name if p.style is not None else ""
+        if name not in PARA_STYLE_DEFAULTS or not p.text.strip():
+            continue
+        pf = p.paragraph_format
+        bad = [k for k, v in (("space_before", pf.space_before), ("space_after", pf.space_after),
+                              ("line_spacing", pf.line_spacing), ("left_indent", pf.left_indent),
+                              ("first_line_indent", pf.first_line_indent)) if v is not None]
+        if any(r.font.size is not None and r.text.strip() for r in p.runs):
+            bad.append("run_size")
+        if bad:
+            out.append(f"[{name}] {','.join(bad)}: {p.text[:30]!r}")
+    return out
+
+
 def main(argv: list[str]) -> int:
     res = check_docx(argv[1])
+    warn = direct_format_warnings(argv[1])
+    if warn:
+        print(f"{'direct_format (warning)':30s} {len(warn)}", "e.g. " + repr(warn[0]))
     bad = 0
     for k, v in res.items():
         print(f"{k:30s} {len(v)}", ("e.g. " + repr(v[0])) if v else "")

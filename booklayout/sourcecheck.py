@@ -545,10 +545,28 @@ def figure_boxes(page_png: Path, dpi: int) -> list[tuple[int, int, int, int]]:
         from .scanfigures import find_figures
     except ImportError:
         return []
+    # Per-page cache (T5, 2026-11-26): 13 pages cost 6.9 s of a 12 s warm source-check run.  Key =
+    # page image bytes + dpi + scanfigures source, so a changed scan or algorithm never reuses boxes.
+    cache_file = None
+    if page_png.is_file():
+        from . import buildcache
+        key = hashlib.sha1(buildcache._sha_file(page_png).encode()
+                           + f"|{dpi}|{buildcache.file_fingerprint('scanfigures')}".encode()).hexdigest()[:16]
+        cache_file = page_png.with_name(page_png.stem + f".figs.{key}.json")
+        if cache_file.is_file():
+            try:
+                return [tuple(b) for b in json.loads(cache_file.read_text(encoding="utf-8"))]
+            except (OSError, ValueError, TypeError):
+                pass
     gray = cv2.imread(str(page_png), cv2.IMREAD_GRAYSCALE)
     if gray is None:
         return []
-    return [(b.x0, b.y0, b.x1, b.y1) for b in find_figures(gray, dpi=dpi)]
+    boxes = [(b.x0, b.y0, b.x1, b.y1) for b in find_figures(gray, dpi=dpi)]
+    if cache_file is not None:
+        for old in page_png.parent.glob(page_png.stem + ".figs.*.json"):
+            old.unlink(missing_ok=True)
+        cache_file.write_text(json.dumps(boxes), encoding="utf-8")
+    return boxes
 
 
 def categorize(items: list[dict[str, Any]], lex: Lexicon,

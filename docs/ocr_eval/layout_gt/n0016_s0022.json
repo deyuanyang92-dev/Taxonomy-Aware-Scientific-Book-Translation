@@ -1,0 +1,265 @@
+{
+ "native_pdf": "/mnt/p/翻译-译作/Rouse2022_Annelida/原书/Rouse2022_Annelida_专著全本.pdf",
+ "native_page": 16,
+ "page_w_pt": 622.4318237304688,
+ "page_h_pt": 783.9532470703125,
+ "gt_status": "rule",
+ "blocks": [
+  {
+   "id": "p0016-b00",
+   "role": "heading",
+   "level": 1,
+   "bbox_pt": [
+    249.6,
+    75.3,
+    373.6,
+    128.6
+   ],
+   "bbox_rel": [
+    0.40103,
+    0.09604,
+    0.60026,
+    0.16402
+   ],
+   "text": "CHAPTER 2 ANATOMY",
+   "italic_words": [],
+   "col": -1,
+   "order": 0,
+   "bbox_scan_rel": [
+    0.41217,
+    0.09008,
+    0.62229,
+    0.15792
+   ]
+  },
+  {
+   "id": "p0016-b01",
+   "role": "heading",
+   "level": 2,
+   "bbox_pt": [
+    60.6,
+    233.5,
+    155.2,
+    247.5
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.29781,
+    0.2494,
+    0.31566
+   ],
+   "text": "General features",
+   "italic_words": [],
+   "col": 0,
+   "order": 1,
+   "bbox_scan_rel": [
+    0.09474,
+    0.29054,
+    0.25483,
+    0.30872
+   ]
+  },
+  {
+   "id": "p0016-b02",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    260.1,
+    278.9,
+    270.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.33177,
+    0.44809,
+    0.34452
+   ],
+   "text": "The annelid body consists of three fundamental regions.",
+   "italic_words": [],
+   "col": 0,
+   "order": 2,
+   "bbox_scan_rel": [
+    0.09506,
+    0.32333,
+    0.46401,
+    0.33721
+   ]
+  },
+  {
+   "id": "p0016-b03",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    278.1,
+    305.7,
+    432.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.3547,
+    0.49107,
+    0.55114
+   ],
+   "text": "(1)There is always a presegmental region derived from the larval episphere, anterior to the prototroch region around the mouth. The episphere gives rise to the prostomium, whereas the prototroch and buccal region, including the metatroch posterior to the mouth, gives rise to the peristomium (Schroeder and Hermans, 1975). (2)The bulk of the body is comprised of serially repeated segments. This form of segmentation is referred to as metamerism. (3)The third region is the extreme posterior end of the body, the pygidium which, like the anterior end is non-segmental but see Staruvov *et al*., 2015 and may well contain remnants of the larval body (Fig. 2.1a).",
+   "italic_words": [
+    "et",
+    "al"
+   ],
+   "col": 0,
+   "order": 3,
+   "bbox_scan_rel": [
+    0.09528,
+    0.34581,
+    0.51117,
+    0.54117
+   ]
+  },
+  {
+   "id": "p0016-b04",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    440.0,
+    305.7,
+    738.0
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.56131,
+    0.49107,
+    0.94144
+   ],
+   "text": "From this basic scheme the tremendous diversity of body forms seen across *Annelida* is built. Each segment is generally limited by septa from neighbouring segments and there are usually mesenteries that separate a pair of coelomic compartments on either side of the gut (Figs. 2.1b, c). In manytaxa though, such as in some *Terebellidae* and *Arenicol-* *idae*, there may be no septa between many of the body segments, resulting in a large coelomic space. Each segment usually carries parapodia and chaetae, in addition to various segmentally arranged internal organs. However, all segments are basically united by the digestive, vascular, muscular, and nervous systems and so have little autonomy (Figs. 2.1b, c). Segments are formed sequentially and are established during development from paired mesodermal growth zones that usually originate from the 4d micromere (Anderson, 1966; Seaver, 2017). Some annelids have a fixed number of segments (e.g. *Hirudinea*, *Poeo-* *bius*, *Nerillidae*, some *Sabellidae*), but in other taxa, segments continue to be added throughout life (e.g. some *Eunicidae*). The mesodermal growth zones are part of the pygidium. New segments are derived during growth along the anterior edge of the pygidium (Seaver, 2003; Staruvov *et al*., 2015), and the youngest segment in the body of an annelid is always the most posterior (Fig. 2.1a). The pygidium may be a small structure, essentially just carrying the anus (e.g. *Cirratulidae*, *Sabellidae*, some *Opheliidae*), or it may be an elaborate struc-",
+   "italic_words": [
+    "Annelida",
+    "Terebellidae",
+    "Arenicol-",
+    "idae",
+    "Hirudinea",
+    "Poeo-",
+    "bius",
+    "Nerillidae",
+    "Sabellidae",
+    "Eunicidae",
+    "et",
+    "al",
+    "Cirratulidae",
+    "Sabellidae",
+    "Opheliidae"
+   ],
+   "col": 0,
+   "order": 4,
+   "bbox_scan_rel": [
+    0.09725,
+    0.54976,
+    0.51489,
+    0.92645
+   ]
+  },
+  {
+   "id": "p0016-b05",
+   "role": "body",
+   "level": null,
+   "bbox_pt": [
+    317.6,
+    235.8,
+    562.7,
+    737.8
+   ],
+   "bbox_rel": [
+    0.51026,
+    0.30074,
+    0.90403,
+    0.94108
+   ],
+   "text": "ture on which the anus is present, centrally or on one side (e.g. many *Maldanidae*). The pygidium may be smooth or carry one or more pairs of pygidial cirri (e.g. most *Aciculata*). Annelids are schizocoelous coelomates, i.e. have a body cavity derived from splitting of mesodermal blocks. Although the coelom is strictly defined as having a peritoneal lining over all surfaces (Fig. 2.1c), there are numerous examples of annelids that have the coelom directly in contact with the longitudinal muscle layer (Fransen, 1988). The lack of a substantial coelom, seen in certain small annelids (e.g. *Dinophilidae, Diurodrilidae*, Chapters 69, 70) as well as larger forms such as *Myzostomida* (Chapter 35) and *Hirudinea (*Chapter 45), is likely a secondary phenomenon given the phylogenetic placement of these taxa (Fig. 1.1). Physiological problems associated with the presence of a coelom are related to the width of the body and the distance of the gut from the outer surface. This means that transport of respiratory gases and nutrients cannot be accomplished by diffusion alone. Most annelids with a coelom therefore have a circulatory system, though this is not always so (see Blood and the heart body). A feature of *Annelida* is to have a body covered by a flexible external cuticle. Epidermal microvilli secrete a network of collagen fibres that are embedded within an amorphous or fine filamentous, glycocalyx matrix, consisting of different mucopolysaccharides and presumably also hyaluronic acid (Hausen, 2005b). The epidermis is usually a columnar epithelium, though cilia can be found on some areas of the body. Ciliated cells are usually multiciliary, and the few cases of monociliated epidermal cells are known only from *Owenii-* *da* (Bartolomaeus, 1995c; Gardiner, 1978; Hausen, 2005b). A major epidermal feature found across *Annelida* is the presence of chaetae (Figs. 2.1d, 2.4), the exceptions being *Dinophili-* *formia*, *Diurodrilidae*, *Histriobdellidae*, *Poeobius* (in *Flabelligeridae*), *Polygordius*, some *Protodrilida*, *Hauchiella* (in *Terebellidae*), and *Sipuncula.* Chaetae (sometimes called setae, especially in older literature) are largely composed of polymerized ß-chitin crosslinked by proteins (Hausen, 2005a; Richards, 1978). The degree of polymerization, arrangement and structure of internal cavities and the incorporation of inorganic component (e.g. iron, calcium, magnesium) determines the hardness and rigidity of the chaetae (Hausen, 2005a; Richards, 1978). Chaetae formation, chaetogenesis, occurs within epidermal follicles and at the base of the follicle specialized cells called chaetoblasts produce",
+   "italic_words": [
+    "Maldanidae",
+    "Aciculata",
+    "Dinophilidae",
+    "Diurodrilidae",
+    "Myzostomida",
+    "Hirudinea",
+    "Annelida",
+    "Owenii-",
+    "da",
+    "Annelida",
+    "Dinophili-",
+    "formia",
+    "Diurodrilidae",
+    "Histriobdellidae",
+    "Poeobius",
+    "Flabelligeridae",
+    "Polygordius",
+    "Protodrilida",
+    "Hauchiella",
+    "Terebellidae",
+    "Sipuncula"
+   ],
+   "col": 1,
+   "order": 5,
+   "bbox_scan_rel": [
+    0.52897,
+    0.29102,
+    0.94909,
+    0.92457
+   ]
+  },
+  {
+   "id": "p0016-b06",
+   "role": "furniture",
+   "level": null,
+   "bbox_pt": [
+    60.6,
+    750.1,
+    379.2,
+    769.1
+   ],
+   "bbox_rel": [
+    0.09731,
+    0.95684,
+    0.6093,
+    0.98107
+   ],
+   "text": "*Annelida*. Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic, Oxford University Press. © Greg W. Rouse, Fredrik Pleijel, and Ekin Tilic (2022). DOI: 10.1093/oso/9780199692309.003.0002",
+   "italic_words": [
+    "Annelida"
+   ],
+   "col": -1,
+   "order": -1,
+   "bbox_scan_rel": [
+    0.10102,
+    0.93976,
+    0.63958,
+    0.96557
+   ]
+  }
+ ],
+ "registration": {
+  "pairs": 224,
+  "scan_size_px": [
+   1240,
+   1652
+  ],
+  "inliers": 224,
+  "median_residual_px": 0.68,
+  "status": "ok",
+  "affine": [
+   [
+    1.051451,
+    0.009521,
+    -0.010411
+   ],
+   [
+    -0.003682,
+    0.987126,
+    -0.002515
+   ]
+  ]
+ },
+ "stratum": "chapter_first",
+ "scan_page": 22
+}
