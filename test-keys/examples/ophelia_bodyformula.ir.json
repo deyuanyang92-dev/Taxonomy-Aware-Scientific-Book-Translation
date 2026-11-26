@@ -1,0 +1,737 @@
+{
+ "keys": [
+  {
+   "heading": "Key to species of *Ophelia* based on body formula (Tebble 1953): a = abranchiate chaetiger, b = branchiate chaetiger, n = achaetous segment; counts for mature specimens",
+   "couplets": [
+    {
+     "num": 1,
+     "backref": null,
+     "leads": [
+      {
+       "text": "Branchiae absent throughout",
+       "kind": "jump",
+       "target": "2",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae present",
+       "kind": "jump",
+       "target": "6",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 2,
+     "backref": 1,
+     "leads": [
+      {
+       "text": "22–24 chaetigers",
+       "kind": "jump",
+       "target": "3",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "26–28 chaetigers",
+       "kind": "jump",
+       "target": "4",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 3,
+     "backref": 2,
+     "leads": [
+      {
+       "text": "22 chaetigers; anal funnel with 1 pair of short conical ventral lobes and a dorsal membrane bearing 5 marginal processes",
+       "kind": "taxon",
+       "target": "*O. profunda* Hartman, 1965",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "24 chaetigers; anal funnel with up to 10 papillae",
+       "kind": "taxon",
+       "target": "*O. laubieri* Bellan & Costa, 1988",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 4,
+     "backref": 2,
+     "leads": [
+      {
+       "text": "26 chaetigers; anal funnel with 2 stout ventral papillae and 16–18 dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. anomala* Day, 1961",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "About 28 chaetigers",
+       "kind": "jump",
+       "target": "5",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 5,
+     "backref": 4,
+     "leads": [
+      {
+       "text": "Anal funnel with 2 large ventromedian papillae and 6–9 rounded papillae",
+       "kind": "taxon",
+       "target": "*O. translucens* (Katzmann, 1973)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Anal funnel with 11–19 papillae",
+       "kind": "taxon",
+       "target": "*O. amoureuxi* Bellan & Costa, 1988",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 6,
+     "backref": 1,
+     "leads": [
+      {
+       "text": "Branchiae from chaetiger 2, continuing to 8 chaetigers before the anus (1a + 26b + 8a = 35)",
+       "kind": "taxon",
+       "target": "*O. algida* Maciolek & Blake, 2006",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae beginning on chaetiger 8 or later",
+       "kind": "jump",
+       "target": "7",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 7,
+     "backref": 6,
+     "leads": [
+      {
+       "text": "Branchiae beginning on chaetiger 12 (11 anterior abranchiate chaetigers)",
+       "kind": "jump",
+       "target": "8",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae beginning on chaetiger 8–11 (7–10 anterior abranchiate chaetigers)",
+       "kind": "jump",
+       "target": "9",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 8,
+     "backref": 7,
+     "leads": [
+      {
+       "text": "11a + 12–13b + 4–5a = 28; anal funnel with 2 lanceolate ventral lobes and 13–15 papillae",
+       "kind": "taxon",
+       "target": "*O. verrilli* Riser, 1987",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "11a + 9b + 4a = 24; anal funnel with 1 ventral papilla and 7–10 papillae",
+       "kind": "taxon",
+       "target": "*O. rathkei* McIntosh, 1908",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 9,
+     "backref": 7,
+     "leads": [
+      {
+       "text": "Branchiae beginning on chaetiger 8 (7a + 17b + 3a + 2n = 29); anal funnel trumpet-shaped, with 10 papillae",
+       "kind": "taxon",
+       "target": "*O. multibranchia* Hutchings & Murray, 1984",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae beginning on chaetiger 9–11",
+       "kind": "jump",
+       "target": "10",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 10,
+     "backref": 9,
+     "leads": [
+      {
+       "text": "Branchiae beginning on chaetiger 9 (8 anterior abranchiate chaetigers)",
+       "kind": "jump",
+       "target": "11",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae beginning on chaetiger 10 or 11",
+       "kind": "jump",
+       "target": "13",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 11,
+     "backref": 10,
+     "leads": [
+      {
+       "text": "Anal funnel elongate, with 10 subequal papillae, without enlarged ventral pair",
+       "kind": "taxon",
+       "target": "*O. elongata* Hutchings & Murray, 1984",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Anal funnel with a pair of enlarged ventral papillae",
+       "kind": "jump",
+       "target": "12",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 12,
+     "backref": 11,
+     "leads": [
+      {
+       "text": "8a + 18b + 5a = 31",
+       "kind": "taxon",
+       "target": "*O. praetiosa* (Kinberg, 1866)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "8a + 23b + 1a (+ 1n) = 32–33",
+       "kind": "taxon",
+       "target": "*O. roscoffensis* Augener, 1910",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 13,
+     "backref": 10,
+     "leads": [
+      {
+       "text": "Branchiae beginning on chaetiger 10 (9 anterior abranchiate chaetigers)",
+       "kind": "jump",
+       "target": "14",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae beginning on chaetiger 11 (10 anterior abranchiate chaetigers)",
+       "kind": "jump",
+       "target": "21",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 14,
+     "backref": 13,
+     "leads": [
+      {
+       "text": "24–27 pairs of branchiae; 37–41 chaetigers",
+       "kind": "jump",
+       "target": "15",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "16–18 pairs of branchiae; 29–33 chaetigers",
+       "kind": "jump",
+       "target": "18",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 15,
+     "backref": 14,
+     "leads": [
+      {
+       "text": "2–3 posterior abranchiate chaetigers, followed by 1 achaetous segment",
+       "kind": "jump",
+       "target": "16",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "5–6 posterior abranchiate chaetigers, without achaetous segment",
+       "kind": "jump",
+       "target": "17",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 16,
+     "backref": 15,
+     "leads": [
+      {
+       "text": "9a + 25b + 2a + 1n = 37; anal funnel with 2 stout conical ventral papillae and about 15 dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. agulhana* Day, 1961",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "9a + 27b + 3a + 1n = 40; anal funnel with 2 enlarged ventral and about 13 dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. africana* Tebble, 1953",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 17,
+     "backref": 15,
+     "leads": [
+      {
+       "text": "9a + 24b + 5a = 38; anal funnel with 2 enlarged ventral and about 15 papillae",
+       "kind": "taxon",
+       "target": "*O. pulchella* Tebble, 1953",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "9a + 26b + 6a = 41; anal funnel with 2 enlarged ventral papillae",
+       "kind": "taxon",
+       "target": "*O. formosa* (Kinberg, 1866)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 18,
+     "backref": 14,
+     "leads": [
+      {
+       "text": "16–17 pairs of branchiae",
+       "kind": "jump",
+       "target": "19",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "18 pairs of branchiae",
+       "kind": "jump",
+       "target": "20",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 19,
+     "backref": 18,
+     "leads": [
+      {
+       "text": "9a + 16b + 4–5a + 1n = 29–30; anal funnel with 2 long ventral and 12 dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. kirkegaardi* Intes & Le Loeuff, 1977",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "9a + 17b + 5a = 31; anal funnel with 2 stout and 16 slender papillae",
+       "kind": "taxon",
+       "target": "*O. bipartita* Monro, 1936",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 20,
+     "backref": 18,
+     "leads": [
+      {
+       "text": "9a + 18b + 4a + 2n = 33; anal funnel with up to 10 papillae",
+       "kind": "taxon",
+       "target": "*O. koloana* Gibbs, 1971",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "9a + 18b + 5a = 32, without achaetous segments (two nominal species with identical formula)",
+       "kind": "taxon",
+       "target": "*O. denticulata* / *O. neglecta*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 21,
+     "backref": 13,
+     "leads": [
+      {
+       "text": "Branchiae bifid (twin filaments); anal funnel with 18–23 subequal papillae, without enlarged ventral pair; 10a + 20b + 2a = 32",
+       "kind": "taxon",
+       "target": "*O. ashworthi* Fauvel, 1917",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae simple, cirriform; anal funnel with enlarged ventral papillae",
+       "kind": "jump",
+       "target": "22",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 22,
+     "backref": 21,
+     "leads": [
+      {
+       "text": "20 or more pairs of branchiae; 36–46 chaetigers",
+       "kind": "jump",
+       "target": "23",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "13–19 pairs of branchiae; 29–33 chaetigers",
+       "kind": "jump",
+       "target": "25",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 23,
+     "backref": 22,
+     "leads": [
+      {
+       "text": "10a + 31b + 5a = 46",
+       "kind": "taxon",
+       "target": "*O. magna* (Treadwell, 1914)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "20–22 pairs of branchiae; 36–39 chaetigers",
+       "kind": "jump",
+       "target": "24",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 24,
+     "backref": 23,
+     "leads": [
+      {
+       "text": "10a + 20b + 6a = 36; anal funnel with 2 ventral and 9–16 papillae of equal length",
+       "kind": "taxon",
+       "target": "*O. borealis* Quatrefages, 1866",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "10a + 22b + 7a = 39; anal funnel with 2 ventral and 6–12 short blunt dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. limacina* (Rathke, 1843)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 25,
+     "backref": 22,
+     "leads": [
+      {
+       "text": "19 pairs of branchiae",
+       "kind": "jump",
+       "target": "26",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "13–17 pairs of branchiae",
+       "kind": "jump",
+       "target": "28",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 26,
+     "backref": 25,
+     "leads": [
+      {
+       "text": "10a + 19b + 4a = 33; anal funnel with 2 enlarged ventral and about 11 subglobular papillae",
+       "kind": "taxon",
+       "target": "*O. assimilis* Tebble, 1953",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "10a + 19b + 3a = 32",
+       "kind": "jump",
+       "target": "27",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 27,
+     "backref": 26,
+     "leads": [
+      {
+       "text": "Anal funnel with 16 long slender tentacular dorsal papillae (8 each side) and 2 lanceolate ventral cirri",
+       "kind": "taxon",
+       "target": "*O. dannevigi* Benham, 1916",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Anal funnel with 2 large ventral and 12 dorsal papillae; 4 achaetous segments behind last chaetiger",
+       "kind": "taxon",
+       "target": "*O. capensis* Kirkegaard, 1959",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 28,
+     "backref": 25,
+     "leads": [
+      {
+       "text": "Branchiae with swollen (bulbous) base; 10a + 15b + 5a = 30; anal funnel with 2 large ventral and 7–9 small papillae",
+       "kind": "taxon",
+       "target": "*O. bulbibranchiata* Hartmann-Schröder & Parker, 1995",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Branchiae not swollen basally",
+       "kind": "jump",
+       "target": "29",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 29,
+     "backref": 28,
+     "leads": [
+      {
+       "text": "Achaetous segments present behind last chaetiger",
+       "kind": "jump",
+       "target": "30",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "No achaetous segments behind last chaetiger; 32 chaetigers",
+       "kind": "jump",
+       "target": "31",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 30,
+     "backref": 29,
+     "leads": [
+      {
+       "text": "10a + 16b + 3a + 1n = 30; anal funnel with 2 large ventral and 12 small dorsal papillae",
+       "kind": "taxon",
+       "target": "*O. celtica* Amoureux & Dauvin, 1981",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "10a + 15b + 4a + 3n = 32; anal funnel with 2 ventral and 12 papillae",
+       "kind": "taxon",
+       "target": "*O. peresi* Bellan & Picard, 1965",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 31,
+     "backref": 29,
+     "leads": [
+      {
+       "text": "10a + 17b + 5a = 32",
+       "kind": "taxon",
+       "target": "*O. rullieri* Bellan, 1975",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "13–15 pairs of branchiae; 7–9 posterior abranchiate chaetigers",
+       "kind": "jump",
+       "target": "32",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 32,
+     "backref": 31,
+     "leads": [
+      {
+       "text": "10a + 15b + 7a = 32",
+       "kind": "taxon",
+       "target": "*O. bicornis* Savigny, 1822",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "13–14 pairs of branchiae; 8–9 posterior abranchiate chaetigers",
+       "kind": "jump",
+       "target": "33",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 33,
+     "backref": 32,
+     "leads": [
+      {
+       "text": "10a + 14b + 8a = 32",
+       "kind": "taxon",
+       "target": "*O. radiata* (Delle Chiaje, 1828)",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "10a + 13b + 9a = 32",
+       "kind": "taxon",
+       "target": "*O. barquii* Fauvel, 1927",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    }
+   ],
+   "lang": "en",
+   "source_style": "dash"
+  }
+ ]
+}

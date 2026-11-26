@@ -1,0 +1,407 @@
+{
+ "keys": [
+  {
+   "heading": "Key to species of Amphictene (taxa listed together could not be separated with the available data)",
+   "couplets": [
+    {
+     "num": 1,
+     "backref": null,
+     "leads": [
+      {
+       "text": "Teeth rows 1",
+       "kind": "jump",
+       "target": "2",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth rows 2 or 3 or 4 or 5",
+       "kind": "jump",
+       "target": "3",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 2,
+     "backref": 1,
+     "leads": [
+      {
+       "text": "Veil cirri 23 to <35",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Veil cirri >=35",
+       "kind": "taxon",
+       "target": "*Amphictene moorei*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 3,
+     "backref": 1,
+     "leads": [
+      {
+       "text": "Teeth rows 2",
+       "kind": "jump",
+       "target": "4",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth rows 3 or 4 or 5",
+       "kind": "jump",
+       "target": "16",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 4,
+     "backref": 3,
+     "leads": [
+      {
+       "text": "Hooks <8",
+       "kind": "jump",
+       "target": "5",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Hooks 8 to <12 or >=12",
+       "kind": "jump",
+       "target": "8",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 5,
+     "backref": 4,
+     "leads": [
+      {
+       "text": "Width <7",
+       "kind": "jump",
+       "target": "6",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Width 7 to <10 or >=10",
+       "kind": "jump",
+       "target": "7",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 6,
+     "backref": 5,
+     "leads": [
+      {
+       "text": "Notopodia reduced: 1-3 and posterior",
+       "kind": "taxon",
+       "target": "*Amphictene uniloba*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Notopodia reduced: 1-3 only",
+       "kind": "taxon",
+       "target": "*Amphictene capensis*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 7,
+     "backref": 5,
+     "leads": [
+      {
+       "text": "Width 7 to <10",
+       "kind": "taxon",
+       "target": "*Amphictene souriei*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Width >=10",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 8,
+     "backref": 4,
+     "leads": [
+      {
+       "text": "Hooks 8 to <12",
+       "kind": "jump",
+       "target": "9",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Hooks >=12",
+       "kind": "jump",
+       "target": "10",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 9,
+     "backref": 8,
+     "leads": [
+      {
+       "text": "Rim cirri <40",
+       "kind": "taxon",
+       "target": "*A. auricoma mediterranea*, *A. capensis*, *A. japonica*, *A. uniloba*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Rim cirri >=50",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 10,
+     "backref": 8,
+     "leads": [
+      {
+       "text": "Teeth per row 6",
+       "kind": "jump",
+       "target": "11",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth per row 7 or 8 or 10",
+       "kind": "jump",
+       "target": "12",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 11,
+     "backref": 10,
+     "leads": [
+      {
+       "text": "Veil cirri 23 to <35",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Veil cirri >=35",
+       "kind": "taxon",
+       "target": "*Amphictene catharinensis*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 12,
+     "backref": 10,
+     "leads": [
+      {
+       "text": "Teeth per row 7",
+       "kind": "jump",
+       "target": "13",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth per row 8 or 10",
+       "kind": "jump",
+       "target": "15",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 13,
+     "backref": 12,
+     "leads": [
+      {
+       "text": "Rim cirri <40",
+       "kind": "taxon",
+       "target": "*A. auricoma mediterranea*, *A. catharinensis*, *A. japonica*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Rim cirri >=50",
+       "kind": "jump",
+       "target": "14",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 14,
+     "backref": 13,
+     "leads": [
+      {
+       "text": "Notopodia reduced: 1-3 and posterior",
+       "kind": "taxon",
+       "target": "*Amphictene favona*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Notopodia reduced: 1-3 only",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 15,
+     "backref": 12,
+     "leads": [
+      {
+       "text": "Teeth per row 8",
+       "kind": "taxon",
+       "target": "*A. auricoma mediterranea*, *A. crassa*, *A. favona*, *A. japonica*, *A. leioscapha*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth per row 10",
+       "kind": "taxon",
+       "target": "*Amphictene crassa*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 16,
+     "backref": 3,
+     "leads": [
+      {
+       "text": "Teeth rows 3",
+       "kind": "jump",
+       "target": "17",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Teeth rows 4 or 5",
+       "kind": "taxon",
+       "target": "*Amphictene guatemalensis*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 17,
+     "backref": 16,
+     "leads": [
+      {
+       "text": "Paleae shape: acute tip",
+       "kind": "jump",
+       "target": "18",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Paleae shape: curved",
+       "kind": "taxon",
+       "target": "*Amphictene capensis*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    },
+    {
+     "num": 18,
+     "backref": 17,
+     "leads": [
+      {
+       "text": "Notopodia reduced: 1-3 and posterior",
+       "kind": "taxon",
+       "target": "*Amphictene leioscapha*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      },
+      {
+       "text": "Notopodia reduced: 1-3 only",
+       "kind": "taxon",
+       "target": "*Amphictene auricoma s.st.*",
+       "page": null,
+       "fig": "",
+       "name_zh": ""
+      }
+     ]
+    }
+   ],
+   "lang": "en",
+   "source_style": "dash"
+  }
+ ]
+}

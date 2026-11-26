@@ -1,0 +1,72 @@
+﻿character,raw,state,type,unit,phrase,definition,key_policy
+total_somites,,,num,segments,Total number of segments (somites) including achaetous ones,,ok
+total_chaetigers,,,num,chaetigers,Total number of chaetigers,,ok
+achaetous_anterior,,,count,segments,Number of achaetous anterior segments,,ok
+gill_first_chaetiger,,,count,chaetiger,Branchiae first present on chaetiger,,ok
+gill_last_chaetiger,,,num,chaetiger,Branchiae last present on chaetiger,,ok
+gill_pairs,,,num,pairs,Number of pairs of branchiae,,ok
+gill_free_posterior_chaetigers,,,num,chaetigers,Number of posterior chaetigers without branchiae,,ok
+lobe_notopodial_first,,,num,chaetiger,Notopodial lateral lobes first present on chaetiger (any size),,ok
+lobe_neuropodial_first,,,num,chaetiger,Neuropodial lateral lobes first present on chaetiger (any size),,ok
+lobe_well_dev_from,,,num,chaetiger,Lateral lobes well developed from chaetiger,,ok
+triannulate_last_chaetiger,,,num,chaetiger,Last triannulate chaetiger (upper end of triannulate zone),,avoid (user: annulation not used as fork)
+uniannulate_first_chaetiger,,,num,chaetiger,First uniannulate chaetiger of posterior zone,,avoid (user: annulation not used as fork)
+annuli_on_chaetiger1,,,count,annuli,Number of annuli on chaetiger 1,,avoid (user: annulation not used as fork)
+nephridial_pore_first,,,count,chaetiger,Nephridial pores first present on chaetiger,,ok
+nephridial_pore_last,,,count,chaetiger,Nephridial pores last present on chaetiger,,ok
+interramal_organ_first,,,count,chaetiger,Interramal sense organs first present on chaetiger,,ok
+interramal_organ_last,,,num,chaetiger,Interramal sense organs last present on chaetiger,,ok
+pygidial_lobes,,,num,lobes,Number of pygidial lobes/papillae around anus,,avoid (user: tail features not used in key)
+pygidial_cirri,,,num,cirri,Number of pygidial cirri,,avoid (user: tail features not used in key)
+pygidial_interramal_cirri,,,num,cirri,Number of interramal anal cirri,,avoid (user: tail features not used in key)
+body_length_mm,,,num,mm,Body length,,size only; poor key character
+body_width_mm,,,num,mm,Body width,,size only; poor key character
+gills,absent,absent,cat,,Branchiae form,no branchiae,ok
+gills,cirriform,cirriform,cat,,Branchiae form,simple cirriform branchiae,ok
+gills,branched,branched,cat,,Branchiae form,branched/arborescent branchiae,ok
+gill_surface,smooth,smooth,cat,,Branchial surface,smooth,avoid (user: gill annulation not used as fork)
+gill_surface,annulate,annulate,cat,,Branchial surface,annulate/transversely wrinkled,avoid (user: gill annulation not used as fork)
+gill_length,shorter,shorter,cat,,Branchial length relative to segment length/body width,shorter than segment length or body width,ok
+gill_length,equal,equal,cat,,Branchial length relative to segment length/body width,about equal to segment length,ok
+gill_length,varies,varies,cat,,Branchial length relative to segment length/body width,length differs markedly along body,ok
+lateral_lobes,absent,absent,cat,,Lateral (epipodial) lobes on trunk,absent,ok
+lateral_lobes,present,present,cat,,Lateral (epipodial) lobes on trunk,present,ok
+lobe_shape,triangular,triangular,cat,,Shape of lateral lobes,triangular or conical,ok
+lobe_shape,rounded,rounded,cat,,Shape of lateral lobes,rounded/globular,ok
+lobe_shape,foliaceous,foliaceous,cat,,Shape of lateral lobes,leaf-like or broad flattened,ok
+lobe_shape,papilla,papilla,cat,,Shape of lateral lobes,minute papilla/knob,ok
+mid_ventral_groove,absent,absent,cat,,Mid-ventral groove,absent,avoid (user: mid-ventral groove not used as fork)
+mid_ventral_groove,present,present,cat,,Mid-ventral groove,along body,avoid (user: mid-ventral groove not used as fork)
+mid_ventral_groove,posterior,posterior,cat,,Mid-ventral groove,only posterior part of body,avoid (user: mid-ventral groove not used as fork)
+epidermal_papillae,absent,absent,cat,,Epidermal papillae/pustules,no conspicuous papillae,ok
+epidermal_papillae,present,present,cat,,Epidermal papillae/pustules,"papillae, pustules or tubercles present",ok
+lateral_crenulation,absent,absent,cat,,Lateral crenulation of posterior segments,absent,ok
+lateral_crenulation,present,present,cat,,Lateral crenulation of posterior segments,present,ok
+prostomium,pointed,pointed,cat,,Prostomium shape,conical/triangular/acute (unless described blunt),ok
+prostomium,blunt,blunt,cat,,Prostomium shape,rounded or blunt,ok
+prostomium,truncate,truncate,cat,,Prostomium shape,truncate,ok
+nuchal_organ_shape,slit,slit,cat,,Nuchal organ shape,slit or split,ok
+nuchal_organ_shape,C-shaped,C-shaped,cat,,Nuchal organ shape,C-shaped,ok
+nuchal_organ_shape,pit,pit,cat,,Nuchal organ shape,pit,ok
+nuchal_organ_shape,round,round,cat,,Nuchal organ shape,round,ok
+mouth_position,after chaetiger 1,after chaetiger 1,cat,,Position of mouth,between chaetigers 1 and 2 / behind first chaetal bundle,ok (two states may be one condition; review)
+mouth_position,at chaetiger 2,at chaetiger 2,cat,,Position of mouth,at or within chaetiger 2,ok (two states may be one condition; review)
+pygidial_ventral_lobe,absent,absent,cat,,Ventral lobe of pygidium,absent,avoid (user: tail features not used in key)
+pygidial_ventral_lobe,present,present,cat,,Ventral lobe of pygidium,present,avoid (user: tail features not used in key)
+ventral_lobe_shape,rounded,rounded,cat,,Shape of pygidial ventral lobe,rounded,avoid (user: tail features not used in key)
+ventral_lobe_shape,conical,conical,cat,,Shape of pygidial ventral lobe,conical,avoid (user: tail features not used in key)
+ventral_lobe_shape,triangular,triangular,cat,,Shape of pygidial ventral lobe,triangular,avoid (user: tail features not used in key)
+ventral_lobe_shape,keel,keel,cat,,Shape of pygidial ventral lobe,keel-like,avoid (user: tail features not used in key)
+chaetae,smooth,smooth,cat,,Chaetal type,smooth capillaries,ok
+chaetae,spinulose,spinulose,cat,,Chaetal type,spinulose capillaries,ok
+chaetae,hirsute,hirsute,cat,,Chaetal type,hirsute/hispid capillaries,ok
+chaetae,limbate,limbate,cat,,Chaetal type,limbate capillaries,ok
+n_spec,,,free,,,number of specimens: not a taxonomic character,not in matrix
+material,,,free,,,type/material notes,not in matrix
+note_general,,,free,,,empty column,not in matrix
+colour,,,free,,,colour depends on fixation/preservation state; free text,not in matrix
+mg,,,free,,,"methyl-green staining pattern; free text, one-off",not in matrix
+body_shape,,,free,,,only 3 cells filled,not in matrix
+tl_depth,,,free,,,"type-locality depth/ecology, multiple sites, not morphology",not in matrix
+lap_extent,,,free,,,extent of lobes: free text; presence folded into lateral_lobes,not in matrix
+ann_bi,,,free,,,biannulate zone: redundant with triannulate/uniannulate columns,not in matrix

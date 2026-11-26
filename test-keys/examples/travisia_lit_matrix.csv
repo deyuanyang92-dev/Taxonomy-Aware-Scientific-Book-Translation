@@ -1,0 +1,48 @@
+﻿taxon,total_somites,total_chaetigers,achaetous_anterior,gill_first_chaetiger,gill_last_chaetiger,gill_pairs,gill_free_posterior_chaetigers,lobe_notopodial_first,lobe_neuropodial_first,lobe_well_dev_from,triannulate_last_chaetiger,uniannulate_first_chaetiger,annuli_on_chaetiger1,nephridial_pore_first,nephridial_pore_last,interramal_organ_first,interramal_organ_last,pygidial_lobes,pygidial_cirri,pygidial_interramal_cirri,body_length_mm,body_width_mm,gills,gill_surface,gill_length,lateral_lobes,lobe_shape,mid_ventral_groove,epidermal_papillae,lateral_crenulation,prostomium,nuchal_organ_shape,mouth_position,pygidial_ventral_lobe,ventral_lobe_shape,chaetae
+Travisia abyssorum,23-25,23,?,-,-,-,-,?,?,?,?,?,?,6,9,?,?,?,?,?,21,6,absent,-,-,?,?,?,present,?,blunt,?,?,?,?,?
+Travisia amadoi,30-31,29-30,?,2,?,?,?,17-18,?,?,?,25,?,?,?,1,?,7,?,?,6.7-36,1.7-4.8,cirriform,annulate,?,present,?,?,present,absent,pointed,?,after chaetiger 1,?,?,smooth
+Travisia amoyana,34-35,33-34,?,2,28-32,27-31,?,15,15,?,19,28,2,3,14,1,33-34,6,?,?,18-45,2-5.6,cirriform,smooth,equal,present,triangular,absent,present,present,pointed,?,after chaetiger 1,present,triangular,limbate
+Travisia antarctica,28,25,4,2,?,20-21,?,?,?,?,16-17,24,?,?,?,?,?,?,?,?,35,11,cirriform,?,?,present,?,?,present,?,?,slit,after chaetiger 1,present,conical,smooth
+Travisia araciae,29,24,5,2,24,23,?,13,?,?,?,?,2,?,?,1,?,8,?,?,?,?,cirriform,smooth,?,present,?,absent,present,?,pointed,slit,?,present,?,smooth
+Travisia arborifera,?,36,?,2,29-30,28-29,6-7,10,10,14,19,27,2,3,14,1,?,?,6-8,?,10-38,3-11,branched,?,varies,present,?,absent,present,present,?,?,after chaetiger 1,?,?,smooth
+Travisia brevis,28,25,3,2,23,22,?,2,2,16,15-16,19,2,7,14,1,25,?,12,?,11-21,3.5-4,cirriform,?,shorter,present,triangular,absent,absent,?,blunt,slit,after chaetiger 1,present,rounded,smooth
+Travisia carnea,25-29,24,?,3,20,17,?,?,?,?,?,?,?,3,14,?,?,?,?,?,12-25,3-4,cirriform,?,shorter,present,?,?,absent,?,pointed,?,after chaetiger 1,present,rounded,?
+Travisia chiloensis,27,24,3,2,21,20,3,17,17,?,11,1,?,7,14,1,23,?,?,?,4.4,9,cirriform,annulate,?,present,?,absent,?,?,?,?,?,?,?,?
+Travisia chinensis,30,29,1,2,?,?,2,19,16,?,15,26,?,3,14,1,28,10,?,?,30,5,cirriform,smooth,shorter,present,triangular,?,?,?,pointed,?,after chaetiger 1,present,triangular,smooth
+Travisia concinna,?,35,?,2,?,33,?,17,18,?,?,?,?,?,?,?,?,7,?,?,?,?,?,?,shorter,present,?,?,present,?,pointed,?,after chaetiger 1,present,?,smooth | hirsute
+Travisia doellojuradoi,?,?,?,?,?,16-17,6,?,?,?,?,?,?,?,?,?,?,?,?,?,15-25,4-5,cirriform,annulate,?,?,?,?,present,present,pointed,?,?,?,?,smooth
+Travisia elongata,45,46,?,2,?,?,?,20,26,?,?,?,?,?,?,?,?,?,?,?,30,6.5,cirriform,?,?,present,?,?,?,?,?,?,?,?,?,smooth
+Travisia filamentosa,?,33,?,3,30,28,?,15,15,?,?,?,?,1,14,?,?,?,6,?,68,12,branched,?,?,present,?,?,present,present,pointed,?,at chaetiger 2,?,?,spinulose
+Travisia foetida,31,27,4,2,25,24,?,?,?,?,14,19,?,3,14,1,27,?,?,?,72-85,15-32,cirriform,?,?,present,?,?,present,?,truncate,slit,after chaetiger 1,absent,-,hirsute
+Travisia forbesii,?,?,?,?,?,17,?,?,?,?,?,?,?,?,?,?,?,6,?,?,?,?,?,?,?,present,rounded | triangular,?,?,?,pointed,?,after chaetiger 1,?,?,smooth
+Travisia forbesii intermedia,?,27-29,2-3,2,?,?,1-2,11-13,?,?,?,?,?,?,?,1,?,6-7,?,?,28-45,?,?,?,?,present,?,?,?,present,?,?,?,?,?,?
+Travisia fusiformis,35-36,?,?,2,?,34,?,2,2,17,12,35,?,3,14,1,?,?,?,?,22-35,2.1-3,cirriform,?,?,present,triangular,present,absent,absent,pointed,slit,after chaetiger 1,present,rounded,hirsute
+Travisia fusus,28,28,0,-,-,-,-,-,-,?,15,19,?,?,?,?,?,?,?,?,14,2.5,absent,-,-,?,?,?,present,?,blunt,slit,after chaetiger 1,present,rounded,?
+Travisia gigas,46,46,?,2,44-45,43-44,?,15,15,?,15,42,?,?,?,?,?,?,6,?,50-100,?,cirriform,?,varies,present,triangular,?,absent,?,pointed,slit,after chaetiger 1,present,rounded,smooth
+Travisia glabra,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,2.9,0.8,?,?,?,?,?,?,?,?,blunt,?,?,?,?,?
+Travisia glandulosa,?,20,?,-,-,-,-,?,?,?,?,?,?,?,?,?,?,12,?,4-5,7,?,absent,-,-,?,?,?,present,?,?,?,?,?,?,?
+Travisia granulata,?,26-44,5,2,?,?,?,?,?,?,19,?,2,?,?,?,?,?,?,?,30-52,3-7,cirriform,?,?,present,?,?,present,?,blunt,slit,after chaetiger 1,present,rounded,?
+Travisia gravieri,?,16-17,?,-,-,0,-,?,?,?,?,?,?,?,?,?,?,?,?,?,5,1.5,absent,-,-,present,papilla,?,?,absent,pointed,?,after chaetiger 1,present,rounded,?
+Travisia hernandezalcantarai,28-32,26-28,2-4,2,22-25,22-25,?,-,-,?,13-14,18,2,?,?,1,?,12,0,?,20-39,7-9,cirriform,annulate,?,absent,?,posterior,present,present,pointed,slit,after chaetiger 1,?,?,spinulose
+Travisia hobsonae,?,30-31,0-1,3,30-32,28-29,?,1,?,14-18,12,27-28,?,3,14,1,?,?,?,?,14,2,cirriform,?,varies,present,?,posterior,absent,absent | present,pointed,pit,after chaetiger 1,present,rounded,hirsute
+Travisia horsti,?,28,?,2,23,21,?,15,15,?,?,?,?,5,?,?,?,?,?,?,38,10,cirriform,?,varies,present,foliaceous,absent,present,?,pointed,C-shaped,after chaetiger 1,?,?,?
+Travisia japonica,39-40,39-40,0,2,27,26,5-6,15,15,?,20,30,3,2-4,14,?,29,6,6,?,46-52,6,cirriform,smooth,varies,present,foliaceous,absent,present,?,pointed,?,at chaetiger 2,present,triangular,?
+Travisia kerguelensis,?,25,?,?,?,?,?,?,?,?,?,?,?,3,14,?,?,?,2,?,20,7,cirriform,?,?,present,?,?,?,present,?,?,after chaetiger 1,?,?,?
+Travisia lithophila,47-48,52-53,3-4,2,?,?,?,12,12,?,?,?,?,3,14,1,?,7,?,?,48,2,cirriform,?,varies,present,rounded,absent,?,?,pointed,slit,?,?,?,hirsute
+Travisia monroi,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,2,?,?,?,?,?,?,?,?,?,absent,?,?,?,?,?,?
+Travisia nigrocincta,?,25,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,34,6,?,?,?,?,papilla,?,?,?,pointed,?,?,?,?,smooth
+Travisia novaezealandiae,38-40,37-39,0-2,2,?,35-38,0-2,6,3,?,14-15,?,?,3,14,?,?,?,?,?,39,4.5-7,cirriform,?,?,present,rounded,absent,present,present,?,?,?,present,?,?
+Travisia oksae,27,24,3,2,23,22,1,15,16,?,19,?,?,3,14,?,?,7,?,?,15,5.5,cirriform,smooth,?,present,?,?,present,?,pointed,?,after chaetiger 1,present,rounded,smooth
+Travisia olens,?,31,0,2,28,27,3,1,13,13,21,?,?,3,14,?,?,15,?,?,72,12,cirriform,smooth,?,present,?,?,?,present,pointed,?,after chaetiger 1,?,?,smooth
+Travisia oregonensis,23,18,5,2,17,16,?,?,?,?,?,11,?,?,?,?,?,?,?,?,10,3,cirriform,?,?,present,?,?,present,?,pointed,slit,after chaetiger 1,present,rounded,spinulose | hirsute
+Travisia palmeri,?,24,?,2,23,22,?,15-16,15-16,?,19-20,?,?,?,?,1,20,?,?,?,22,2-5,cirriform,?,?,present,?,?,present,?,?,slit,after chaetiger 1,present,rounded,smooth
+Travisia parva,?,20,1,2,20,19,?,-,-,?,?,?,?,?,?,?,?,8,?,?,6-12,?,?,?,?,absent,?,?,absent,absent,pointed,?,?,?,?,?
+Travisia profundi,25,26,11,3,14,12,?,-,-,?,14,18,?,?,?,?,?,10-11,?,?,27,5.25,cirriform,annulate,shorter | equal,absent,?,absent,present,?,blunt,?,at chaetiger 2,?,?,?
+Travisia pupa,29-31,25-27,3-6,2,23-26,23-25,?,?,?,?,14,20,2,3,14,?,?,?,?,?,40-85,8-32,cirriform,?,shorter,present,triangular,present,absent,?,pointed,slit,after chaetiger 1,present,conical,hirsute
+Travisia sanrikuensis,25,20,5,2,?,19-20,?,15-16,15-16,?,?,?,?,?,?,1,20,8,?,?,18.9-25.8,5-6.4,cirriform,smooth,varies,present,?,absent,present,present,pointed,slit,?,?,?,?
+Travisia satunensis,?,35-37,?,2,35,34,?,15,15,?,14,27,?,3,14,1,?,?,10,?,9.7-30.6,1.1-7.4,branched,?,varies,present,?,?,present,?,pointed,round,at chaetiger 2,?,?,spinulose
+Travisia thailandensis,?,20-26,2,2,22,21,?,?,1,15-20,14,19,2,7,14,1,26,?,0,?,2.1-14,1-3.4,cirriform,annulate,varies,present,rounded,present,present,?,pointed,?,after chaetiger 1,?,?,spinulose
+Travisia tincta,?,21,?,2,20,19,?,2,2,?,?,?,?,?,?,?,?,?,?,?,13,2,cirriform,?,varies,present,?,?,absent,?,?,slit,after chaetiger 1,present,conical,?
+Travisia tribus,26-62,26-54,3,2,?,37-54,6-9,1,1,12-16,25-28,?,2,3,?,1,40,5-7,?,2-3,21,4,cirriform,annulate,?,present,?,absent,present,?,pointed,?,after chaetiger 1,?,?,smooth
+Travisia una,20-25,?,0,3-6,?,8-14,3-8,15-17,15-17,?,?,1,1,3,?,1,15,9-22,?,?,8.2,2.3,cirriform,smooth,?,present,?,absent,present,?,pointed,?,after chaetiger 1,?,?,smooth
+Travisia zieglerae,21-24,19-20,2-4,-,-,-,-,2,2,8,?,?,?,?,?,?,?,11,?,?,1.2-7.5,0.25-0.8,absent,-,-,present,?,?,?,?,pointed,?,?,present,keel,smooth

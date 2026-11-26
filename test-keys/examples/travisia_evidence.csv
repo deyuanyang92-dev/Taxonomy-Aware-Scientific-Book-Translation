@@ -1,0 +1,5 @@
+pattern,verdict,basis
+"(?i)pygid|anal|tail|posterior.*(segment|chaetiger)|crenel|crenul",avoid,用户规则 2026-11-24：尾部性状不作分支依据（易断/收缩）
+"(?i)annul",avoid,用户规则 2026-11-24：体环数/环状性不作分支依据
+"(?i)mid.?ventral",avoid,用户规则 2026-11-24：腹中沟不作分支依据
+"(?i)staining",avoid,染色图式随固定与染色法变化

@@ -1,0 +1,799 @@
+{
+ "taxa": 47,
+ "characters_used": [
+  "total_somites",
+  "total_chaetigers",
+  "achaetous_anterior",
+  "gill_first_chaetiger",
+  "gill_last_chaetiger",
+  "gill_pairs",
+  "gill_free_posterior_chaetigers",
+  "lobe_notopodial_first",
+  "lobe_neuropodial_first",
+  "lobe_well_dev_from",
+  "nephridial_pore_first",
+  "nephridial_pore_last",
+  "interramal_organ_first",
+  "interramal_organ_last",
+  "body_length_mm",
+  "body_width_mm",
+  "gills",
+  "gill_length",
+  "lateral_lobes",
+  "lobe_shape",
+  "epidermal_papillae",
+  "lateral_crenulation",
+  "prostomium",
+  "mouth_position",
+  "chaetae"
+ ],
+ "excluded": [
+  [
+   "nuchal_organ_shape",
+   "未编码文字：4 个状态中 3 个只出现一次。填 codebook 合并状态后重跑，或 --include-free"
+  ]
+ ],
+ "numeric_bins": {
+  "total_somites": [
+   "<26",
+   "26 to <30",
+   ">=30"
+  ],
+  "total_chaetigers": [
+   "<24",
+   "24 to <26",
+   ">=26"
+  ],
+  "achaetous_anterior": [
+   "<1",
+   "1 to <2",
+   ">=2"
+  ],
+  "gill_first_chaetiger": [
+   "2",
+   "3",
+   "6"
+  ],
+  "gill_last_chaetiger": [
+   "<22",
+   "22 to <24",
+   ">=24"
+  ],
+  "gill_pairs": [
+   "<19",
+   "19 to <23",
+   ">=23"
+  ],
+  "gill_free_posterior_chaetigers": [
+   "<3",
+   "3 to <6",
+   ">=6"
+  ],
+  "lobe_notopodial_first": [
+   "<6",
+   "6 to <15",
+   ">=15"
+  ],
+  "lobe_neuropodial_first": [
+   "<3",
+   "3 to <15",
+   ">=15"
+  ],
+  "lobe_well_dev_from": [
+   "<12",
+   "12 to <15",
+   ">=15"
+  ],
+  "nephridial_pore_first": [
+   "<5",
+   "5 to <7",
+   ">=7"
+  ],
+  "nephridial_pore_last": [
+   "9",
+   "14"
+  ],
+  "interramal_organ_first": [
+   "1"
+  ],
+  "interramal_organ_last": [
+   "<26",
+   "26 to <29",
+   ">=29"
+  ],
+  "body_length_mm": [
+   "<27",
+   "27 to <39",
+   ">=39"
+  ],
+  "body_width_mm": [
+   "<5.25",
+   "5.25 to <8",
+   ">=8"
+  ]
+ },
+ "unresolved_groups": [
+  [
+   "Travisia glandulosa",
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia tincta",
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia abyssorum",
+   "Travisia glandulosa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia parva",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia glandulosa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia gravieri",
+   "Travisia zieglerae",
+   "Travisia glandulosa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia zieglerae",
+   "Travisia glandulosa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia zieglerae",
+   "Travisia glandulosa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia oregonensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia oregonensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia parva",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia tincta",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia thailandensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia fusiformis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia carnea",
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia brevis",
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia thailandensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia palmeri",
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia araciae",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia fusiformis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia kerguelensis",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia oksae"
+  ],
+  [
+   "Travisia kerguelensis",
+   "Travisia oksae"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia araciae"
+  ],
+  [
+   "Travisia kerguelensis",
+   "Travisia araciae"
+  ],
+  [
+   "Travisia nigrocincta",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia araciae",
+   "Travisia nigrocincta",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia chiloensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia antarctica",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia pupa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia araciae",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia fusus",
+   "Travisia glabra",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia glabra"
+  ],
+  [
+   "Travisia arborifera",
+   "Travisia glabra"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia granulata"
+  ],
+  [
+   "Travisia forbesii intermedia",
+   "Travisia granulata"
+  ],
+  [
+   "Travisia elongata",
+   "Travisia granulata",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia profundi",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia granulata"
+  ],
+  [
+   "Travisia forbesii intermedia",
+   "Travisia novaezealandiae",
+   "Travisia granulata"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia concinna",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia satunensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia thailandensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia fusiformis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia tribus",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia pupa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia thailandensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia forbesii intermedia",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia lithophila",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia lithophila",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia lithophila"
+  ],
+  [
+   "Travisia novaezealandiae",
+   "Travisia forbesii intermedia",
+   "Travisia lithophila"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia pupa"
+  ],
+  [
+   "Travisia forbesii intermedia",
+   "Travisia pupa"
+  ],
+  [
+   "Travisia horsti",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia pupa",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia concinna",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia horsti",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia chinensis",
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia elongata",
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia gigas",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia amadoi",
+   "Travisia monroi",
+   "Travisia forbesii",
+   "Travisia chinensis"
+  ],
+  [
+   "Travisia chinensis",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia concinna",
+   "Travisia amadoi",
+   "Travisia chinensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia elongata",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia concinna",
+   "Travisia elongata",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia forbesii",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia horsti",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia concinna",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia thailandensis",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia horsti",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia elongata",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia japonica",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia hobsonae",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia doellojuradoi",
+   "Travisia una",
+   "Travisia forbesii"
+  ],
+  [
+   "Travisia monroi",
+   "Travisia foetida"
+  ],
+  [
+   "Travisia novaezealandiae",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia novaezealandiae",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia foetida",
+   "Travisia forbesii intermedia"
+  ],
+  [
+   "Travisia elongata",
+   "Travisia monroi"
+  ],
+  [
+   "Travisia foetida",
+   "Travisia monroi"
+  ]
+ ],
+ "mean_steps": 5.57,
+ "pairs": {
+  "separated": 1009,
+  "evidence_gap": 72,
+  "matrix_silent": 0
+ },
+ "weak_pairs": [
+  "Travisia abyssorum / Travisia forbesii: 仅 prostomium",
+  "Travisia abyssorum / Travisia glabra: 仅 body_width_mm",
+  "Travisia amadoi / Travisia doellojuradoi: 仅 lateral_crenulation",
+  "Travisia amadoi / Travisia elongata: 仅 body_width_mm",
+  "Travisia amadoi / Travisia glabra: 仅 prostomium",
+  "Travisia amadoi / Travisia granulata: 仅 prostomium",
+  "Travisia amadoi / Travisia horsti: 仅 body_width_mm",
+  "Travisia amadoi / Travisia palmeri: 仅 total_chaetigers",
+  "Travisia amadoi / Travisia thailandensis: 仅 chaetae",
+  "Travisia amadoi / Travisia tribus: 仅 lobe_notopodial_first",
+  "Travisia amoyana / Travisia elongata: 仅 chaetae",
+  "Travisia amoyana / Travisia forbesii intermedia: 仅 lobe_notopodial_first",
+  "Travisia amoyana / Travisia glabra: 仅 prostomium",
+  "Travisia amoyana / Travisia granulata: 仅 prostomium",
+  "Travisia amoyana / Travisia kerguelensis: 仅 total_chaetigers",
+  "Travisia amoyana / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia antarctica / Travisia araciae: 仅 gill_pairs",
+  "Travisia antarctica / Travisia chiloensis: 仅 body_length_mm",
+  "Travisia antarctica / Travisia forbesii: 仅 gill_pairs",
+  "Travisia antarctica / Travisia forbesii intermedia: 仅 total_chaetigers",
+  "Travisia antarctica / Travisia horsti: 仅 total_chaetigers",
+  "Travisia antarctica / Travisia nigrocincta: 仅 body_width_mm",
+  "Travisia araciae / Travisia doellojuradoi: 仅 gill_pairs",
+  "Travisia araciae / Travisia forbesii: 仅 gill_pairs",
+  "Travisia araciae / Travisia forbesii intermedia: 仅 total_chaetigers",
+  "Travisia araciae / Travisia glabra: 仅 prostomium",
+  "Travisia arborifera / Travisia forbesii: 仅 gill_pairs",
+  "Travisia arborifera / Travisia forbesii intermedia: 仅 gill_free_posterior_chaetigers",
+  "Travisia arborifera / Travisia fusus: 仅 gills",
+  "Travisia arborifera / Travisia granulata: 仅 gills",
+  "Travisia arborifera / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia arborifera / Travisia nigrocincta: 仅 total_chaetigers",
+  "Travisia carnea / Travisia doellojuradoi: 仅 epidermal_papillae",
+  "Travisia carnea / Travisia glabra: 仅 prostomium",
+  "Travisia carnea / Travisia kerguelensis: 仅 body_width_mm",
+  "Travisia carnea / Travisia una: 仅 epidermal_papillae",
+  "Travisia chiloensis / Travisia forbesii: 仅 gill_pairs",
+  "Travisia chiloensis / Travisia glabra: 仅 body_width_mm",
+  "Travisia chinensis / Travisia elongata: 仅 body_width_mm",
+  "Travisia concinna / Travisia doellojuradoi: 仅 gill_pairs",
+  "Travisia concinna / Travisia foetida: 仅 prostomium",
+  "Travisia concinna / Travisia forbesii: 仅 gill_pairs",
+  "Travisia concinna / Travisia forbesii intermedia: 仅 lobe_notopodial_first",
+  "Travisia concinna / Travisia fusus: 仅 prostomium",
+  "Travisia concinna / Travisia glabra: 仅 prostomium",
+  "Travisia concinna / Travisia glandulosa: 仅 total_chaetigers",
+  "Travisia concinna / Travisia granulata: 仅 prostomium",
+  "Travisia concinna / Travisia kerguelensis: 仅 total_chaetigers",
+  "Travisia concinna / Travisia nigrocincta: 仅 total_chaetigers",
+  "Travisia concinna / Travisia pupa: 仅 epidermal_papillae",
+  "Travisia doellojuradoi / Travisia glabra: 仅 prostomium",
+  "Travisia doellojuradoi / Travisia glandulosa: 仅 gills",
+  "Travisia doellojuradoi / Travisia kerguelensis: 仅 body_width_mm",
+  "Travisia doellojuradoi / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia doellojuradoi / Travisia oregonensis: 仅 chaetae",
+  "Travisia doellojuradoi / Travisia palmeri: 仅 gill_pairs",
+  "Travisia doellojuradoi / Travisia sanrikuensis: 仅 gill_pairs",
+  "Travisia doellojuradoi / Travisia tribus: 仅 gill_pairs",
+  "Travisia doellojuradoi / Travisia zieglerae: 仅 gills",
+  "Travisia elongata / Travisia forbesii intermedia: 仅 lobe_notopodial_first",
+  "Travisia elongata / Travisia gigas: 仅 body_length_mm",
+  "Travisia elongata / Travisia horsti: 仅 body_width_mm",
+  "Travisia elongata / Travisia japonica: 仅 body_length_mm",
+  "Travisia elongata / Travisia nigrocincta: 仅 total_chaetigers",
+  "Travisia filamentosa / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia foetida / Travisia novaezealandiae: 仅 body_width_mm",
+  "Travisia forbesii / Travisia fusus: 仅 prostomium",
+  "Travisia forbesii / Travisia gigas: 仅 gill_pairs",
+  "Travisia forbesii / Travisia glabra: 仅 prostomium",
+  "Travisia forbesii / Travisia granulata: 仅 prostomium",
+  "Travisia forbesii / Travisia gravieri: 仅 lobe_shape",
+  "Travisia forbesii / Travisia lithophila: 仅 chaetae",
+  "Travisia forbesii / Travisia nigrocincta: 仅 lobe_shape",
+  "Travisia forbesii / Travisia novaezealandiae: 仅 gill_pairs",
+  "Travisia forbesii / Travisia oksae: 仅 gill_pairs",
+  "Travisia forbesii / Travisia olens: 仅 gill_pairs",
+  "Travisia forbesii / Travisia oregonensis: 仅 chaetae",
+  "Travisia forbesii / Travisia palmeri: 仅 gill_pairs",
+  "Travisia forbesii / Travisia sanrikuensis: 仅 gill_pairs",
+  "Travisia forbesii / Travisia tincta: 仅 gill_pairs",
+  "Travisia forbesii / Travisia tribus: 仅 gill_pairs",
+  "Travisia forbesii intermedia / Travisia gigas: 仅 lobe_notopodial_first",
+  "Travisia forbesii intermedia / Travisia glabra: 仅 body_length_mm",
+  "Travisia forbesii intermedia / Travisia hernandezalcantarai: 仅 lateral_lobes",
+  "Travisia forbesii intermedia / Travisia horsti: 仅 lobe_notopodial_first",
+  "Travisia forbesii intermedia / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia forbesii intermedia / Travisia nigrocincta: 仅 total_chaetigers",
+  "Travisia forbesii intermedia / Travisia satunensis: 仅 lobe_notopodial_first",
+  "Travisia forbesii intermedia / Travisia thailandensis: 仅 body_length_mm",
+  "Travisia fusiformis / Travisia glabra: 仅 prostomium",
+  "Travisia fusiformis / Travisia hobsonae: 仅 gill_first_chaetiger",
+  "Travisia fusiformis / Travisia tincta: 仅 gill_pairs",
+  "Travisia fusus / Travisia glandulosa: 仅 total_chaetigers",
+  "Travisia glabra / Travisia granulata: 仅 body_length_mm",
+  "Travisia glabra / Travisia gravieri: 仅 prostomium",
+  "Travisia glabra / Travisia hobsonae: 仅 prostomium",
+  "Travisia glabra / Travisia kerguelensis: 仅 body_width_mm",
+  "Travisia glabra / Travisia novaezealandiae: 仅 body_length_mm",
+  "Travisia glabra / Travisia oregonensis: 仅 prostomium",
+  "Travisia glabra / Travisia parva: 仅 prostomium",
+  "Travisia glabra / Travisia sanrikuensis: 仅 prostomium",
+  "Travisia glabra / Travisia satunensis: 仅 prostomium",
+  "Travisia glabra / Travisia thailandensis: 仅 prostomium",
+  "Travisia glabra / Travisia tribus: 仅 prostomium",
+  "Travisia glabra / Travisia una: 仅 prostomium",
+  "Travisia glabra / Travisia zieglerae: 仅 prostomium",
+  "Travisia glandulosa / Travisia oregonensis: 仅 gills",
+  "Travisia glandulosa / Travisia parva: 仅 epidermal_papillae",
+  "Travisia glandulosa / Travisia sanrikuensis: 仅 gills",
+  "Travisia glandulosa / Travisia thailandensis: 仅 gills",
+  "Travisia glandulosa / Travisia una: 仅 gills",
+  "Travisia granulata / Travisia lithophila: 仅 prostomium",
+  "Travisia gravieri / Travisia oregonensis: 仅 gills",
+  "Travisia gravieri / Travisia una: 仅 gills",
+  "Travisia hernandezalcantarai / Travisia horsti: 仅 lateral_lobes",
+  "Travisia hernandezalcantarai / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia hernandezalcantarai / Travisia novaezealandiae: 仅 lateral_lobes",
+  "Travisia kerguelensis / Travisia monroi: 仅 lateral_crenulation",
+  "Travisia kerguelensis / Travisia nigrocincta: 仅 body_length_mm",
+  "Travisia kerguelensis / Travisia palmeri: 仅 body_width_mm",
+  "Travisia kerguelensis / Travisia sanrikuensis: 仅 total_chaetigers",
+  "Travisia kerguelensis / Travisia una: 仅 body_width_mm",
+  "Travisia monroi / Travisia novaezealandiae: 仅 lateral_crenulation",
+  "Travisia monroi / Travisia olens: 仅 lateral_crenulation",
+  "Travisia monroi / Travisia sanrikuensis: 仅 lateral_crenulation",
+  "Travisia nigrocincta / Travisia oksae: 仅 body_length_mm",
+  "Travisia oksae / Travisia palmeri: 仅 body_width_mm",
+  "Travisia oregonensis / Travisia sanrikuensis: 仅 gill_pairs",
+  "Travisia palmeri / Travisia sanrikuensis: 仅 total_chaetigers",
+  "Travisia parva / Travisia tincta: 仅 lateral_lobes",
+  "Travisia tincta / Travisia zieglerae: 仅 gills"
+ ],
+ "unseparated_pairs": [
+  "Travisia abyssorum / Travisia glandulosa",
+  "Travisia abyssorum / Travisia monroi",
+  "Travisia amadoi / Travisia chinensis",
+  "Travisia amadoi / Travisia concinna",
+  "Travisia amadoi / Travisia forbesii",
+  "Travisia amadoi / Travisia monroi",
+  "Travisia antarctica / Travisia monroi",
+  "Travisia araciae / Travisia kerguelensis",
+  "Travisia araciae / Travisia monroi",
+  "Travisia araciae / Travisia nigrocincta",
+  "Travisia arborifera / Travisia glabra",
+  "Travisia brevis / Travisia glabra",
+  "Travisia brevis / Travisia monroi",
+  "Travisia carnea / Travisia forbesii",
+  "Travisia carnea / Travisia monroi",
+  "Travisia chiloensis / Travisia monroi",
+  "Travisia chinensis / Travisia concinna",
+  "Travisia chinensis / Travisia forbesii",
+  "Travisia chinensis / Travisia monroi",
+  "Travisia concinna / Travisia elongata",
+  "Travisia concinna / Travisia monroi",
+  "Travisia doellojuradoi / Travisia forbesii",
+  "Travisia doellojuradoi / Travisia una",
+  "Travisia elongata / Travisia forbesii",
+  "Travisia elongata / Travisia granulata",
+  "Travisia elongata / Travisia monroi",
+  "Travisia foetida / Travisia forbesii intermedia",
+  "Travisia foetida / Travisia monroi",
+  "Travisia forbesii / Travisia forbesii intermedia",
+  "Travisia forbesii / Travisia glandulosa",
+  "Travisia forbesii / Travisia kerguelensis",
+  "Travisia forbesii / Travisia monroi",
+  "Travisia forbesii / Travisia una",
+  "Travisia forbesii / Travisia zieglerae",
+  "Travisia forbesii intermedia / Travisia granulata",
+  "Travisia forbesii intermedia / Travisia lithophila",
+  "Travisia forbesii intermedia / Travisia novaezealandiae",
+  "Travisia forbesii intermedia / Travisia pupa",
+  "Travisia fusiformis / Travisia monroi",
+  "Travisia fusus / Travisia glabra",
+  "Travisia fusus / Travisia monroi",
+  "Travisia gigas / Travisia monroi",
+  "Travisia glabra / Travisia glandulosa",
+  "Travisia glabra / Travisia monroi",
+  "Travisia glabra / Travisia palmeri",
+  "Travisia glabra / Travisia tincta",
+  "Travisia glandulosa / Travisia gravieri",
+  "Travisia glandulosa / Travisia monroi",
+  "Travisia glandulosa / Travisia zieglerae",
+  "Travisia granulata / Travisia monroi",
+  "Travisia granulata / Travisia novaezealandiae",
+  "Travisia gravieri / Travisia monroi",
+  "Travisia gravieri / Travisia zieglerae",
+  "Travisia hobsonae / Travisia monroi",
+  "Travisia horsti / Travisia monroi",
+  "Travisia japonica / Travisia monroi",
+  "Travisia kerguelensis / Travisia oksae",
+  "Travisia lithophila / Travisia monroi",
+  "Travisia lithophila / Travisia novaezealandiae",
+  "Travisia monroi / Travisia nigrocincta",
+  "Travisia monroi / Travisia oksae",
+  "Travisia monroi / Travisia oregonensis",
+  "Travisia monroi / Travisia palmeri",
+  "Travisia monroi / Travisia parva",
+  "Travisia monroi / Travisia profundi",
+  "Travisia monroi / Travisia pupa",
+  "Travisia monroi / Travisia satunensis",
+  "Travisia monroi / Travisia thailandensis",
+  "Travisia monroi / Travisia tincta",
+  "Travisia monroi / Travisia tribus",
+  "Travisia monroi / Travisia una",
+  "Travisia monroi / Travisia zieglerae"
+ ],
+ "policy_excluded": [
+  "annuli_on_chaetiger1",
+  "gill_surface",
+  "mid_ventral_groove",
+  "pygidial_cirri",
+  "pygidial_interramal_cirri",
+  "pygidial_lobes",
+  "pygidial_ventral_lobe",
+  "triannulate_last_chaetiger",
+  "uniannulate_first_chaetiger",
+  "ventral_lobe_shape"
+ ]
+}

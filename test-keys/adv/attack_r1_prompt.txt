@@ -1,0 +1,13 @@
+你是攻击方审查员。只在目录 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/corpus/ 内新建文件，不得修改仓库任何其他文件，不派生子任务。用中文写说明。
+
+读 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/SPEC.md（共用规范）和你上一轮的审查报告 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/codex_audit_keys.md。
+任务：按 SPEC 的样例格式，写 40–60 个检索表样例，每例一个 JSON 文件，写完一个就落盘。
+要求覆盖：
+- 编号格式：1/1'、1a/1b、1/—、•备择、1(3) 回指、多歧 polytomy、缩进式 indented（字母层级或纯缩进）、表格式（Markdown 表格三栏）、去向范围 5-6、无点号 "1 Body..."、罗马数字或 A/B 字母偶句号（若原书有此惯例）。
+- 语种：英、日（検索表、…………図）、俄（Таблица для определения）、法（Clé）、德（Bestimmungsschlüssel，S. 12）、拉丁、西、中文译文。
+- 版式：跨页偶句、一支折成多行、点线去向、去向在下一行、页眉/页码混入、同页两张表、表后紧接正文。
+- 故意的错误：每个问题码至少 2 例（含 no_keys：调用方声明有表但文本格式怪异）。
+- 合法但易误报：合法向小号回跳、声明的双入口、网状 multi_parent、多歧、终点相同的两个分支。
+- 译文对：去向学名被改成属名/中文/数字、两支学名互换、缺支、顺序变化、页码丢失。
+所有期望值按真实分类学惯例；不确定的在 why 里写「未确证」。
+完成后写 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/corpus/INDEX.md：一行一例（id｜格式｜语种｜要击穿什么）。最后输出「攻击样例完毕」。

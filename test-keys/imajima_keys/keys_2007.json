@@ -1,0 +1,535 @@
+{
+ "pages": [
+  {
+   "page": 5,
+   "chapter": "鳞沙蚕科 Aphroditidae",
+   "kind": "chapter",
+   "blocks": [
+    {
+     "block_id": "p005_k00",
+     "role": "heading",
+     "level": 2,
+     "source_page": 5,
+     "text": "日本産コガネウロムシ科の種の検索",
+     "translation": "日本产金鳞虫科种的检索"
+    },
+    {
+     "block_id": "p005_k01",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "体背面上のフェルト状の背剛毛がその下にある背鱗を完全に覆う",
+     "translation": "体背面的毡状背刚毛完全覆盖其下的背鳞",
+     "couplet": {
+      "marker": "1.",
+      "lead": "1",
+      "key": 1,
+      "name": null,
+      "target": "2"
+     }
+    },
+    {
+     "block_id": "p005_k02",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "体背面上にフェル卜状の背剛毛がないか、またはごく少量あるが,背鱗は完全に露出する。",
+     "translation": "体背面无毡状背刚毛，或仅有极少，背鳞完全裸露。",
+     "couplet": {
+      "marker": "—",
+      "lead": "1'",
+      "key": 1,
+      "name": null,
+      "target": "12"
+     }
+    },
+    {
+     "block_id": "p005_k03",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉に眼柄がない;疣状突起が散在する顔面突起がよく発達する;体前部の少数疣足の腹足枝に多くの棘状剛毛がある;背鱗は15対;腹剛毛にけづめがない",
+     "translation": "口前叶无眼柄；具散生疣状突起的颜面突起发达；体前部少数疣足的腹叶具许多刺状刚毛；背鳞15对；腹刚毛无距爪",
+     "couplet": {
+      "marker": "2.",
+      "lead": "2",
+      "key": 1,
+      "name": "*Aphrodita*",
+      "target": "3"
+     }
+    },
+    {
+     "block_id": "p005_k04",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉に短い眼柄がある；体前部の少数疣足の腹足枝に棘状剛毛がない；背鱗は14対；腹剛毛にけづめがある",
+     "translation": "口前叶具短眼柄；体前部少数疣足的腹叶无刺状刚毛；背鳞14对；腹刚毛具距爪",
+     "couplet": {
+      "marker": "—",
+      "lead": "2'",
+      "key": 1,
+      "name": null,
+      "target": "*Heteraphrodita intermedia* （McIntosh) （图13）"
+     }
+    },
+    {
+     "block_id": "p005_k05",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "'中央感触手は細長い指状で前口葉とほぼ同長",
+     "translation": "中央触手细长指状，与口前叶几等长",
+     "couplet": {
+      "marker": "3.",
+      "lead": "3",
+      "key": 1,
+      "name": null,
+      "target": "4"
+     }
+    },
+    {
+     "block_id": "p005_k06",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "中央感触手は短い指状，または疣状",
+     "translation": "中央触手短指状或疣状",
+     "couplet": {
+      "marker": "—",
+      "lead": "3'",
+      "key": 1,
+      "name": null,
+      "target": "8"
+     }
+    },
+    {
+     "block_id": "p005_k07",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉の各眼域に2個の眼点がある.",
+     "translation": "口前叶各眼区具2个眼点。",
+     "couplet": {
+      "marker": "4.",
+      "lead": "4",
+      "key": 1,
+      "name": null,
+      "target": "5"
+     }
+    },
+    {
+     "block_id": "p005_k08",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉の眼域に眼点がない。",
+     "translation": "口前叶眼区无眼点。",
+     "couplet": {
+      "marker": "—",
+      "lead": "4'",
+      "key": 1,
+      "name": null,
+      "target": "7"
+     }
+    },
+    {
+     "block_id": "p005_k09",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背剛毛は黄褐色で太く先端が尖り，颗粒状突起が密生する",
+     "translation": "背刚毛黄褐色，粗，先端尖，密生颗粒状突起",
+     "couplet": {
+      "marker": "5.",
+      "lead": "5",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita aculeata* Linnaeus （图1）"
+     }
+    },
+    {
+     "block_id": "p005_k10",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背剛毛は細く，先端が鉤状.",
+     "translation": "背刚毛细，先端钩状。",
+     "couplet": {
+      "marker": "—",
+      "lead": "5'",
+      "key": 1,
+      "name": null,
+      "target": "6"
+     }
+    },
+    {
+     "block_id": "p005_k11",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "腹足枝の上段の腹剛毛は太く，先端近くの辺縁に短い毛を生じ，中段と下段の腹剛毛の先端に有毛部分がある",
+     "translation": "腹叶上段腹刚毛粗，近先端边缘生短毛，中段与下段腹刚毛先端具有毛部分",
+     "couplet": {
+      "marker": "6.",
+      "lead": "6",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita talpa* Quatrefages （图9）"
+     }
+    },
+    {
+     "block_id": "p005_k12",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "腹足枝の腹剛毛は上，中，下段とも先端に顕著な有毛部分がある",
+     "translation": "腹叶的腹刚毛上、中、下段均于先端具显著的有毛部分",
+     "couplet": {
+      "marker": "—",
+      "lead": "6'",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita sibogae* (Horst) （图8）"
+     }
+    },
+    {
+     "block_id": "p005_k13",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背足枝に太い黄金色の背剛毛と先端が鉤状の細い背剛毛の2種類がある;腹剛毛は上，中，下段とも先端に大きな有毛部分がある",
+     "translation": "背叶具两种背刚毛：粗大的金黄色背刚毛与先端钩状的细背刚毛；腹刚毛上、中、下段均于先端具大有毛部分",
+     "couplet": {
+      "marker": "7.",
+      "lead": "7",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita tosaensis* Imajima （图10）"
+     }
+    },
+    {
+     "block_id": "p005_k14",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背足枝に先端が鉤状の背剛毛がある;腹剛毛は上,中，下段とも辺縁にごく少量の毛を生じ",
+     "translation": "背叶具先端钩状的背刚毛；腹刚毛上、中、下段均于边缘生极少量毛",
+     "couplet": {
+      "marker": "—",
+      "lead": "7'",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita japonica* Marenzeller （图4）"
+     }
+    }
+   ]
+  },
+  {
+   "page": 6,
+   "chapter": "鳞沙蚕科 Aphroditidae",
+   "kind": "chapter",
+   "blocks": [
+    {
+     "block_id": "p006_k00",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "腹剛毛の辺縁と先端に有毛部分がない",
+     "translation": "腹刚毛的边缘与先端无有毛部分",
+     "couplet": {
+      "marker": "8.",
+      "lead": "8",
+      "key": 1,
+      "name": null,
+      "target": "9"
+     }
+    },
+    {
+     "block_id": "p006_k01",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "腹剛毛の先端に有毛部分がある。",
+     "translation": "腹刚毛先端具毛部分。",
+     "couplet": {
+      "marker": "—",
+      "lead": "8'",
+      "key": 1,
+      "name": null,
+      "target": "10"
+     }
+    },
+    {
+     "block_id": "p006_k02",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "中央感触手は短い指状で前口葉の長さの約1/3;明瞭な2対の眼点がある;すべての腹剛毛は単一，辺縁が平滑で有毛部分がい",
+     "translation": "中央触手短指状，约为口前叶长度的1/3；具2对明显的眼点；所有腹刚毛均为单齿，边缘平滑，无有毛部分",
+     "couplet": {
+      "marker": "9.",
+      "lead": "9",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita negligens* Moore （图6）"
+     }
+    },
+    {
+     "block_id": "p006_k03",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "中央感触手は小さい円錐状;眼域が大きい;背剛毛は先端が湾曲する;腹剛毛はけづめをもった鉤状剛毛",
+     "translation": "中央触手小圆锥状；眼区大；背刚毛先端弯曲；腹刚毛为具距爪的钩状刚毛",
+     "couplet": {
+      "marker": "—",
+      "lead": "9'",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita daiyumaruae* Imajima （图2）"
+     }
+    },
+    {
+     "block_id": "p006_k04",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "眼域が著しく大きく，前口葉の長さの約1/2;腹剛毛の有毛部分は穂状で長い;背剛毛は細く長い",
+     "translation": "眼区显著大，约为口前叶长度的1/2；腹刚毛的有毛部分穗状而长；背刚毛细长",
+     "couplet": {
+      "marker": "10.",
+      "lead": "10",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita macroculata* Imajima （图5）"
+     }
+    },
+    {
+     "block_id": "p006_k05",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "眼域は小さく、前口葉の長さの約1/5；背剛毛は太く短い",
+     "translation": "眼区小，约为口前叶长度的1/5；背刚毛粗短",
+     "couplet": {
+      "marker": "—",
+      "lead": "10'",
+      "key": 1,
+      "name": null,
+      "target": "11"
+     }
+    },
+    {
+     "block_id": "p006_k06",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "各腹足枝の腹剛毛は12~17本；背剛毛の軸に微小突起が密生し，先端に有毛部分がある剛毛を含み3種類",
+     "translation": "各腹叶的腹刚毛12~17根；背刚毛轴密生微突起，并含先端具毛部分的刚毛，共3种",
+     "couplet": {
+      "marker": "11.",
+      "lead": "11",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita nipponensis* Imajima （图7）"
+     }
+    },
+    {
+     "block_id": "p006_k07",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "各腹足枝の腹剛毛は13~22本;背剛毛には扇状に並んだ太い剛毛と細い剛毛の2種類.",
+     "translation": "各腹叶的腹刚毛13~22根；背刚毛有2种：扇形排列的粗刚毛与细刚毛。",
+     "couplet": {
+      "marker": "—",
+      "lead": "11'",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrodita goolmarris* Hutchings & McRae （图3）"
+     }
+    },
+    {
+     "block_id": "p006_k08",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛束に型剛毛がある；体前部の少数疣足の腹足枝に棘状剛毛がある.",
+     "translation": "背刚毛束具型刚毛；体前部少数疣足的腹叶具刺状刚毛。",
+     "couplet": {
+      "marker": "12.",
+      "lead": "12",
+      "key": 1,
+      "name": "*Laetmonice*",
+      "target": "13"
+     }
+    },
+    {
+     "block_id": "p006_k09",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛束に型剛毛がない;体前部の少数疣足の腹足枝に棘状剛毛があるか、またはない。",
+     "translation": "背刚毛束无型刚毛；体前部少数疣足的腹叶具刺状刚毛或无。",
+     "couplet": {
+      "marker": "—",
+      "lead": "12'",
+      "key": 1,
+      "name": null,
+      "target": "15"
+     }
+    },
+    {
+     "block_id": "p006_k10",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鳞は15対",
+     "translation": "背鳞15对",
+     "couplet": {
+      "marker": "13.",
+      "lead": "13",
+      "key": 1,
+      "name": null,
+      "target": "14"
+     }
+    },
+    {
+     "block_id": "p006_k11",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鳞は18对",
+     "translation": "背鳞18对",
+     "couplet": {
+      "marker": "—",
+      "lead": "13'",
+      "key": 1,
+      "name": null,
+      "target": "*Laetmonice producta* Grube （图16）"
+     }
+    },
+    {
+     "block_id": "p006_k12",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体中部の腹剛毛にけづめがない；眼柄の眼は小さい",
+     "translation": "体中部腹刚毛无距爪；眼柄上的眼小",
+     "couplet": {
+      "marker": "14.",
+      "lead": "14",
+      "key": 1,
+      "name": null,
+      "target": "*Laetmonice japonica* McIntosh （图15）"
+     }
+    },
+    {
+     "block_id": "p006_k13",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体中部の腹剛毛に大きなけづめがあり、辺縁に１～4個の大きな突起がある",
+     "translation": "体中部腹刚毛具大距爪，边缘具１～4个大突起",
+     "couplet": {
+      "marker": "—",
+      "lead": "14'",
+      "key": 1,
+      "name": null,
+      "target": "*Laetmonice dolichoceras* (Haswell) （图14）"
+     }
+    },
+    {
+     "block_id": "p006_k14",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛はサ一べル状で平滑、先端に毛の房がある;疣足の先端近くの背面に大きな黒い斑紋がある。",
+     "translation": "背刚毛匙状，平滑，先端具毛簇；疣足先端附近的背面具大黑斑。",
+     "couplet": {
+      "marker": "15.",
+      "lead": "15",
+      "key": 1,
+      "name": null,
+      "target": "*Aphrogenia nigropunctata* Horst （图11）"
+     }
+    },
+    {
+     "block_id": "p006_k15",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛は扁平または円筒状",
+     "translation": "背刚毛扁平或圆柱状",
+     "couplet": {
+      "marker": "—",
+      "lead": "15'",
+      "key": 1,
+      "name": null,
+      "target": "16"
+     }
+    },
+    {
+     "block_id": "p006_k16",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛は円筒状で平滑",
+     "translation": "背刚毛圆柱状，平滑",
+     "couplet": {
+      "marker": "16.",
+      "lead": "16",
+      "key": 1,
+      "name": null,
+      "target": "*Hermionopsis* sp. （图12）"
+     }
+    },
+    {
+     "block_id": "p006_k17",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛は扁平で辺縁が鋸歯状，または小突起が密生する.",
+     "translation": "背刚毛扁平，边缘锯齿状，或密生小突起。",
+     "couplet": {
+      "marker": "—",
+      "lead": "16'",
+      "key": 1,
+      "name": "Pontogenia",
+      "target": "17"
+     }
+    },
+    {
+     "block_id": "p006_k18",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛は扁平で辺縁が鋸歯状；中央感触手は比較的短い",
+     "translation": "背刚毛扁平，边缘锯齿状；中央触手较短",
+     "couplet": {
+      "marker": "17.",
+      "lead": "17",
+      "key": 1,
+      "name": null,
+      "target": "*Pontogenia macleari*(Haswell) （图18）"
+     }
+    },
+    {
+     "block_id": "p006_k19",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛に颗粒状突起や逆鉤突起が密生する",
+     "translation": "背刚毛密生颗粒状突起或逆钩突起",
+     "couplet": {
+      "marker": "—",
+      "lead": "17'",
+      "key": 1,
+      "name": null,
+      "target": "18"
+     }
+    },
+    {
+     "block_id": "p006_k20",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛の先端部分に鋭い逆鉤突起が密生する；背鱗は扁平",
+     "translation": "背刚毛先端部分密生锐利逆钩突起；背鳞扁平",
+     "couplet": {
+      "marker": "18.",
+      "lead": "18",
+      "key": 1,
+      "name": null,
+      "target": "*Pontogenia dentata* Imajima （图17）"
+     }
+    },
+    {
+     "block_id": "p006_k21",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背剛毛の全面に黒粒状突起が密生する；背鱗の中央部は波状に盛りあがる",
+     "translation": "背刚毛全面密生黑粒状突起；背鳞中央部波状隆起",
+     "couplet": {
+      "marker": "—",
+      "lead": "18'",
+      "key": 1,
+      "name": null,
+      "target": "*Pontogenia sagamiana* Imajima （图19）"
+     }
+    }
+   ]
+  }
+ ],
+ "metadata": {
+  "title": "环节动物 多毛类 III",
+  "volume": "Imajima2007",
+  "lang": "zh"
+ }
+}

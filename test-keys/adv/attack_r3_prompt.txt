@@ -1,0 +1,9 @@
+你是攻击方审查员（第 3 轮，最后一轮）。只在 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/corpus/ 内新建文件（文件名以 r3_ 开头），并写 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/review_r3.md；不得修改仓库其他任何文件，不派生子任务。中文。
+
+背景：/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/SPEC.md 是共用规范（新增「正反条成对编号」一节，俄/苏定检表 1(8)…8(1)）。第 1、2 轮共 92 例现全部通过 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/booklayout/keygraph.py（LIMITS 列表写了已知未支持项）。keygraph 已接入发布流程。
+任务：
+1. 审接入代码：`cd /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation && git diff -- booklayout/keymodel.py booklayout/cli.py scripts/publish_book.py`，以及新文件 tests/test_keygraph_wiring.py。重点：闸口能否被绕过（0 张表、文件缺失、旧调用、译文有表原文无表、--expect-keys 与 --entries 组合）、退出码、报告字段、与 keyrender 合并的判定。
+2. 审 keygraph.py 第 2 轮改动后的版本：正反条成对编号与括号回指式的判别（混排、成对不全、多表同页、编号重启）、隐式 +1 跳转、「1. Genus X Author」去向、LIMITS 里列的四项是否可以低成本解决。
+3. 写 r3_*.json 样例 20–30 个（格式同 SPEC），覆盖上述弱点，以及原译对照（translation 字段：中/日/俄译文里去向号、学名、页码被改、分支漏译、顺序被调）。每例 why 写攻击的 file:line。期望值必须符合真实书籍惯例；不确定的惯例在 why 里写「未确证」，不要硬造。
+4. review_r3.md：发现列表（file:line、问题、P0/P1/P2），≤80 行；末尾写 `cd /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation && python3 test-keys/adv/run_corpus.py` 的通过数（允许写 corpus_report.json）。
+最后输出「第3轮攻击完毕」。

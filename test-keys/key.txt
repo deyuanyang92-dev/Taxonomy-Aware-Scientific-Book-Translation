@@ -1,0 +1,116 @@
+# 生物分类学检索表制作软件、R 包与开源生态全景清单
+
+本文系统梳理了生物分类学领域近五十年积累的检索表（Identification Key）制作软件、R 包、Python 工具、LaTeX 排版宏包、底层数据标准及历史遗留程序，并总结了当前开源工具链的功能空白，供工具选型与新项目架构调研参考。
+
+---
+
+## 一、 按使用场景快速选型
+
+| 核心需求场景 | 首选推荐工具 | 备选方案 |
+| :--- | :--- | :--- |
+| **在 R 语言中从性状矩阵/序列/图片自动建表** | `dimoose`、`monographaR` | `rpart` / `partykit` 自建转换脚本 |
+| **多人协作维护大型性状库并导出单/多入口检索表** | **Xper3** | Open-DELTA、TaxonWorks、Clavis |
+| **传统印刷体二分检索表录入、合并与自动重编号** | **DKey** | KeyBase、TSKey |
+| **从扫描专著/PDF 借助 LLM 抽取带溯源的结构化检索表** | **Clavis (`clavis-pipeline`)** | 自建 OCR + JSON IR 管线 |
+| **农林检疫、野外离线移动端与高图文商业级发布** | **Lucid 套件** | FRIDA、FSC Identikit |
+| **科研论文与专著的 LaTeX 原生高质量排版** | **`edichokey`** | `biokey`、`dichokey` |
+
+---
+
+## 二、 R 包生态
+
+目前 CRAN 与 GitHub 上专门面向分类学检索表的 R 包数量精简，但覆盖了从经典矩阵到多模态自动建表的完整光谱：
+
+| R 包名称 | 获取渠道 | 检索表类型 | 核心功能与底层机制 | 维护状态 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`monographaR`** | CRAN | 二分 + 多入口交互 | 专著编制综合工具包。`dataKey()` 预处理含多态性（如 `/` 分隔）的性状矩阵；`dichoKey()` 封装 `rpart` 决策树并支持性状代价权重（`cost`）输出分类学格式二分表；`dichoKey.app()` 与 `interactiveKey()` 可直接生成 Shiny 交互式检索应用。 | 稳定可用 |
+| **`dimoose`** | GitHub (`leipzig/dimoose`) | 二分 + 移动端向导 | 目前功能最现代的 R 检索表包（前称 `moose`）。支持 CSV/表格导入并通过 GBIF 自动核查学名拼写与异名；支持表合并、剪枝、盒图可视化（`keyDiagram()`）及导出独立移动端 HTML 向导（`exportWizard()`）；支持从多序列比对（FASTA）或带标签标本照（结合 CLIP 等视觉嵌入模型）自动生成二分检索表，并兼容 `ape`、`ggtree`、`igraph`、`JSON/YAML` 等格式。 | 活跃维护 |
+| **`dichotomousKey`** | GitHub (`HaoLi111/dichotomousKey`) | 二分检索表 | 面向二分列表与检索表的构建、编辑与索引工具，支持命令行交互分类、数据框与嵌套列表互转（`dk_as_list` / `list_to_dk`）及文本/Excel 导入导出。 | 较旧（长期未更新） |
+
+> **扩展说明**：若需高度定制分裂准则（如自定义信息增益、观察代价权重与多态性惩罚），科研中常直接以通用决策树包（`rpart`、`partykit`）结合图论/系统发育包（`igraph`、`ape`、`ggtree`）编写定制建表脚本。
+
+---
+
+## 三、 主流分类学检索表软件
+
+### 3.1 矩阵式综合系统（性状矩阵驱动）
+
+此类软件以“类群 × 性状”编码矩阵为核心，可自动计算性状判别力，同时生成多入口交互检索表（Multi-access Key）、单入口二分检索表（Dichotomous Key）乃至自然语言物种描述。
+
+| 软件 / 平台 | 开发者 / 仓库入口 | 许可与形态 | 核心定位与特色 |
+| :--- | :--- | :--- | :--- |
+| **DELTA System**（含 `DELTA Editor`、`KEY`、`Intkey`、`CONFOR`） | CSIRO (M. Dallwitz 等) | 免费闭源 / Windows 桌面端 | 分类学描述编码标准（DELTA 格式）的奠基者。`KEY` 生成传统二分表，`Intkey` 运行多入口交互检索，`CONFOR` 自动生成自然语言描述。环节动物权威交互库 ANNiKEY 即基于此构建。 |
+| **Open-DELTA** | Atlas of Living Australia (`AtlasOfLivingAustralia/open-delta`) | 开源 / Java 跨平台 | CSIRO DELTA 套件的开源 Java 移植版，可在 Windows、macOS、Linux 上运行 `DELTA Editor` 与 `Intkey`。 |
+| **Free DELTA** | Mauro Cavalcanti 等 (`freedelta.sourceforge.net`) | GPL 开源 / 跨平台 | 另一支完全开源的 DELTA 生态实现（含经典 Fortran 工具链与 Python 库 `PyDELTA`），主打跨平台、完整兼容 DELTA 标准及定量性状处理。 |
+| **Xper3**（及桌面旧版 **Xper2**） | 法国索邦大学 LIS 团队 (`xper3.fr`) | 免费 Web 协作平台（Xper2 为 GPL 开源 Java） | 学术界目前最活跃的免费协作平台。支持多人在线维护性状知识库、兼容 SDD 标准、计算性状判别力与不相容度，支持一键导出多入口与单入口检索表。 |
+| **Lucid 套件**（`Lucid3` / `Lucid4`、`Lucid Builder`、`Fact Sheet Fusion`） | Identic / Lucidcentral | 商业收费 / 桌面端 + Web + 移动端 | 商业级行业标杆，在农林检疫、海关与区域植物志中普及率极高。支持离线移动端、丰富图文词汇表与容错检索，并可联动 `Fact Sheet Fusion` 批量生成物种档案页。 |
+| **Clavis 生态**（Schema + Editor + Viewer + `clavis-pipeline`） | 挪威生物多样性信息中心 (`Artsdatabanken/Clavis`) | 开源 / JSON Schema + TypeScript + React + Docker | 最新一代开放式检索表 JSON 标准与工具链。引入 `0–1` 性状频率原生表达种内多态性；其 `clavis-pipeline` 提供基于 LLM Agent 将扫描专著转化为带原文逐字引用溯源的结构化检索表脚手架。 |
+| **FRIDA**（`Dryades` / `KeyToNature`） | 意大利的里雅斯特大学 (S. Martellos) | 学术平台 / Web & 移动端 | 面向大型多作者志书，核心特色是混合交互模式：先通过多入口条件初筛缩小范围，再动态生成过滤后的单入口二分检索表。 |
+| **FSC Identikit**（前称 `Tom.bio`） | 英国野外研究委员会 (`FieldStudiesCouncil/tombiovis`) | 开源 / Web（HTML/JS） | 直接由电子表格（Excel/CSV）知识库驱动的轻量级多入口交互可视化框架，部署门槛极低，适合野外调查与教学。 |
+
+### 3.2 传统二分检索表编辑、转换与托管工具
+
+此类工具不强制先构建性状矩阵，直接面向传统单入口二分检索表的文本录入、解析、结构调整、重编号与在线发布。
+
+| 工具名称 | 来源 / 仓库入口 | 许可与形态 | 核心特点 |
+| :--- | :--- | :--- | :--- |
+| **DKey** | Adam Tofilski (`DrawWing/DKey`) | GPL-3.0 开源 / C++ 桌面端 | 专为传统二分检索表打造的免费桌面编辑器（定位为 Lucid Phoenix 的开源替代品）。支持导入现有纯文本检索表、合并多张表、项对增删移位、**自动重编号**、按文件名自动挂载 `Fig.` 插图，并导出期刊印刷格式或超链接 HTML。 |
+| **Lucid Phoenix** | Identic / Lucidcentral | 商业收费 | Lucid 家族专门将传统印刷体二分检索表数字化为交互式电子检索表的配套工具。 |
+| **KeyBase** | 澳大利亚皇家植物园 (`rbgvictoria/keybase_model` 等) | 开源 / Web 平台 + JSON API | 大规模二分检索表的托管、管理与 Web 播放框架，强项在于支持**多级子表联动跳转**（如科表直跳属表、属表直跳种表，社区亦有离线 PWA 封装）。 |
+| **TSKey** | GitHub (`mossnisse/TSKey`) | 开源 / TypeScript Web | 轻量级浏览器端二分检索表编辑器，源码精简，适合作为前端树状数据结构参考。 |
+| **SciFig Dichotomous Key Maker** | `scifig.ai/tools/dichotomous-key-maker` | 在线免费工具 / Web | 偏向科研绘图与教学场景，支持输入自然语言或性状生成可编辑流程图/二分检索表并导出矢量图。 |
+
+### 3.3 生物多样性数据平台内置检索模块
+
+| 平台名称 | 许可与形态 | 检索表相关能力 |
+| :--- | :--- | :--- |
+| **Symbiota** | GPL-2.0 开源 / Web 门户框架 | 广泛用于全球标本馆联盟门户，内置动态物种名录与多入口交互检索接口（Dynamic Key），直接联动标本记录、地理分布与影像。 |
+| **Linnaeus NG**（旧版 `Linnaeus II`） | Naturalis 生物多样性中心 / Web | 物种信息管理系统，内置两套检索模块，同时支持多入口矩阵检索与传统纸质二分表的多语种交互化改造。 |
+| **TaxonWorks** | 开源 / Ruby on Rails + Vue | 大型分类学全流程工作台，内置性状观察矩阵（Observation Matrix）管理及单入口/交互式检索表生成模块。 |
+| **DiversityDescriptions**（原 `DeltaAccess` / 含 `DiversityNavigator`） | Diversity Workbench (G. Hagedorn / G. Rambold) | 基于关系型数据库的描述性数据管理系统，兼容 DELTA 格式，服务于大型生物多样性数据库与检索表构建。 |
+| **3I Interactive Keys** | Dmitry Dmitriev (INHS) | 集成分类学数据库与 Web 多入口交互检索表的系统，在半翅目等昆虫类群中应用广泛。 |
+| **AbaTax** | 墨西哥国立自治大学团队 (`abatax.abaco2.org`) | Web 端多入口检索表与自动物种描述发布平台，支持“鉴定假设检验”高亮冲突性状，并提供私有/公开权限管理。 |
+
+---
+
+## 四、 Python 库、LaTeX 排版宏包与开放标准生态
+
+| 工具 / 标准 | 类别 | 仓库 / 获取入口 | 定位与特点 |
+| :--- | :--- | :--- | :--- |
+| **`edichokey`** | LaTeX 宏包 | CTAN (`edichokey`) / GitHub (`Mikumikunisiteageru/edichokey`) | 现代二分检索表 LaTeX 宏包（杨宇昌开发），自动处理编号、缩进、引导点线、属名缩写与 `hyperref` 内部跳转，修复了早期 `dichokey` 的树深度限制。 |
+| **`biokey`** | LaTeX 宏包 | CTAN (`biokey`，属 `shipunov` 工具集) | 高度灵活的生物学检索表 LaTeX 排版宏包，除二分检索表外亦原生支持**多歧检索表（Polychotomous Keys）**及多种传统版式。 |
+| **`dichokey`** | LaTeX 宏包 | CTAN (`dichokey`, Nico Dam, 1999) | 早期经典 LaTeX 定距式二分检索表宏包（`edichokey` 的前身与语法兼容对象）。 |
+| **`PyDELTA`** | Python 库 | Free DELTA 项目组件 | 用于在 Python 环境中读取、解析与处理标准 DELTA 格式性状编码文件的开源库。 |
+| **`dichot`** | Python 包 | GitHub (`earth-chris/dichot`) | 受植物学启发的 Python 包（前称 CCB-ID），基于二分决策树模型进行物种分类与辅助鉴定。 |
+| **Library of Identification Resources** | 开放目录与 SDK | GitHub 组织 `identification-resources`（含 `sdd-sdk`） | 面向 FAIR 原则的开源检索表资源目录与 **SDD（Structure of Descriptive Data）** 标准 TypeScript SDK，便于跨平台交换描述性数据。 |
+| **核心底层数据标准** | 数据规范 | **DELTA** / **SDD** / **Clavis JSON Schema** | 三代主流开放描述数据格式：DELTA 为纯文本经典标准，SDD 为 TDWG XML 交换标准，Clavis 为面向现代 Web 与 AI 管线的 JSON Schema 标准。 |
+
+---
+
+## 五、 经典与历史遗留工具（旧文献与数据迁移参考）
+
+在 1990–2015 年间的分类学文献与综述中，常会遇到以下已停止维护或逐步被替代的早期工具；若开发通用格式导入器（Importer）或处理历史遗产数据，可能需要了解其背景：
+
+* **DELTA 衍生早期生态**：
+  * **NaviKey**：基于 Java Applet 的 DELTA 在线多入口浏览器。
+  * **DeltaXML / XDELTA**：将 DELTA 编码转换为 XML 或 MySQL 数据库的早期中间件。
+  * **WebDelta**：基于 Perl 的 DELTA 在线协作录入界面。
+  * **MONTANUS**：早期 MS-DOS 环境下的 DELTA 开源克隆实现。
+* **早期独立多入口检索程序**：
+  * **ActKey**：曾广泛用于 *Flora of China*（《中国植物志》英文版）40 余个大属的 Web 多入口交互检索系统。
+  * **SLIKS**：美国地质调查局（USGS）开发的纯 JavaScript 轻量多入口检索器，以极简方括号文本矩阵驱动。
+  * **PollyClave**：使用 ANSI C 编写的 CGI 网页多入口检索程序。
+  * **IBIS-ID**：基于 ActionScript/Flash 的嵌入式交互检索工具。
+  * **OpenKey**：Perl 编写的图文多入口检索系统。
+  * **Taxy**：C 语言编写的命令行多入口检索工具。
+  * **更早期先驱系统**：**MEKA**、**Pankey**、**IKBS** 等。
+
+---
+
+## 六、 生态格局总结与开源新项目切入点
+
+纵观整个生态版图，**“性状矩阵 → 网页多入口交互”**（Xper3、Lucid、Clavis、DELTA）与**“桌面端手动编辑二分表”**（DKey、KeyBase）两大方向已经相当成熟，但存在 **三个明显的工程空白**，至今缺少现代化的开源工具填补：
+
+1. **印刷体/OCR 检索表的自动化质检（Linter）与语义审计**：缺乏专门针对旧文献 OCR 提取或手工草稿的自动校验器，用于一键定位图论硬错误（死链、孤立节点、环路、重号/跳号、回溯号错配）以及分类学语义瑕疵（数值区间重叠、非对立性状、主观模糊词、学名拼写与 WoRMS/GBIF 核验）。
+2. **结构化 IR 到现代出版级版式的双向转换与参数调优**：现有工具普遍停留在简单纯文本或粗糙 HTML 导出，缺少以标准 JSON/YAML 为中间表示，一键无损编译为 **Typst、LaTeX、Word（规范无框表/越界制表位）与规范 Markdown** 且允许细粒度调整列宽、点阵网格与分页防劈裂的出版级渲染管线。
+3. **中外经典体例无损互转的现代 CLI/Web 工作流**：缺少原生同时支持英文期刊（*Zootaxa* / *ZooKeys* 平行式）与中文专著（《中国动物志》/《中国植物志》连续平行式、定距式）的统一模型，难以在**平行式、定距式、连续平行式**三种体例间自动无损切换并同步重算括号指针。

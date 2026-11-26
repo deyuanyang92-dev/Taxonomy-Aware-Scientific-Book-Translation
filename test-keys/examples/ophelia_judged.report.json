@@ -1,0 +1,30 @@
+{
+ "parse": {
+  "keys": 1,
+  "couplets": [
+   18
+  ]
+ },
+ "fix": {
+  "missing_zh": [],
+  "d1_before": []
+ },
+ "pass2_breaks": {},
+ "page_before": {},
+ "docx": "/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/examples/ophelia_judged.docx",
+ "pdf": "/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/examples/ophelia_judged.pdf",
+ "profile": {
+  "second_lead": "dash",
+  "overflow": "fill",
+  "figref": "source",
+  "dest_zh_name": false,
+  "font_size": 10,
+  "latin_font": "Times New Roman",
+  "cjk_font": "SimSun",
+  "text_w_mm": 150
+ },
+ "check": [],
+ "verify": [],
+ "counts": {},
+ "verify_counts": {}
+}

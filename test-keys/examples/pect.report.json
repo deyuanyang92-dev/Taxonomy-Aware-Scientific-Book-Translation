@@ -1,0 +1,115 @@
+{
+ "taxa": 12,
+ "characters_used": [
+  "length",
+  "width",
+  "veil_cirri",
+  "paleae_pairs",
+  "paleae_shape",
+  "rim_cirri",
+  "posterodorsal_lobe",
+  "anteroventral_lobe",
+  "notopodia_reduced",
+  "teeth_rows",
+  "teeth_per_row",
+  "scaphe_shape",
+  "anal_flap",
+  "hooks",
+  "tube",
+  "glandular"
+ ],
+ "excluded": [
+  [
+   "type_locality",
+   "未编码文字：12 个状态中 12 个只出现一次。填 codebook 合并状态后重跑，或 --include-free"
+  ]
+ ],
+ "numeric_bins": {
+  "length": [
+   "<15",
+   "15 to <63",
+   ">=63"
+  ],
+  "width": [
+   "<7",
+   "7 to <10",
+   ">=10"
+  ],
+  "veil_cirri": [
+   "<23",
+   "23 to <35",
+   ">=35"
+  ],
+  "paleae_pairs": [
+   "<10",
+   "10 to <25",
+   ">=25"
+  ],
+  "rim_cirri": [
+   "<40",
+   "40 to <50",
+   ">=50"
+  ],
+  "teeth_rows": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5"
+  ],
+  "teeth_per_row": [
+   "5",
+   "6",
+   "7",
+   "8",
+   "10"
+  ],
+  "hooks": [
+   "<8",
+   "8 to <12",
+   ">=12"
+  ]
+ },
+ "unresolved_groups": [
+  [
+   "Amphictene auricoma mediterranea",
+   "Amphictene capensis",
+   "Amphictene japonica",
+   "Amphictene uniloba"
+  ],
+  [
+   "Amphictene auricoma mediterranea",
+   "Amphictene catharinensis",
+   "Amphictene japonica"
+  ],
+  [
+   "Amphictene auricoma mediterranea",
+   "Amphictene crassa",
+   "Amphictene favona",
+   "Amphictene japonica",
+   "Amphictene leioscapha"
+  ]
+ ],
+ "mean_steps": 2.67,
+ "pairs": {
+  "separated": 64,
+  "evidence_gap": 2,
+  "matrix_silent": 0
+ },
+ "weak_pairs": [
+  "Amphictene auricoma mediterranea / Amphictene capensis: 仅 scaphe_shape",
+  "Amphictene auricoma mediterranea / Amphictene leioscapha: 仅 scaphe_shape",
+  "Amphictene auricoma mediterranea / Amphictene moorei: 仅 teeth_rows",
+  "Amphictene auricoma mediterranea / Amphictene uniloba: 仅 scaphe_shape",
+  "Amphictene capensis / Amphictene japonica: 仅 width",
+  "Amphictene capensis / Amphictene uniloba: 仅 notopodia_reduced",
+  "Amphictene favona / Amphictene leioscapha: 仅 veil_cirri",
+  "Amphictene japonica / Amphictene leioscapha: 仅 paleae_shape",
+  "Amphictene japonica / Amphictene uniloba: 仅 width",
+  "Amphictene leioscapha / Amphictene uniloba: 仅 hooks"
+ ],
+ "unseparated_pairs": [
+  "Amphictene auricoma mediterranea / Amphictene catharinensis",
+  "Amphictene auricoma mediterranea / Amphictene japonica"
+ ]
+}

@@ -1,0 +1,9 @@
+pattern,verdict,basis
+"^gills$",core,有无鳃：属内主要二分（原始描述一致）
+"chaetigers_before_gills",core,Tebble 1953: 364 "(c) ... is of the greatest importance in interspecific determinations"（15_性状使用证据 §1A）
+"gill_pairs",caution,Tebble 1953: 363 鳃对数随年龄变化；Tebble 1952: 557 不可单独使用
+"total_chaetigers",caution,总刚节数随生长与尾部断失变化（Tebble 1953: 363）；尾部易断
+"branchial_fenestrations",ok,Tebble 1952: 561 保存材料更明显；文献广泛使用但需成对检视
+"ventral_groove_start",avoid,Tebble 1953: 364 "very limited importance"；Fauvel 1917: 260；Riser 1987: 16；项目 CLAUDE.md 规则
+"posterior_dorsal_ridges",avoid,项目 CLAUDE.md：后部背纵脊保存材料中不作诊断；Tebble 对保存差、发育弱的旁注
+"anal_ventral_papillae",ok,Fauvel 1917: 262；Riser 1987: 25；Maltagliati 2004: 103-104（15_性状使用证据 肛乳突行）

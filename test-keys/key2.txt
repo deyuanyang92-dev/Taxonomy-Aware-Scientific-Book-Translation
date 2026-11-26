@@ -1,0 +1,508 @@
+# 分类学检索表制作、软件架构设计与全对话事实核查报告
+
+本文档完整归档本轮关于“分类学检索表制作规范、出版级排版、开源生态、底层算法、多阶元混合检索表软件架构及分类健康度诊断系统”的全部对话内容与设计方案，并对前序对话中涉及的软件、论文、算法定义、数据标准与排版代码进行了逐项联网事实核查与勘误。
+
+---
+
+## 一、 全对话事实核查与勘误报告（Fact-Check & Errata）
+
+在整理归档前，对前序回复中的软件仓库、论文引文、算法细节与排版代码进行了逐条联网核验。以下先如实列出**查出的错误、夸大与偏差项**，再列出**核验确认无误的核心条目**。
+
+### 1.1 明确错误与误导项（已逐条纠正）
+
+| 序号 | 涉及条目 | 前序对话中的错误 / 偏差表述 | 联网核实真相与修正 |
+| :--- | :--- | :--- | :--- |
+| **1** | **`earth-chris/dichot`** | 列为“受植物学启发的 Python 物种分类二分检索表包”。 | **严重归类误导**：该仓库（前称 CCB-ID，Anderson 2018）确实存在，但它是面向**航空高光谱遥感影像（Airborne Imaging Spectroscopy）的机器学习树种分类管道**（用于 NEON-NIST ECODSE 竞赛，输入栅格/光谱 CSV），**并非**形态学分类检索表制作工具。已在正文工具清单中剔除。 |
+| **2** | **`Artsdatabanken/Clavis` & `clavis-pipeline`** | ① 声称经 Schema 校验后“可同时导出多入口交互检索表或单入口二分检索表”；<br>② 将 `clavis-pipeline` 技术栈笼统标为 `JSON Schema / TypeScript / React`。 | **两处失实**：<br>① Clavis 官方明确强调其核心设计是 **“Polythetic, not dichotomous（多入口多性状，而非二分）”**，原生并不主打导出传统单入口二分检索表；且其继承规则明确**禁止覆写（Inheritance, no overrides）**——子阶元不得重新声明父节点已定义的性状，否则文件不合法。<br>② `Artsdatabanken/clavis-pipeline` 真实存在（MIT 许可），但主语言为 **Python**，并非 TypeScript/React。 |
+| **3** | **`3I Interactive Keys`** | 称其“主打在线多入口筛选，并未解决出版级混合二分检索表的自动编排问题”。 | **功能遗漏偏差**：Dmitry Dmitriev 开发的 3I 平台（老站点自 2018 年停更，逐步并入 TaxonWorks/相关数据库生态）**实际内置了“Interactive dichotomous key building utility for creating print-publishable keys”**（交互式辅助构建可印刷二分检索表工具），确支持无限层级阶元与按单一阶元过滤。 |
+| **4** | **LaTeX 宏包 `edichokey`** | 泛称其为现代二分检索表 LaTeX 宏包，未限定体例。 | **范围过宽**：`edichokey`（杨宇昌 / `Mikumikunisiteageru/edichokey`，CTAN 2020 v2.01y）严格兼容 Nico Dam (1999) 的 `dichokey`，**仅用于排版定距式/缩进式二分检索表**，不支持平行式（Bracketed）或多歧检索表（后者需用 Alexey Shipunov 的 `biokey`）。 |
+| **5** | **Xper3 父性状判别力与服务名** | ① 称父性状优先级“取自身与所有子性状判别力的最大值”；<br>② 将多入口服务写作 `Mkey`。 | **定义与拼写偏差**：<br>① 按 Kerner et al. (2025, *European Journal of Taxonomy* 987: 281–302) 原文，父性状（parent descriptor）的判别力定义为**“其所有子性状判别力的最大值”**（`maximum of the discriminant powers of its child(ren) descriptor(s)`）。<br>② 官方规范名称为 **`Mkey+`**（多入口）与 **`IKey+`**（单入口）。 |
+| **6** | **GENKEY 算法“不可约测试集”** | 笼统将“寻找不可约测试集（Irreducible Test Sets）”归为 GENKEY 建树算法本身。 | **概念混淆**：在 Payne (1975) 与 Payne & Preece (1980, *J. R. Stat. Soc. A*) 中，“不可冗余/不可约测试集（Irredundant Test Sets）”主要对应**诊断表（Diagnostic Tables）**构造问题，而非单入口二分树的标准分裂准则。 |
+| **7** | **SLIKS 与 Free DELTA 细节** | ① 称 SLIKS 是“USGS 开发的、基于方括号文本矩阵的检索器”；<br>② 称 Free DELTA 主体为“经典 Fortran + Python”。 | **归属与架构偏差**：<br>① **SLIKS**（Stinger's Lightweight Interactive Key Software, GPL）由 Gerald F. "Stinger" Guala 个人开发维护（`stingersplace.com/SLIKS`），数据文件为 `.js` 脚本而非方括号纯文本。<br>② **Free DELTA**（`maurobio/freedelta`）的核心界面 `Free Delta Editor (FDE)` 采用 **FreePascal / Lazarus** 编写，同时打包了 Eric Zurcher 维护的 GFORTRAN 经典 `CONFOR/KEY/DIST` 与 `PyDELTA`（Cavalcanti & Kluyver）。 |
+| **8** | **Open-DELTA 模块列表前后不一致** | 第 1 轮写了 4 个模块，第 5 轮漏写了 `CONFOR` 与 `KEY`。 | **核实补全**：`AtlasOfLivingAustralia/open-delta` 仓库源码实际包含 **`confor`、`delfor`、`delta-editor`、`intkey`、`key`** 五个核心模块（Java 移植版）。 |
+| **9** | **R 包 `monographaR` 函数名** | 第 1 轮写作大写 `DichoKey`。 | **拼写纠错**：CRAN 文档精确函数名为 **`dichoKey()`**（小驼峰），配套 `dataKey()`、`dichoKey.app()`、`interactiveKey()`，底层确为 `rpart` 且支持 `cost` 权重参数。 |
+| **10** | **“检索表质量评估生态几乎空白”的夸大表述** | 在设计体检模块时隐含暗示此前缺乏定量评估工具与指标。 | **补充学术先驱**：定量评估检索表已有成熟理论与部分工具实现，包括 **Osborne (1963)**、**Sandvik (1976)**、**Payne & Preece (1977, 1980)**、专门衡量步长均匀性的 **$E_{\text{dicho}}$ 指数**（2017, PMC5646650），以及 **TaxonWorks** 矩阵模块已内置的基础 **Matrix Validation**（逐行检查每个 OTU 是否具备与其余行分离的分辨率）。真正空白的是“旧表 OCR 审计 + 反事实重编译四象限 + 实测标本压测 + 修订迫切度综合诊断”的闭环工程。 |
+| **11** | **前序多轮排版代码实操漏洞** | ① 第 2 轮示例 1 手打 `……` 凑对齐；<br>② 第 3 轮 Typst 方案 A 逐行 `grid(..., auto)` 导致折行右界参差；<br>③ 第 3 轮 Word 漏掉“右缩进”；<br>④ 第 4 轮 LaTeX `\keylead` 前后双 `\nobreak` 在极长末行时有 Overfull `\hbox` 风险。 | **全部修复**：已在下文第三节统一替换为无上述硬伤的稳健版 Word、Typst 与 LaTeX（采用 Knuth *TeXbook* 弹性折行点阵写法）模板。 |
+
+### 1.2 经联网交叉验证确认无误的核心条目
+
+* **Packer, L. (2024)**：*A survey of keys for the identification of newly described insect genera: recommendations for authors, reviewers, editors, and publishers*. **ZooKeys** 1215: 65–90 (`doi:10.3897/zookeys.1215.130416`)。调研 2021–2022 年 427 篇论文（587 个新昆虫属），136 篇含检索表，共 141 份检索表。（注：2026 年 7 月 Packer 在 *Taxonomy* 另发表动物新属检索表后续调研）。
+* **Tofilski, A. (2018)**：*DKey software for editing and browsing dichotomous keys*. **ZooKeys** 735: 131–140 (`doi:10.3897/zookeys.735.21412`)。仓库 `DrawWing/DKey`（C++/Qt, GPL-3.0），确支持文本导入、合并、重编号、自动关联同目录 `fig-*.png/.jpg`，导出 RTF / HTML with tabulators / 超链接 HTML。
+* **ANNiKEY (Glasby et al., 2025)**：分三种形态——**ANNiKEY Linear**（*ZooKeys* 1247: 217–403, `doi:10.3897/zookeys.1247.137606`）、**ANNiKEY Interactive**（Zenodo 概念 DOI `10.5281/zenodo.13738485`，334 性状 × 166 科级类群 DELTA 库）、**ANNiKEY Online**（`10.5281/zenodo.16003043`）。
+* **Wilson, Glasby & Bakken (2023)**：*The Nereididae (Annelida) – diagnoses, descriptions, and a key to the genera*（*ZooKeys*, article 104258）及配套 Zenodo DELTA 数据集 `10.5281/zenodo.7776745`。
+* **DELTA `KEY` 参数（Dallwitz, 1974; DELTA User's Guide）**：默认 `Rbase = 1.40, Abase = 2.00, Reuse = 1.01, Varywt = 0.80`，支持 `Number of confirmatory characters` 自动附加确认性状。
+* **`leipzig/dimoose`（R 包）**：GitHub 活跃维护（2026 年 11 月更新），原名 `moose`（因 CRAN 重名更名），确支持 `keyFromSpreadsheet(checkNames = TRUE)`（GBIF 校验）、`keyFromAlignment()`（FASTA 建表）、`embedImages()` / `keyFromSniglets()`（CLIP / BioCLIP / BioCLIP 2）、`keyFromRpart()`、`keyDiagram()`、`exportWizard()` 及 `toNewick()` / `toTreedata()` / `toIgraph()` / `toAuspiceJSON()`。
+* **`HaoLi111/dichotomousKey`、`rbgvictoria/keybase_model` & `keybase-redevelopment`、`sgoedecke/vicflora-offline`、`identification-resources`（含 `sdd-sdk`）、`mossnisse/TSKey`、`FieldStudiesCouncil/tombiovis`、`scifig.ai/tools/dichotomous-key-maker`、`SpeciesFileGroup/taxonworks`（含前端引擎 `SpeciesFileGroup/distinguish`）**：仓库路径与基本定位均核实存在。
+* **`AbaTax`（`www.abatax.abaco2.org`）**：墨西哥国立自治大学（UNAM）Miguel Murguía-Romero 等开发（2021, *Revista Mexicana de Biodiversidad* 92: e923592, `doi:10.22201/ib.20078706e.2021.92.3592`），基于“Dynamic Identification”模型，确支持输入性状筛选与“将特定类群作为假设进行证实/证伪”两种双向操作。
+* **核心历史文献与数学公式**：`Osborne (1963)`（*New Phytologist* 62(2): 144–160）、`Walter & Winterton (2007)`（*Annual Review of Entomology* 52: 193–208, `doi:10.1146/annurev.ento.51.110104.151054`）、`Burguière et al. (2013)`（*Systematic Biology*, IKey+）、`TAXOKEY`（1996, *CABIOS*）、`XKey`（*Expert Systems with Applications*）；严格二叉树最小/最大平均步长公式 $L_{\min}$、$L_{\max}$ 经代数推导完全准确。
+
+---
+
+## 二、 对话演进脉络纪要
+
+本次讨论围绕“从零设计一套现代化分类学检索表软件”逐步深化，共经历 7 个核心阶段：
+
+1. **规则与生态初探**：用户询问分类学检索表制作规则、开源项目、生成原理与自动格式质检优化思路 → 梳理了三大印刷体例、国际编制规范、决策树建表原理、三层自动 QC 及初步开源列表。
+2. **具体示例与排版踩坑复盘**：用户要求提供具体示例，并敏锐指出初版示例存在“学名未贴最右端对齐”与“不懂出版级格式调整”的硬伤 → 复盘了手打点线、逐行 `auto` 列宽锯齿、点阵垂直错位、Word 漏设右缩进等 4 类典型排版事故，重写了可调参的 Word / Typst / LaTeX / CSS 方案。
+3. **开源仓库命名规划**：用户计划新建检索表制作仓库询问命名 → 避开纯 `Key` 词根在 GitHub 上的键盘/加密工具重名区及历史论文重名（`TAXOKEY`, 1996），提出 `MorphoKey`、`CoupletKit`、`DichoCraft`、`Taxonomic-Key-Studio` 等候选方案。
+4. **全量工具与 R 包全景普查**：用户要求收集所有相关软件与 R 包 → 整理了 R 包（`monographaR`、`dimoose`、`dichotomousKey`）、矩阵式系统、二分表编辑器、生物多样性平台、LaTeX 宏包及历史遗留工具清单。
+5. **算法深挖与多阶元混合检索软件设计**：用户明确软件核心诉求——“基于整理好的性状矩阵，支持制作各阶元检索表，并支持混合制作（如检索到科、科下属、属下种）” → 拆解了 DELTA / GENKEY / Xper3 核心算法与输入输出格式，设计了“双向性状传播 + 三种混合编译模式 + 分类纯度优化公式”的新架构。
+6. **高阶需求延伸：检索表与分类健康度体检**：用户指出“检索表好坏是检验分类与物种好坏的试金石”，要求增加判断检索表好坏及评估“该属是否需要分类修订”的功能 → 设计了四维诊断体系、反事实重编译四象限判定与虚拟/真实标本压力测试。
+7. **全面核查与归档定稿**：用户要求将全部对话与内容整理为 Markdown 文件并严格核查信息真伪 → 执行全量联网核验，输出本份勘误与修订定稿版技术文档。
+
+---
+
+## 三、 分类学检索表编制规范与出版级排版方案（修订稳健版）
+
+### 3.1 编制核心原则（综合经典规范与 Packer 2024）
+
+* **明确适用范围与前置诊断**：标题/导语写明适用分类阶元、地理区系、性别与发育阶段；检索表紧上方列出该高阶类群的鉴别特征。
+* **严格对立与完备互斥**：同一项对（Couplet）的两条检索项（Lead）针对**同一器官/性状**描述互斥状态，杜绝“其他情况（otherwise）”等消极兜底表述。
+* **主语前置与平行句式**：同对两条以相同解剖部位开头，相邻两对切换起始词，降低跳行误读。
+* **多性状冗余（Polythetic Couplets）**：以最稳定易观察的宏观性状打头，辅以 1–2 个独立佐证性状，防标本残缺卡死。
+* **量纲明确与无重叠区间**：禁用“较大、较深、显著”等无参照词；定量区间必须互斥且留安全余量（如 `1–4` 对 `5–10`，避免 `1–5` 对 `5–10`）。
+* **允许合理网状出口（Reticulation）**：对多态性强的物种允许在多条分支出现。
+* **回溯号与图版锚点**：平行式建议加括号标注父项号如 `2(1).`，关键性状直接挂图号（`Fig. 1A`）。
+
+### 3.2 规范对照示例（Markdown 右对齐三列表）
+
+| 项号 | 形态特征 | 跳转 / 类群 |
+| :--- | :--- | ---: |
+| **1.** | 疣足背须显著延长，长度大于背舌叶的 2 倍（Fig. 1A）；口前叶具 2 对明显的眼，呈梯形排列（Fig. 1B） | ***Taxon A*** |
+| **–** | 疣足背须短小或退化，长度小于背舌叶的 1.5 倍（Fig. 2A）；口前叶无眼，或仅具 1 对退化眼点 | **2** |
+| **2(1).** | 腹足刚毛束具 1–4 根异齿镰状复型刚毛，端片长宽比小于 3（Fig. 2C）；吻部口环具圆锥形角质颚齿 | ***Taxon B*** |
+| **–** | 腹足刚毛束具 5–10 根异齿镰状复型刚毛，端片长宽比大于 5（Fig. 3C）；吻部口环光滑无颚齿 | ***Taxon C*** |
+
+### 3.3 三种经典印刷体例与术语辨析
+
+> **术语提醒**：英文分类学文献中对三类体例的称呼偶有交叉（例如 `edichokey` 文档将逐级缩进称作 *Nested style*，将等缩进成对括号编号称作 *Indented style*，将对立项紧邻称作 *Linked style*）。为避免歧义，本文统一以**结构特征**定义：
+
+| 中文习惯名称 | 英文常见名称 | 结构特征与适用场景 |
+| :--- | :--- | :--- |
+| **平行式** | Bracketed / Parallel | 对立两项紧邻（`1. / –` 或 `1a / 1b`），可带回溯号 `2(1)`。*ZooKeys* / *Zootaxa* 等现代期刊首选，最易程序解析。 |
+| **定距式** | Indented / Yoked / Nested | 第一项子分支穷尽后再出第二项，逐层右缩进。适合小于 15–20 个类群，层级过深会触发右侧版心坍缩。 |
+| **连续平行式** | Serial / Linked | 不缩进，顺次编号，括号标注对立项如 `1(4)` 与 `4(1)`。《中国动物志》等中文专著常用，手工增删维护成本高。 |
+
+### 3.4 出版级格式调整实战（已修复前序全部排版隐患）
+
+专业排版必须同时守住 5 条底线：**全表固定左栏宽、全表统一正文折行右界、点阵垂直对齐（若用点线）、属种名不间断空格锁死+命名人正体、同一项对禁止跨页劈裂**。
+
+#### 1. Word (DOCX) 两种标准排法（严禁手打点线）
+
+* **方案 A：全表共用一张三栏无框表（*Zootaxa* / *ZooKeys* 投稿最稳）**
+  * 关闭“自动重调尺寸以适应内容”；固定左栏宽（`1.5–2.2 cm`）、中栏宽（`10.0–11.0 cm`，两端对齐）、右栏宽（`3.5–4.5 cm`，**右对齐 + 底端对齐**）。
+  * 分页防劈裂：整表取消“允许跨页断行”；每对 **Lead A 所在行段落**勾选“与下段同页（Keep with next）”，Lead B 不勾选。
+* **方案 B：悬挂缩进 + 右缩进 + 越界右对齐制表位（传统点线专著必用）**
+  * 以 A4 版心 `16.0 cm` 为例：设悬挂缩进 `1.8 cm`（配 `1.8 cm` 左制表位）；设**右缩进 `3.8 cm`**（锁死多行正文在 `12.2 cm` 处统一折行，留出右侧通道）；再设一个**越界右对齐制表位在 `16.0 cm`（前导符选 `2 ……`）**。正文输完按 `Tab`，光标越过右缩进直达页边距，点阵上下严格对齐，永不撞车。
+
+#### 2. LaTeX (XeLaTeX) 稳健出版级模板（修复长行 Overfull `\hbox` 风险）
+
+使用 Knuth *TeXbook* 的弹性点阵断行原语，保证末行空间不足时目标自动带着整条点线平滑落到下一行最右端，绝不溢出页边距，且 `\leaders` 原生保证上下点阵垂直对齐：
+
+```latex
+% XeLaTeX 编译
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{xeCJK}
+\usepackage{needspace}
+
+\newlength{\keynumwidth}    \setlength{\keynumwidth}{3.2em}
+\newlength{\keyrightmargin} \setlength{\keyrightmargin}{4.4cm}
+\newlength{\keyleadgap}     \setlength{\keyleadgap}{2.5pt}
+\newlength{\keycoupletgap}  \setlength{\keycoupletgap}{7pt}
+
+\newcommand{\keydotfill}{\leaders\hbox to 0.45em{\hss.\hss}\hfill}
+\newcommand{\taxon}[2][]{\textit{#2}\if\relax\detokenize{#1}\relax\else\ #1\fi}
+
+% 单条检索项：采用弹性折行点阵，避免极长末行发生 Overfull \hbox
+\newcommand{\keylead}[3]{%
+  \begingroup
+  \par\noindent
+  \leftskip=\keynumwidth
+  \rightskip=\keyrightmargin
+  \parfillskip=-\keyrightmargin
+  \hspace*{-\keynumwidth}\makebox[\keynumwidth][l]{\textbf{#1}}%
+  #2%
+  \unskip\nobreak\hspace{0.4em}%
+  \penalty50\hspace*{0pt}% 若余宽不足以放下最短点线+目标，允许在此处洁净换行
+  \keydotfill
+  \nobreak\hspace{0.4em}%
+  \mbox{#3}%
+  \par
+  \endgroup
+}
+
+\newcommand{\couplet}[5]{%
+  \needspace{4\baselineskip}%
+  \keylead{#1}{#2}{#3}%
+  \nopagebreak[4]\vspace{\keyleadgap}%
+  \keylead{--}{#4}{#5}%
+  \vspace{\keycoupletgap}%
+}
+```
+
+#### 3. Typst 可调参出版级模板（全表固定三栏 + 项对不跨页劈裂）
+
+说明：Typst 的 `box(width: 1fr)` 在段落内受官方支持（`width` 接受 `auto | relative | fraction`）。采用全表统一固定三栏宽后，`right-gutter` 保证正文永不撞击右栏；若开启传统点线，建议在实际编译环境中核验末行极短余宽表现，或将 `show-dots` 设为 `false` 直接输出现代期刊无点线三栏版式：
+
+```typst
+#set page(paper: "a4", margin: 2.2cm)
+#set text(font: ("Times New Roman", "Source Han Serif SC"), size: 10pt)
+
+#let key-config = (
+  num-width: 3.2em,
+  target-width: 11.5em,
+  left-gutter: 0.4em,
+  right-gutter: 0.6em,    // 即使末行极满，该间距也锁死正文与目标绝不贴边
+  lead-gap: 0.35em,
+  couplet-gap: 0.75em,
+  line-leading: 0.55em,
+  show-dots: false,       // false = 现代期刊无点线三栏表；true = 启用中栏点线
+  dot-gap: 0.32em,
+  dot-color: luma(90),
+)
+
+#let aligned-dots(cfg) = {
+  if cfg.show-dots {
+    h(0.4em)
+    box(
+      width: 1fr,
+      height: 0.75em,
+      clip: true,
+      place(
+        right + bottom,
+        box(width: 22cm, text(fill: cfg.dot-color, repeat(gap: cfg.dot-gap)[.])),
+      ),
+    )
+  }
+}
+
+#let key-lead(num, desc, target, is-taxon: false, author: none, page-no: none, cfg: key-config) = {
+  let target-content = {
+    if is-taxon {
+      emph(target.replace(" ", sym.space.nobreak))
+      if author != none [ #author]
+    } else {
+      strong(str(target))
+    }
+    if page-no != none [ (p.#sym.space.nobreak#page-no)]
+  }
+
+  grid(
+    columns: (cfg.num-width, 1fr, cfg.target-width),
+    column-gutter: (cfg.left-gutter, cfg.right-gutter),
+    align: (left + top, left + top, right + bottom),
+    [#strong(num)],
+    [
+      #set par(justify: true, leading: cfg.line-leading)
+      #desc#aligned-dots(cfg)
+    ],
+    [
+      #set par(justify: false, leading: 0.45em)
+      #target-content
+    ],
+  )
+}
+
+#let couplet(id, parent: none, lead-a, lead-b, cfg: key-config) = {
+  let head = if parent != none [#id (#parent).] else [#id.]
+  block(breakable: false, below: cfg.couplet-gap)[
+    #key-lead(head, lead-a.text, lead-a.target, is-taxon: lead-a.at("taxon", default: false), author: lead-a.at("author", default: none), page-no: lead-a.at("page", default: none), cfg: cfg)
+    #v(cfg.lead-gap)
+    #key-lead("–", lead-b.text, lead-b.target, is-taxon: lead-b.at("taxon", default: false), author: lead-b.at("author", default: none), page-no: lead-b.at("page", default: none), cfg: cfg)
+  ]
+}
+```
+
+---
+
+## 四、 现有软件、R 包、核心算法与数据格式全景（核实修订版）
+
+### 4.1 检索表制作软件与 R 包（已纠错净化）
+
+| 类别 | 工具 / 项目 | 获取入口 / 仓库 | 核实后的核心能力与边界 |
+| :--- | :--- | :--- | :--- |
+| **R 包** | **`dimoose`**（原名 `moose`） | GitHub `leipzig/dimoose` | 活跃维护。支持 CSV/Excel 导入与 GBIF 学名校验（`keyFromSpreadsheet`）、`rpart` 转表（`keyFromRpart`）、FASTA 序列建表（`keyFromAlignment`）、CLIP/BioCLIP 照片聚类建表、盒图（`keyDiagram`）、独立 HTML 向导（`exportWizard`）及 `ape`/`ggtree`/`igraph`/Auspice JSON 导出。 |
+| **R 包** | **`monographaR`** | CRAN `monographaR` | 专著工具集。`dataKey()` 处理多态矩阵，`dichoKey()` 封装 `rpart` 并支持性状代价权重（`cost`），`dichoKey.app()` 与 `interactiveKey()` 可生成 Shiny 交互应用。 |
+| **R 包** | **`dichotomousKey`** | GitHub `HaoLi111/dichotomousKey` | 轻量级二分列表编辑、数据框与嵌套列表互转（`dk_as_list` / `list_to_dk`），已多年未更新。 |
+| **矩阵综合系统** | **DELTA System** | `delta-intkey.com` | CSIRO 免费闭源 Windows 套件（`DELTA Editor`、`KEY`、`Intkey`、`CONFOR`）。分类学描述编码与建表算法奠基者。 |
+| **矩阵综合系统** | **Open-DELTA** | GitHub `AtlasOfLivingAustralia/open-delta` | DELTA 的 Java 开源跨平台移植版，源码涵盖 `confor`、`delfor`、`delta-editor`、`intkey`、`key` 五大模块。 |
+| **矩阵综合系统** | **Free DELTA** | `freedelta.sourceforge.net` / `maurobio/freedelta` | GPL 开源生态：核心界面 `Free Delta Editor` 用 FreePascal/Lazarus 编写，配套 GFORTRAN 经典 `CONFOR/KEY/DIST` 与 Python 解析库 `PyDELTA`。 |
+| **矩阵综合系统** | **Xper3**（旧版 Xper2） | `xper3.fr` | 法国索邦大学免费协作 Web 平台，兼容 SDD 标准，含多入口服务 **`Mkey+`** 与单入口生成服务 **`IKey+`**。 |
+| **矩阵综合系统** | **Clavis 生态** | `Artsdatabanken/Clavis`、`clavis-pipeline` | 挪威生物多样性信息中心开放 JSON Schema 标准，**专注多入口多性状检索**（`0–1` 频率表达多态，支持继承但**禁止覆写**）；配套 Python/MIT 项目 `clavis-pipeline` 用 LLM Agent 从文献抽取带原文逐字引用的结构化陈述。 |
+| **矩阵综合系统** | **Lucid 套件** | Identic / Lucidcentral | 商业标杆（`Lucid3/4`、`Fact Sheet Fusion` 及传统表数字化工具 `Lucid Phoenix`），农林检疫与离线移动端生态最强。 |
+| **矩阵综合系统** | **FRIDA** / **FSC Identikit** | Trieste / `FieldStudiesCouncil/tombiovis` | FRIDA 主打“多入口初筛 + 动态单入口二分表”；FSC Identikit（原 `Tom.bio`）为开源 Excel/CSV 驱动的轻量 Web 多入口可视化框架。 |
+| **二分表专用** | **DKey** | GitHub `DrawWing/DKey` | C++/Qt GPL-3.0 开源桌面编辑器。专攻传统二分表：文本导入、合并、项对移动、自动重编号、自动挂载 `fig-*.png/.jpg`，导出 RTF / HTML with tabulators / 超链接 HTML。 |
+| **二分表专用** | **KeyBase** / **TSKey** | `rbgvictoria/keybase*` / `mossnisse/TSKey` | KeyBase 擅长大规模二分表托管与 `to_key` 跨子表联动跳转；TSKey 为轻量 TypeScript Web 编辑器。 |
+| **综合工作台** | **TaxonWorks**（前身 MX） | `SpeciesFileGroup/taxonworks` & `distinguish` | 大型开源分类学平台。支持观察矩阵（含 **Matrix Validation 分辨率校验**）、交互检索（可按阶元过滤，独立嵌入引擎 `distinguish`）及交互式辅助构建标准二分/多歧表。 |
+| **综合工作台** | **Symbiota** / **Linnaeus NG** / **AbaTax** / **3I** / **DiversityDescriptions** | 各机构官网 | Symbiota（标本馆门户动态检索）、Linnaeus NG（Naturalis）、AbaTax（UNAM 双向动态假设检验多入口平台）、3I（支持无限层级阶元过滤及可印刷二分表构建，老站停更）、DiversityDescriptions（DELTA 兼容关系库）。 |
+| **LaTeX 宏包** | **`edichokey`** / **`biokey`** / **`dichokey`** | CTAN / `Mikumikunisiteageru/edichokey` | `edichokey`（杨宇昌，兼容 Nico Dam 1999 `dichokey`）专排**定距式二分表**；`biokey`（Shipunov）支持多歧与灵活检索表排版。 |
+| **历史与辅助** | **GENKEY** / **XKey** / **Mesquite** / **MorphoBank** / **ActKey** / **SLIKS** / **PollyClave** / **MEKA** / **Pankey** | 文献与档案站点 | GENKEY（Payne 1975，集成于 GenStat）；XKey（规则引擎与决策树探索）；Mesquite/MorphoBank（NEXUS 形态矩阵）；ActKey（*Flora of China*）；SLIKS（G. F. Guala 开源 JS 轻量多入口）。 |
+
+*(注：已明确剔除 `earth-chris/dichot`，因其属高光谱遥感树种机器学习分类器，非形态学检索表工具。)*
+
+### 4.2 三大核心建表算法与 4 个生物学逻辑要点
+
+1. **DELTA `KEY` 算法（Dallwitz, 1974）**：代价加权启发式贪心。核心参数 `Rbase`（默认 `1.40`，将性状可靠度映射为指数代价）、`Abase`（默认 `2.00`，常见种优先浅层检出）、`Varywt`（默认 `0.80`，惩罚多态/缺失造成的分支复制）、`Reuse`（默认 `1.01`，鼓励复用邻近性状）。内置**自动附加确认性状（Confirmatory Characters）**机制。
+2. **GENKEY 算法（Payne, 1975; Payne & Preece, 1980）**：最小化期望鉴定步长，支持多歧分裂、物种先验出现概率与局部前瞻；在配套诊断表（Diagnostic Tables）构造中引入不可冗余测试集（Irredundant Test Sets）求解。
+3. **Xper3 / `IKey+` 算法（Burguière et al., 2013; Kerner et al., 2025）**：
+   * 形式化不相容度：若性状 $k$ 在类群 $i, j$ 的状态集无交集（或定量区间不相交），则 $\text{comp}_k(i, j) = 1$，否则为 $0$：
+     $$d_k(i) \cap d_k(j) = \emptyset \iff \text{comp}_k(i, j) = 1$$
+   * 判别力定义：$PD(k) = \sum_{i < j} \text{comp}_k(i, j)$；对于**父性状（Parent Descriptor）**，其判别力取**所有子性状判别力的最大值**，避免门控性状因自身分裂数少而被埋没。
+4. **4 个不可妥协的生物学逻辑**：
+   * 严格区分 **未知（`?`）**（必须同时复制到所有子分支防漏检）与 **不适用（`-`）**（由依赖图 Dependency DAG 门控，前置结构缺失前禁止出场）。
+   * 连续定量性状存原始区间 $[L_i, U_i]$，建表时按端点动态搜索“跨阈值重叠最少 + 切分最平衡”的最优分割点 $t^*$。
+   * 多态性引入状态频率 $f \in [0, 1]$，区分常见状态与罕见变异。
+   * 单入口二分表与多入口交互检索底层算法同源（离线静态编译 vs. 在线动态重排）。
+
+### 4.3 主流输入输出格式对比
+
+| 格式标准 | 优势 | 痛点与局限 |
+| :--- | :--- | :--- |
+| **DELTA**（`specs`/`chars`/`items`） | 表达力极强（多态、极值区间、注释、自然语言片段） | 1970s 文本语法解析困难，现代工具链不友好 |
+| **TDWG SDD** | 国际 XML 标准，完整覆盖依赖、媒体与单/多入口表 | XML 极冗长，无法手工阅读编辑 |
+| **NEXUS / NeXML** | 系统发育学家通用，现成矩阵海量 | 缺观察代价、连续分布区间与自然语言短语模板 |
+| **Clavis JSON** | 现代 Schema，原生支持 `0–1` 频率、多语言与逐字溯源 | 专注多入口且禁继承覆写，不负责印刷二分表排版 |
+| **KeyBase JSON** | 轻量扁平，原生支持 `to_key` 跨级子表联动 | 仅存编译后的静态树，不保留原始性状矩阵 |
+| **Excel / CSV 多表** | 分类学家录入零门槛 | 原生缺乏依赖图与类型校验，必须配模板与导入校验器 |
+
+---
+
+## 五、 新软件架构设计：支持多阶元与混合制作（含命名建议）
+
+### 5.1 仓库命名建议（已避开 GitHub 撞车与 1996 `TAXOKEY` 论文重名）
+
+* **品牌/论文首选**：`MorphoKey`（形态学检索表，综合辨识度高）、`CoupletKit`（“项对”领域专属词根，CLI 子命令极顺手）、`DichoCraft`（兼顾二分表与精工排版）。
+* **功能直白型**：`Taxonomic-Key-Studio`（适合带界面的综合工作台）、`Taxonomic-Key-Toolkit`（适合 CLI + 规则库 + 模板集）。
+
+### 5.2 核心数据模型：四表解耦 + 双向性状传播
+
+对外暴露为带下拉验证的 **Excel 多 Sheet 模板**（兼容导入 DELTA / NEXUS / Clavis JSON / 旧表文本），底层统一序列化为 **JSON/YAML IR**：
+
+1. **分类阶元树（`Taxonomy`）**：`taxon_id`, `parent_id`, `rank`, `scientific_name`, `authority`, `abundance`（丰度权重）。
+2. **性状本体与依赖图（`Characters`）**：`char_id`, `organ_group`, `type`（二元/多态/连续/计数）, `observation_cost`（1=肉眼至 4=解剖/电镜）, `preferred_ranks`, `depends_on`（依赖 DAG）, `phrase_zh` / `phrase_en`。
+3. **观测矩阵（`Matrix`）**：允许在**任意阶元节点**录入，支持状态频率（`present:0.9`）、常规/极值区间、特殊标记（`?` / `-`）以及 `figure_ref` / `source_ref` 溯源字段。
+4. **人工约束（`Constraints`）**：支持分类学家手动钉死（Pin）特定节点的切分性状或交换左右支顺序，仅局部重算子树。
+
+**双向性状传播机制（区别于 Clavis 禁止覆写的机制）**：
+
+* **向下继承 + 允许特化覆写（Top-Down Inheritance with Override）**：科级录入的共性特征自动向下继承，个别特化属/种可在下级单元格直接覆写，避免重复填表。
+* **向上聚合（Bottom-Up Aggregation）**：由种级矩阵自动生成属级或科级检索表时，沿分类树自动汇总子物种的状态并集与频率占比，定量性状自动合并常规区间与极值，输出 `(2.0–)3.5–6.2(–8.0) mm` 标准表述。
+
+### 5.3 三种多阶元编译模式
+
+| 模式 | 适用场景 | 编译行为 |
+| :--- | :--- | :--- |
+| **1. 单阶元表（Single-Rank）** | 某区系分科表、某属分种表 | 指定 `scope` 与 `target_rank`，自动触发向上聚合生成单表。 |
+| **2. 多级联动嵌套表（Hierarchical Linked Keys）** | 志书专著（科表 → 各科分属表 → 各属分种表） | 自动生成顶层表与挂载子表（支持 `to_key` 网页跳转或印刷页码跳转）；**父表已问性状透传至子表不再重复提问**；支持单型阶元自动折叠开关。 |
+| **3. 混合阶元单表（Hybrid Mixed-Rank Key）** | 生态调查或局部修订（重点科检到种，一般科检到属，外群检到科） | 按分支指定终止阶元构建异构目标集，编译为一张无缝衔接的单表。 |
+
+### 5.4 面向混合阶元的优化打分算法
+
+在每个节点面临剩余目标集 $V$ 时，对满足依赖 DAG 的候选性状 $k$（连续性状遍历最优候选分割阈值 $t$），计算综合得分：
+
+$$S(k \mid V) = \frac{H_{\text{eff}}(k, V) \cdot \left(1 + \lambda_{\text{tax}} \cdot P_{\text{tax}}(k, V)\right) \cdot \gamma_{\text{reuse}}(k) \cdot \omega_{\text{rank}}(k, V)}{C_{\text{obs}}(k)^{\beta} \cdot \left(1 + \alpha \cdot R_{\text{poly}}(k, V)\right)}$$
+
+* $H_{\text{eff}}(k, V)$：结合物种丰度权重的香农熵平衡分（或 Xper 判别力 $PD$）。
+* $P_{\text{tax}}(k, V) \in [0, 1]$：**分类阶元纯度**——衡量切分是否保持高级阶元（科/属）的完整聚簇。调参 $\lambda_{\text{tax}} = 0$ 输出纯人工实用表（最快检出）；$\lambda_{\text{tax}} > 0$ 输出半自然/阶元聚簇混合表（先按科属大类分开再检种）。
+* $\omega_{\text{rank}}(k, V)$：阶元阶段适配系数（跨科时优先宏观科征，收敛到同属内自动提权种级微观性状）。
+* $C_{\text{obs}}(k)^{\beta}$：观察代价指数惩罚（高难度性状推迟到底层）。
+* $R_{\text{poly}}(k, V)$：多态与缺失膨胀惩罚（按频率加权控制网状复制规模）。
+* $\gamma_{\text{reuse}}(k)$：同解剖部位观察连贯性奖励。
+
+**建树后四步自动优化**：① 自动注入独立确认性状（Confirmatory Injection）；② 支持人工 Pin 节点与局部重算；③ 中英双语平行句式规范化与图号挂载；④ 拓扑 QC 与平行式/定距式/连续平行式无损互转。
+
+---
+
+## 六、 分类学健康度与检索表审计引擎（Audit & Taxonomic Health）
+
+“检索表好坏是检验分类好坏与物种界限的试金石。” 本模块的核心设计理念是**将“作者写得差（制表技术问题）”与“类群分类界限烂（分类学本体问题）”定量剥离**，并与既有理论（Osborne 1963、Sandvik 1976、$E_{\text{dicho}}$ 2017、Packer 2024、TaxonWorks Matrix Validation）无缝衔接。
+
+### 6.1 四维诊断指标体系
+
+#### 维度 1：结构效率与容错率（评价“好不好用”）
+
+1. **树形效率指数（$E_{\text{shape}}$）**：对含 $N$ 个终端的严格二分树，令 $k = \lfloor \log_2 N \rfloor$，最优扇形树与最差梳形树的精确平均步长边界为：
+   $$L_{\min} = \frac{N(k+2) - 2^{k+1}}{N}, \qquad L_{\max} = \frac{(N-1)(N+2)}{2N}$$
+   当 $N \ge 4$ 时，归一化树形效率为：
+   $$E_{\text{shape}} = \frac{L_{\max} - L_{\text{obs}}}{L_{\max} - L_{\min}} \in [0, 1]$$
+   同时并行计算学术界标准的步长均匀度指数 **$E_{\text{dicho}}$**，便于跨论文横向比较。
+2. **Osborne 期望鉴定正确率**：给定单步误判率 $e$（或按性状难度分层赋权 $e_c$），各终点物种正确检出概率为 $\prod_{c \in \text{path}(i)} (1 - e_c)$，自动标出全表最脆弱 Top 5 物种。
+3. **单性状脆弱度与阶段锁死率**：统计单性状项对占比（根节点加重扣分）、隐性性别/生殖态/成体锁死项对，以及回溯号与图版锚点覆盖率。
+
+#### 维度 2：性状质量与语义可操作性（评价“能不能用”）
+
+* 逐项对检测：拓扑硬错误（死链、环路、孤立节点、跳号/重号、回溯号错配）、对立平行度、消极否定项（“其他情况”）、无量纲主观词密度、数值重叠与过窄安全边际、易损/易褪色性状顶层占比，以及**“以产地/生境替代形态特征”高危红牌**。
+
+#### 维度 3：分类学本体健康度（核心：判断“这个属/种是否需要修订”）
+
+| 诊断信号 | 量化机制 | 分类修订预警含义 |
+| :--- | :--- | :--- |
+| **名录滞后与异名污染** | 联网比对 WoRMS / GBIF / CoL 当前有效种名录 | 现存有效种遗漏率 $> 25\%$ 或表内异名/移属占比 $> 15\%$：现有检索表已实质失效，急需整合新种修订。 |
+| **网状出口膨胀度** | $\frac{M - (N - 1)}{N}$ 及单物种重复出口次数 | 种级出现 $\ge 3$ 次出口高度怀疑为**隐存种复合群**；属级被打散至多个远端大支暗示**非单系属**。 |
+| **零距离 / 弱边界物种对** | 计算矩阵中物种对间的最小无重叠有效性状数（类似并扩展 TaxonWorks Matrix Validation） | 距离 $= 0$ 标为**候选同物异名或需分子介入的隐存种**；距离 $= 1$ 且仅靠脆弱性状或产地分开标为**有效性存疑种**。 |
+| **性状透支与缺失空洞** | 统计高同塑宏观性状反复征用频次、各物种缺失值（`?`）比例 | 缺失率 $> 30\%$ 标为**亟需基于模式标本重新描述（Redescription Needed）**的高危种。 |
+
+#### 维度 4：两项杀手级压测机制
+
+1. **反事实重编译四象限判决（Counterfactual Re-compilation）**：同时计算原表质量分 $Q_{\text{author}}$ 与本引擎基于同一性状矩阵重编译的理论上限分 $Q_{\text{optimal}}$：
+   * **$Q_{\text{author}}$ 高 + $Q_{\text{optimal}}$ 高**：分类健康、检索表优良。
+   * **$Q_{\text{author}}$ 低 + $Q_{\text{optimal}}$ 高**：分类没问题，仅原表编排差 → 重排即可拯救。
+   * **$Q_{\text{author}}$ 低 + $Q_{\text{optimal}}$ 低**：**分类本体亮红灯** → 最优算法也无法消除多态膨胀与零距离种对，强烈建议启动属级分类修订。
+   * **$Q_{\text{author}}$ 表面高 + $Q_{\text{optimal}}$ 低**：**“虚假好用的危险表”** → 原作者刻意隐匿种内变异换取表短，实测极易误判。
+2. **虚拟蒙特卡洛压测 & 真实标本验表**：
+   * **虚拟压测**：随机屏蔽 $10\%$–$30\%$ 易损性状测算卡死率；对连续数值注入 $\pm 5\%$ / $\pm 10\%$ 测量误差生成**种间混淆矩阵**。
+   * **实测验表（科研修订利器）**：导入实验室带分子鉴定真值标签（如 COI / 基因组）的实测标本形态表，批量走一遍传统检索表，直接产出实测准确率、**“毒瘤项对（Toxic Couplet）”排行榜**与形态-分子冲突清单，可直接作为分类修订论文的定量图表证据。
+
+### 6.2 三级渐进解锁架构
+
+* **Level 1（仅输入旧表文本 / Key IR）**：跑通拓扑 QC、$E_{\text{shape}}$ / $E_{\text{dicho}}$、Osborne 期望正确率、单性状脆弱度、语义红牌扫描及 WoRMS/GBIF 名录覆盖率体检。
+* **Level 2（叠加性状矩阵）**：解锁最小诊断距离、零距离种对筛查、反事实重编译四象限及蒙特卡洛残缺/噪声压测。
+* **Level 3（叠加实测标本表与分子真值）**：解锁真实标本批量走表验证与“毒瘤项对”定位，形成 **构建（Build）→ 排版（Publish）→ 体检（Audit）→ 指导修订（Revise）** 的完整闭环。
+
+---
+
+## 七、 核心 Python 参考实现（拓扑质检、DFS 重编号与多态权重建表）
+
+```python
+import math
+import re
+from collections import deque
+
+
+def qc_and_audit_ir(key_data: dict) -> dict:
+    """Level 1 自动质检：拓扑完整性、数值边界、模糊表述与树形效率指标"""
+    issues = []
+    couplets = {c["id"]: c for c in key_data["couplets"]}
+    ids = [c["id"] for c in key_data["couplets"]]
+
+    if len(ids) != len(set(ids)):
+        issues.append("[编号] 存在重复项对编号")
+    expected = list(range(1, len(ids) + 1))
+    if sorted(ids) != expected:
+        issues.append(f"[编号] 编号不连续：现有 {sorted(ids)}，期望 {expected}")
+
+    adj = {cid: [] for cid in couplets}
+    actual_parents = {cid: set() for cid in couplets}
+    range_pat = re.compile(r"(\d+(?:\.\d+)?)\s*[-–—~]\s*(\d+(?:\.\d+)?)")
+    fuzzy_pat = re.compile(r"(其他情况|较长|较短|较大|较小|显著较大|otherwise|not as above)", re.I)
+
+    for cid, c in couplets.items():
+        leads = c["leads"]
+        if len(leads) != 2:
+            issues.append(f"[结构] 项对 {cid} 含 {len(leads)} 条分支（标准二歧表应为 2 条）")
+
+        ranges = []
+        for idx, lead in enumerate(leads):
+            text = lead["text"]
+            m_range = range_pat.search(text)
+            if m_range:
+                ranges.append((float(m_range.group(1)), float(m_range.group(2))))
+            m_fuzzy = fuzzy_pat.search(text)
+            if m_fuzzy:
+                issues.append(f"[语义] 项对 {cid} 第 {idx + 1} 条含模糊或消极表述: '{m_fuzzy.group(1)}'")
+
+            if lead["target_type"] == "couplet":
+                tgt = lead["target"]
+                if tgt not in couplets:
+                    issues.append(f"[死链] 项对 {cid} 指向不存在的编号 {tgt}")
+                else:
+                    adj[cid].append(tgt)
+                    actual_parents[tgt].add(cid)
+
+        if len(ranges) == 2:
+            (a1, a2), (b1, b2) = ranges
+            if max(a1, b1) <= min(a2, b2):
+                issues.append(f"[语义] 项对 {cid} 数值区间 {a1}–{a2} 与 {b1}–{b2} 重叠或端点冲突")
+
+    for cid, c in couplets.items():
+        p = c.get("parent")
+        if p is not None and p not in actual_parents[cid]:
+            issues.append(f"[回溯号] 项对 {cid} 标注 ({p})，实际指入节点为 {sorted(actual_parents[cid])}")
+
+    root = 1 if 1 in couplets else min(couplets)
+    visited = {root}
+    q = deque([root])
+    while q:
+        u = q.popleft()
+        for v in adj[u]:
+            if v not in visited:
+                visited.add(v)
+                q.append(v)
+    for orphan in sorted(set(couplets) - visited):
+        issues.append(f"[孤立节点] 项对 {orphan} 从根节点 {root} 不可达")
+
+    color = {cid: 0 for cid in couplets}
+    has_cycle = False
+
+    def dfs_cycle(u, path):
+        nonlocal has_cycle
+        color[u] = 1
+        for v in adj[u]:
+            if color[v] == 1:
+                has_cycle = True
+                cycle = path[path.index(v):] + [v]
+                issues.append(f"[环路] 检测到死循环: {' -> '.join(map(str, cycle))}")
+            elif color[v] == 0:
+                dfs_cycle(v, path + [v])
+        color[u] = 2
+
+    for cid in couplets:
+        if color[cid] == 0:
+            dfs_cycle(cid, [cid])
+
+    stats = {}
+    if not has_cycle and root in couplets:
+        depths = []
+        taxa_exits = []
+
+        def walk(u, d):
+            for lead in couplets[u]["leads"]:
+                if lead["target_type"] == "taxon":
+                    depths.append(d)
+                    taxa_exits.append(lead["target"])
+                elif lead["target_type"] == "couplet" and lead["target"] in couplets:
+                    walk(lead["target"], d + 1)
+
+        walk(root, 1)
+        n = len(depths)
+        if n > 0:
+            l_obs = sum(depths) / n
+            k = int(math.floor(math.log2(n))) if n > 1 else 0
+            l_min = (n * (k + 2) - (2 ** (k + 1))) / n if n > 1 else 1.0
+            l_max = ((n - 1) * (n + 2)) / (2 * n) if n > 1 else 1.0
+            e_shape = (l_max - l_obs) / (l_max - l_min) if (n >= 4 and l_max > l_min) else 1.0
+            exp_acc_5pct = sum((0.95 ** d) for d in depths) / n
+            unique_taxa = len(set(taxa_exits))
+            retic_idx = (len(couplets) - (unique_taxa - 1)) / unique_taxa if unique_taxa > 0 else 0.0
+            stats = {
+                "total_exits": n,
+                "unique_taxa": unique_taxa,
+                "avg_steps": round(l_obs, 2),
+                "max_depth": max(depths),
+                "L_min_exact": round(l_min, 2),
+                "L_max_exact": round(l_max, 2),
+                "E_shape": round(max(0.0, min(1.0, e_shape)), 3),
+                "expected_accuracy_e005": round(exp_acc_5pct, 3),
+                "reticulation_index": round(retic_idx, 3),
+            }
+
+    return {"issues": issues, "stats": stats}
+```
+
+---
+
+## 八、 经核实的核心参考文献与权威资源
+
+1. **Packer, L. (2024).** A survey of keys for the identification of newly described insect genera: recommendations for authors, reviewers, editors, and publishers. *ZooKeys* 1215: 65–90. `https://doi.org/10.3897/zookeys.1215.130416`
+2. **Kerner, A., Saliba, E. M., Bouquin, S., Portier, R., & Vignes-Lebbe, R. (2025).** An Xper3 reference guide for taxonomists: a collaborative system for identification keys and descriptive data. *European Journal of Taxonomy* 987(1): 281–302. `https://doi.org/10.5852/ejt.2025.987.2875`
+3. **Tofilski, A. (2018).** DKey software for editing and browsing dichotomous keys. *ZooKeys* 735: 131–140. `https://doi.org/10.3897/zookeys.735.21412`
+4. **Burguière, T., Causse, F., Ung, V., & Vignes-Lebbe, R. (2013).** IKey+: A New Single-Access Key Generation Web Service. *Systematic Biology* 62(1): 157–161.
+5. **Walter, D. E., & Winterton, S. L. (2007).** Keys and the Crisis in Taxonomy: Extinction or Reinvention? *Annual Review of Entomology* 52: 193–208. `https://doi.org/10.1146/annurev.ento.51.110104.151054`
+6. **Dallwitz, M. J. (1974).** A flexible computer program for generating identification keys. *Systematic Zoology* 23(1): 50–57.
+7. **Payne, R. W. (1975).** Genkey: A program for constructing diagnostic keys. In *Biological Identification with Computers*, pp. 65–77.
+8. **Payne, R. W., & Preece, D. A. (1980).** Identification keys and diagnostic tables: a review. *Journal of the Royal Statistical Society: Series A* 143(3): 253–282.
+9. **Osborne, D. V. (1963).** Some aspects of the theory of dichotomous keys. *New Phytologist* 62(2): 144–160. `https://doi.org/10.1111/j.1469-8137.1963.tb06322.x`
+10. **Murguía-Romero, M., Serrano-Estrada, B., Ortiz, E., & Villaseñor, J. L. (2021).** Taxonomic identification keys on the web: tools for better knowledge of biodiversity. *Revista Mexicana de Biodiversidad* 92: e923592. `https://doi.org/10.22201/ib.20078706e.2021.92.3592`
+11. **Glasby, C. J., Biriukova, O., Martin, P., Dyne, G. R., Utevsky, S., & Wilson, R. S. (2025).** ANNiKEY Linear — diagnoses, descriptions, and a single-access identification key to Annelida family-level taxa. *ZooKeys* 1247: 217–403. `https://doi.org/10.3897/zookeys.1247.137606`（配套 DELTA 交互版 `https://doi.org/10.5281/zenodo.13738485`）。
+12. **Wilson, R. S., Glasby, C. J., & Bakken, T. (2023).** A Taxonomic Information System for Nereididae (Annelida) [Data set]. *Zenodo*. `https://doi.org/10.5281/zenodo.7776745`（配套综述见 *ZooKeys*, 2023）。

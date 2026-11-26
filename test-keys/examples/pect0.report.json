@@ -1,0 +1,80 @@
+{
+ "taxa": 12,
+ "characters_used": [
+  "length",
+  "width",
+  "veil_cirri",
+  "paleae_pairs",
+  "paleae_shape",
+  "rim_cirri",
+  "posterodorsal_lobe",
+  "anteroventral_lobe",
+  "notopodia_reduced",
+  "teeth_rows",
+  "teeth_per_row",
+  "scaphe_shape",
+  "anal_flap",
+  "hooks",
+  "tube",
+  "glandular",
+  "type_locality"
+ ],
+ "excluded": [],
+ "numeric_bins": {
+  "length": [
+   "<15",
+   "15 to <63",
+   ">=63"
+  ],
+  "width": [
+   "<7",
+   "7 to <10",
+   ">=10"
+  ],
+  "veil_cirri": [
+   "<23",
+   "23 to <35",
+   ">=35"
+  ],
+  "paleae_pairs": [
+   "<10",
+   "10 to <25",
+   ">=25"
+  ],
+  "rim_cirri": [
+   "<40",
+   "40 to <50",
+   ">=50"
+  ],
+  "teeth_rows": [
+   "1",
+   "2",
+   "3",
+   "4",
+   "5"
+  ],
+  "teeth_per_row": [
+   "5",
+   "6",
+   "7",
+   "8",
+   "10"
+  ],
+  "hooks": [
+   "<8",
+   "8 to <12",
+   ">=12"
+  ]
+ },
+ "unresolved_groups": [],
+ "mean_steps": 1.0,
+ "pairs": {
+  "separated": 66,
+  "evidence_gap": 0,
+  "matrix_silent": 0
+ },
+ "weak_pairs": [
+  "A. a. mediterranea / A. catharinensis: 仅 type_locality"
+ ],
+ "unseparated_pairs": []
+}

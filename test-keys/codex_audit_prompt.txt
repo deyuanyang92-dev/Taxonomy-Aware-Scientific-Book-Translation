@@ -1,0 +1,15 @@
+你是代码审查员。只读审查，不改任何文件，不派生子任务。用中文写报告。
+
+仓库：/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation（分类学专著翻译系统）。审查对象：「检索表」（dichotomous key，二歧检索表，couplet 偶句）相关的全链路功能：
+1. 生成/抽取：docstore/keys.py、docstore/keyblocks.py、docstore/keytail.py、docstore/structauto.py、docstore/structdoc.py、scripts/keysplit.py、scripts/vl_to_aligned.py、booklayout/keymodel.py、booklayout/keyalign.py、booklayout/imajima.py
+2. 审查/检查：booklayout/keycheck.py、booklayout/keyrender.py（PDF 渲染坐标检查 KR1–KR7）、booklayout/keymarkers.py、transqa/taxonomy.py、transqa/blocks.py、scripts/keys_report.py
+3. 修正：booklayout/keyfix.py、scripts/apply_issues.py（问题单闸口）
+4. 排版：booklayout/builder.py 中 couplet/检索表相关部分
+相关测试 tests/test_booklayout_key*.py、tests/test_keyrender.py、tests/test_couplet_role.py、tests/test_docstore_keytail_real.py、tests/test_builder_key_address.py；文档 docs/booklayout.md、docs/booklayout-standard.md、docs/workflow.md、docs/taxonomic_typography.md。
+
+回答两个问题，每条结论必须给 file:line 依据，依据不足写「未确证」：
+A. 功能是否齐全：生成→检查→修正→排版→渲染复核 这条链各环节有无缺口？例如：编号连续性/去向闭合/环路/孤立偶句/去向指向不存在的号或类群、对偶句 a/b 配对、原文与译文检索表结构一致性（偶句数、去向号、学名一一对应）、修正后是否自动复检、检查结果能否转成 核译/issues 问题单。列出「已有」「缺失」「半成品」。
+B. 是否足够通用：是否硬编码了某本书（Imajima、Rouse 等）、某种编号格式（1/1'、1a/1b、1—2、括号回指式 1(3)、缩进式 indented key、表格式 key、多入口/图示 key）、某语种（英/日/俄/法/德/拉丁）、某排版来源（OCR、PaddleOCR-VL、PDF 文本层）？列出每处硬编码及影响。
+C. 按优先级给出改进建议（P0/P1/P2），每条写要改的文件和验收标准（测试用例）。
+
+可以运行只读命令（rg、sed -n、python3 -m pytest -q 单个测试文件）。报告控制在 300 行内，最后一行写「审查完毕」。

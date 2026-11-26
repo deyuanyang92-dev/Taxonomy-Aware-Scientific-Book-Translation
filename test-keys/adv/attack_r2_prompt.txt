@@ -1,0 +1,9 @@
+你是攻击方审查员（第 2 轮）。只在 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/corpus/ 内新建文件（文件名以 r2_ 开头），不得修改仓库其他任何文件，不派生子任务。中文。
+
+背景：/mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/SPEC.md 是共用规范；第 1 轮你写的 55 例现已全部通过实现 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/booklayout/keygraph.py（含 LIMITS 列表）。
+任务：
+1. 通读 keygraph.py 源码，找出能让它出错的弱点（正则过宽/过窄、启发式、边界条件、语种、真实 OCR 噪声、真实书的版式），每个弱点写 1–3 个 r2_*.json 样例（格式同 SPEC），总数 30–45。重点：真实分类学书籍里的写法（多毛类、昆虫、植物志、日本/俄罗斯/中国动物志），作者名被当学名、亚种三名、"sp." "spp." "cf."、属名缩写 "N. pelagica"、去向为科名/亚科名、"(part)"、去向页码+图号并存、行内多个数字（体节数 "with 20–30 chaetigers"）被误当跳转、折行处数字在行首被误当偶句号、OCR 撇号变成 1 或 l 或 '、全角数字、点线被 OCR 成 "......" 或 ". . ." 或消失、长表 100+ 偶句的编号跳跃。
+2. 每个样例的 why 写清它攻击的是 keygraph.py 第几行的什么逻辑。
+3. 写 /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation/test-keys/adv/review_r2.md：源码审查发现（file:line、问题、严重性 P0/P1/P2），不超过 80 行。
+4. 用 `cd /mnt/p/翻译-译作/Taxonomy-Aware-Scientific-Book-Translation && python3 test-keys/adv/run_corpus.py` 跑一遍（只读运行），把失败数写进 review_r2.md 末尾。注意 run_corpus.py 会写 corpus_report.json，这是允许的。
+最后输出「第2轮攻击完毕」。

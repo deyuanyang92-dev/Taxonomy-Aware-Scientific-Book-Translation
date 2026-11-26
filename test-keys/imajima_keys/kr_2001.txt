@@ -1,0 +1,7 @@
+KR1 OK    0  text column: every lead's text starts at the same x
+KR2 OK    0  wrapped lines start at the text column
+KR3 OK    0  dots follow the text; no blank tail before a leader line
+KR4 OK    0  address flush right and on one line
+KR5 OK    0  every lead ends with dots + address
+KR6 OK    0  taxon names italic; number not split from its measure word
+KR7 OK    0  a couplet's two leads on one page

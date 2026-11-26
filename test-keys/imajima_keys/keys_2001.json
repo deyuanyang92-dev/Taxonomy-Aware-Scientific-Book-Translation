@@ -1,0 +1,501 @@
+{
+ "pages": [
+  {
+   "page": 5,
+   "chapter": "多鳞虫科 Polynoidae",
+   "kind": "chapter",
+   "blocks": [
+    {
+     "block_id": "p005_k00",
+     "role": "heading",
+     "level": 2,
+     "source_page": 5,
+     "text": "ウロコムシ科の日本産亜科の検索",
+     "translation": "多鳞虫科日本产亚科检索"
+    },
+    {
+     "block_id": "p005_k01",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背鱗は10対；前口葉に両側感触手がない;疣足に樹枝状の大きな鰓がある；吻に5対の肉質突起と2対の顎がある",
+     "translation": "背鳞10对；口前叶无侧触手；疣足具树枝状大鳃；吻具5对肉质突起和2对颚",
+     "couplet": {
+      "marker": "1.",
+      "lead": "1",
+      "key": 1,
+      "name": null,
+      "target": "2"
+     }
+    },
+    {
+     "block_id": "p005_k02",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "背鱗は10対以上；前口葉に両側感触手があるか，またはない",
+     "translation": "背鳞10对以上；口前叶具或不具侧触手",
+     "couplet": {
+      "marker": "—",
+      "lead": "1'",
+      "key": 1,
+      "name": null,
+      "target": "3"
+     }
+    },
+    {
+     "block_id": "p005_k03",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "有背鱗疣足の全部または一部の背足枝に足刺葉を包むような苞がある;疣足は二叉型で背足枝に多数の太い足刺状の背剛毛がある.",
+     "translation": "具背鳞疣足的全部或部分背叶具包被足刺叶的苞；疣足双叶型，背叶具多数粗大的足刺状背刚毛",
+     "couplet": {
+      "marker": "2.",
+      "lead": "2",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Branchinotogluminae"
+     }
+    },
+    {
+     "block_id": "p005_k04",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "有背鱗疣足の背足枝に苞がない;疣足は亜二叉型で背足枝は小さく，少数の短い足刺状の背剛毛がある。",
+     "translation": "具背鳞疣足的背叶无苞；疣足亚双叶型，背叶小，具少数短足刺状背刚毛",
+     "couplet": {
+      "marker": "—",
+      "lead": "2'",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Branchipolynoinae"
+     }
+    },
+    {
+     "block_id": "p005_k05",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉に中央感触手がなく，側感触手が存在（Iphione)）または欠く（Iphionella）;背鱗は13対.",
+     "translation": "口前叶无中央触手，具侧触手（*Iphione*）或缺侧触手（*Iphionella*）；背鳞13对",
+     "couplet": {
+      "marker": "3.",
+      "lead": "3",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Iphioninae"
+     }
+    },
+    {
+     "block_id": "p005_k06",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "前口葉に側感触手と中央感触手がある",
+     "translation": "口前叶具侧触手和中央触手",
+     "couplet": {
+      "marker": "—",
+      "lead": "3'",
+      "key": 1,
+      "name": null,
+      "target": "4"
+     }
+    },
+    {
+     "block_id": "p005_k07",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "側感触手が前口葉の前端腹側または前方腹側から出て基節がある",
+     "translation": "侧触手自口前叶前端腹侧或前腹侧生出，具基节",
+     "couplet": {
+      "marker": "4.",
+      "lead": "4",
+      "key": 1,
+      "name": null,
+      "target": "5"
+     }
+    },
+    {
+     "block_id": "p005_k08",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "側感触手が前口葉の前端の延長部から出て基節はない",
+     "translation": "侧触手自口前叶前端的延伸部生出，无基节",
+     "couplet": {
+      "marker": "—",
+      "lead": "4'",
+      "key": 1,
+      "name": null,
+      "target": "7"
+     }
+    },
+    {
+     "block_id": "p005_k09",
+     "role": "couplet",
+     "source_page": 5,
+     "text": "側感触手が前口葉の前方腹側から出て小さい基節がある；感触糸の基節に剛毛がある",
+     "translation": "侧触手自口前叶前腹侧生出，具小基节；触须基节具刚毛",
+     "couplet": {
+      "marker": "5.",
+      "lead": "5",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Harmothoinae"
+     }
+    }
+   ]
+  },
+  {
+   "page": 6,
+   "chapter": "多鳞虫科 Polynoidae",
+   "kind": "chapter",
+   "blocks": [
+    {
+     "block_id": "p006_k00",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "側感触手が前口葉の前端腹側から出て基節がある；感触糸の基節に剛毛がない",
+     "translation": "侧触手自口前叶前端腹侧生出，具基节；触须基节无刚毛",
+     "couplet": {
+      "marker": "—",
+      "lead": "5'",
+      "key": 1,
+      "name": null,
+      "target": "6"
+     }
+    },
+    {
+     "block_id": "p006_k01",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "疣足は亜二叉型で，背足枝は小さく背剛毛は少数または欠く;腹足枝の前足葉の先端は丸い",
+     "translation": "疣足亚双叶型，背叶小，背刚毛少数或缺；腹叶前叶先端圆",
+     "couplet": {
+      "marker": "6.",
+      "lead": "6",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Arctonoinae"
+     }
+    },
+    {
+     "block_id": "p006_k02",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "疣足は二叉型で，背剛毛は少数から多数;腹足枝の前足葉の先端が背腹の2葉に分かれる",
+     "translation": "疣足双叶型，背刚毛少数至多数；腹叶前叶先端分为背腹2叶",
+     "couplet": {
+      "marker": "—",
+      "lead": "6'",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Acholoinae"
+     }
+    },
+    {
+     "block_id": "p006_k03",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体は通常短く，体節数はきまっている;背鱗の表面に微小突起がある；疣足は通常二叉型で，明瞭な背突起がある。",
+     "translation": "体通常短，体节数固定；背鳞表面具微突起；疣足通常双叶型，具明显背突起",
+     "couplet": {
+      "marker": "7.",
+      "lead": "7",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Lepidonotinae"
+     }
+    },
+    {
+     "block_id": "p006_k04",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体は通常長く，体節数は多い;背鱗は30対たはそれ以上で微小突起や縁毛がない;疣足は亜二叉型で，背突起はない。",
+     "translation": "体通常长，体节数多；背鳞30对或更多，无微突起和缘乳突；疣足亚双叶型，无背突起",
+     "couplet": {
+      "marker": "—",
+      "lead": "7'",
+      "key": 1,
+      "name": null,
+      "target": "亚科 Lepidastheniinae"
+     }
+    },
+    {
+     "block_id": "p006_k05",
+     "role": "heading",
+     "level": 2,
+     "source_page": 6,
+     "text": "ウロコムシ科の日本産種の検索",
+     "translation": "多鳞虫科日本产种检索"
+    },
+    {
+     "block_id": "p006_k06",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鱗は10対で，第2,4，5，7，9，11，13，15，17，19体節にある；前口葉に両側感触手がない;第3体節の疣足から樹枝状の鰓が生じる。",
+     "translation": "背鳞10对，位于第2，4，5，7，9，11，13，15，17，19体节；口前叶无侧触手；树枝状鳃自第3体节疣足生出",
+     "couplet": {
+      "marker": "1.",
+      "lead": "1",
+      "key": 2,
+      "name": null,
+      "target": "2"
+     }
+    },
+    {
+     "block_id": "p006_k07",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鱗は10対以上ある；前口葉に両側感触手が通常ある",
+     "translation": "背鳞10对以上；口前叶通常具侧触手",
+     "couplet": {
+      "marker": "—",
+      "lead": "1'",
+      "key": 2,
+      "name": null,
+      "target": "3"
+     }
+    },
+    {
+     "block_id": "p006_k08",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体背面は背鱗で覆われる;第12体節の疣足基部に長い突起がある；疣足は第20,21体節以外は二叉型;第20，21体節の背足枝は背触糸と癒合し，背剛毛はない",
+     "translation": "体背面被背鳞；第12体节疣足基部具长突起；除第20，21体节外疣足为双叶型；第20，21体节背叶与背须愈合，无背刚毛",
+     "couplet": {
+      "marker": "2.",
+      "lead": "2",
+      "key": 2,
+      "name": null,
+      "target": "*Opisthotrochopodus japonicus* （图12）"
+     }
+    },
+    {
+     "block_id": "p006_k09",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体背面の中央部は露出する;第11，12体節の疣足基部に長い突起がある;疣足は亜二叉型で背足枝は小さい 亜科Branchipolynoinae",
+     "translation": "体背面中央部裸露；第11，12体节疣足基部具长突起；疣足亚双叶型，背叶小 亚科Branchipolynoinae",
+     "couplet": {
+      "marker": "—",
+      "lead": "2'",
+      "key": 2,
+      "name": null,
+      "target": "*Branchipolynoe pettiboneae* （图13）"
+     }
+    },
+    {
+     "block_id": "p006_k10",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "前口葉に中央感触手がなく，側感触手があるかまたはない;背鱗は13対.",
+     "translation": "口前叶无中央触手，具或不具侧触手；背鳞13对",
+     "couplet": {
+      "marker": "3.",
+      "lead": "3",
+      "key": 2,
+      "name": "亚科 Iphioninae",
+      "target": "4"
+     }
+    },
+    {
+     "block_id": "p006_k11",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "前口葉に中央感触手と側感触手がある;背鱗は12対以上",
+     "translation": "口前叶具中央触手和侧触手；背鳞12对以上",
+     "couplet": {
+      "marker": "—",
+      "lead": "3'",
+      "key": 2,
+      "name": null,
+      "target": "5"
+     }
+    },
+    {
+     "block_id": "p006_k12",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "前口葉は前半部が二葉に分かれる；両側感触手は前口葉の伸長した両側前端に生じる;2対の眼点がある;背鱗は第2，4，5，７…23，27体節にあり，縁毛はない。",
+     "translation": "口前叶前半部分为2叶；侧触手生于口前叶伸长的两侧前端；眼点2对；背鳞位于第2，4，5，７…23，27体节，无缘乳突",
+     "couplet": {
+      "marker": "4.",
+      "lead": "4",
+      "key": 2,
+      "name": null,
+      "target": "*Iphione ovata* （图38）"
+     }
+    },
+    {
+     "block_id": "p006_k13",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "前口葉は完全に二葉に分かれる;両側感触手はない;眼点はない;背鱗は第２，4，5,7…23,26体節にあり，短い縁毛がある。",
+     "translation": "口前叶完全分为2叶；无侧触手；无眼点；背鳞位于第２，4，5，7…23，26体节，具短缘乳突",
+     "couplet": {
+      "marker": "—",
+      "lead": "4'",
+      "key": 2,
+      "name": null,
+      "target": "*Iphionella philippinensis* （图39）"
+     }
+    },
+    {
+     "block_id": "p006_k14",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "側感触手が前口葉の前端または前方腹側から生じ，基節がある。",
+     "translation": "侧触手自口前叶前端或前腹侧生出，具基节",
+     "couplet": {
+      "marker": "5.",
+      "lead": "5",
+      "key": 2,
+      "name": null,
+      "target": "6"
+     }
+    },
+    {
+     "block_id": "p006_k15",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "側感触手が前口葉の前端の延長部にあって基節はない。",
+     "translation": "侧触手位于口前叶前端的延伸部，无基节",
+     "couplet": {
+      "marker": "—",
+      "lead": "5'",
+      "key": 2,
+      "name": null,
+      "target": "40"
+     }
+    },
+    {
+     "block_id": "p006_k16",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "側感触手が前口葉の前方腹側から生じ，小さい基節がある；感触糸の基節に剛毛がある",
+     "translation": "侧触手自口前叶前腹侧生出，具小基节；触须基节具刚毛",
+     "couplet": {
+      "marker": "6.",
+      "lead": "6",
+      "key": 2,
+      "name": "亚科 Harmothoinae",
+      "target": "7"
+     }
+    },
+    {
+     "block_id": "p006_k17",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "側感触手が前口葉の前端腹側から生じ，基節がある；感触糸の基節に剛毛がない。",
+     "translation": "侧触手自口前叶前端腹侧生出，具基节；触须基节无刚毛",
+     "couplet": {
+      "marker": "—",
+      "lead": "6'",
+      "key": 2,
+      "name": null,
+      "target": "30"
+     }
+    },
+    {
+     "block_id": "p006_k18",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "葉状突起が第4体節の疣足基部腹側より生じる；背鱗に水滴様の大突起がある",
+     "translation": "叶状突起自第4体节疣足基部的腹侧生出；背鳞具水滴状大突起",
+     "couplet": {
+      "marker": "7.",
+      "lead": "7",
+      "key": 2,
+      "name": null,
+      "target": "*Paralepidonotus ampulliferus* （图37）"
+     }
+    },
+    {
+     "block_id": "p006_k19",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "葉状突起がない。",
+     "translation": "无叶状突起",
+     "couplet": {
+      "marker": "—",
+      "lead": "7'",
+      "key": 2,
+      "name": null,
+      "target": "8"
+     }
+    },
+    {
+     "block_id": "p006_k20",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鳞は15対",
+     "translation": "背鳞15对",
+     "couplet": {
+      "marker": "8.",
+      "lead": "8",
+      "key": 2,
+      "name": null,
+      "target": "9"
+     }
+    },
+    {
+     "block_id": "p006_k21",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "背鱗は15対より多い",
+     "translation": "背鳞多于15对",
+     "couplet": {
+      "marker": "—",
+      "lead": "8'",
+      "key": 2,
+      "name": "*Hololepidella*",
+      "target": "12"
+     }
+    },
+    {
+     "block_id": "p006_k22",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体後部背面は背鱗で覆われずに露出する。",
+     "translation": "体后部背面不被背鳞，裸露",
+     "couplet": {
+      "marker": "9.",
+      "lead": "9",
+      "key": 2,
+      "name": null,
+      "target": "10"
+     }
+    },
+    {
+     "block_id": "p006_k23",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体後部背面は背鱗で完全に覆われる",
+     "translation": "体后部背面完全被背鳞",
+     "couplet": {
+      "marker": "—",
+      "lead": "9'",
+      "key": 2,
+      "name": null,
+      "target": "11"
+     }
+    },
+    {
+     "block_id": "p006_k24",
+     "role": "couplet",
+     "source_page": 6,
+     "text": "体は40体節前後からなり，体後部の約10体節内外が露出する;背鱗に黒い洋梨形の大突起がある;背剛毛の先端は尖る",
+     "translation": "体由40体节左右组成，体后部约10体节内外裸露；背鳞具黑色洋梨形大突起；背刚毛先端尖",
+     "couplet": {
+      "marker": "10.",
+      "lead": "10",
+      "key": 2,
+      "name": null,
+      "target": "*Lagisca lamellifera* （图36）"
+     }
+    }
+   ]
+  }
+ ],
+ "metadata": {
+  "title": "环节动物 多毛类 II",
+  "volume": "Imajima2001",
+  "lang": "zh"
+ }
+}
