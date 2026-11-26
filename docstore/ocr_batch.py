@@ -207,6 +207,21 @@ def qc_pages(src: Path, ok: dict) -> dict[int, str]:
 LAYOUT_OFF_OPT = {"useLayoutDetection": False, "promptLabel": "ocr"}
 
 
+def _layout_fallback_locked(p: Paths, src: Path, rel: str, res: dict, qc_bad: dict[int, str],
+                             log: Callable[[str], None]) -> tuple[int, int]:
+    """返回 (执行前剩余额度, 实际占用页数)。额度预留在锁内完成；耗时的无版面重提在锁外执行。
+    2026-11-26 根因：原先整段 layout_fallback 在 _lock 内运行，重提（远程 OCR，单块可达 30 分钟）期间
+    所有线程的 log() 都阻塞在 _lock 上，表现为每约 50 分钟整体卡死约 37 分钟（watchdog.log 24 次）。"""
+    n_cand = sum(1 for r in qc_bad.values() if r.startswith("qc_short"))
+    with _lock:
+        remaining = DAILY_CAP - quota_today(p)
+        n_cand = min(n_cand, max(remaining, 0))
+        if n_cand:
+            quota_add(p, n_cand)  # 预留，防止并发线程超额
+    used = layout_fallback(None, src, rel, res, qc_bad, n_cand, log)  # p=None：不再二次计额
+    return remaining, used
+
+
 def layout_fallback(p: Paths | None, src: Path, rel: str, res: dict, qc_bad: dict[int, str],
                     remaining: int, log: Callable[[str], None]) -> int:
     """对 qc_short 页用 LAYOUT_OFF_OPT 重提（最多 remaining 页），通过 qc 的结果并入 res["ok"] 并从 qc_bad 移除。
@@ -385,9 +400,7 @@ def process(p: Paths, rel: str, pages_total: int) -> None:
         return
     qc_bad = qc_pages(src, res["ok"])
     if any(r.startswith("qc_short") for r in qc_bad.values()):
-        with _lock:
-            remaining = DAILY_CAP - quota_today(p)
-            used = layout_fallback(p, src, rel, res, qc_bad, remaining, log)
+        remaining, used = _layout_fallback_locked(p, src, rel, res, qc_bad, log)
         if remaining - used <= 0:
             stop_evt.set()
     for n, reason in sorted(qc_bad.items()):
