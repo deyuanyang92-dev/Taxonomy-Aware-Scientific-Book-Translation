@@ -39,7 +39,7 @@ def apply_overrides(profile: StyleProfile, specs: list[str]) -> StyleProfile:
     prof = copy.deepcopy(profile)
     for spec in specs or []:
         name, field, value = parse_override(spec)
-        if name.startswith("Heading ") and name[8:] in ("1", "2", "3", "4"):
+        if name.startswith("Heading ") and name[8:] in ("1", "2", "3", "4", "5", "6"):
             if field not in HEADING_FIELDS:
                 raise ValueError(f"{spec!r}: unknown heading field {field!r} (known: {sorted(HEADING_FIELDS)})")
             prof.heading_styles.setdefault(name[8:], {})[field] = value

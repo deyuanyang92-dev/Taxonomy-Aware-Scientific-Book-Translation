@@ -58,7 +58,7 @@ def run_sample(pdf: Path, pages: str, sl: str, tl: str, out: Path, title: str = 
              ("translate", ["translate-aligned", "--aligned", src, "--out", zh, "--sl", sl, "--tl", tl,
                             "--report", rep_f, *(["--glossary", glossary] if glossary else [])]),
              ("figures", ["figures", "extract", "--pdf", pdf, "--out", figs, "--first", lo, "--last", hi,
-                          "--aligned", src, "--lenient"])]
+                          "--aligned", src, "--lenient", "--vector"])]
     for label, a in steps:
         r = _bl(*a)
         # figures extract exits 1 when its audit finds issues; the manifest is still written and make re-audits

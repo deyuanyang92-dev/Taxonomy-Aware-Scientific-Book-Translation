@@ -33,6 +33,17 @@ def _stamp(*parts: object) -> str:
     return hashlib.sha256("\0".join(map(str, parts)).encode()).hexdigest()[:16]
 
 
+def _code_stamp() -> str:
+    """Hash of the modules that build the cached ingest/figure stages: editing them invalidates the cache."""
+    here = Path(__file__).parent
+    h = hashlib.sha256()
+    for n in ("ingest_native.py", "contents.py", "fingerprint.py", "figures.py", "structure.py"):
+        f = here / n
+        if f.exists():
+            h.update(f.read_bytes())
+    return h.hexdigest()[:12]
+
+
 def _pdf_stamp(pdf: Path) -> str:
     st = pdf.stat()
     return f"{pdf.resolve()}|{st.st_size}|{st.st_mtime_ns}"
@@ -98,7 +109,7 @@ def run_book(pdf: Path, out: Path, pages: str | None, sl: str, tl: str, title: s
                                   out / "figs", out / "meta.json")
     stamp_f = out / "run.stamps.json"
     stamps = json.loads(stamp_f.read_text(encoding="utf-8")) if stamp_f.exists() else {}
-    base = _stamp(_pdf_stamp(pdf), pr)
+    base = _stamp(_pdf_stamp(pdf), pr, _code_stamp())
 
     def fail(label: str, r: subprocess.CompletedProcess | str) -> int:
         msg = r if isinstance(r, str) else (r.stderr or r.stdout)[-600:]

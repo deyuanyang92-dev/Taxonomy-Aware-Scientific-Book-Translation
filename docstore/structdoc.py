@@ -19,7 +19,7 @@ ROLE_TYPES = frozenset({
     "heading", "body", "caption", "key", "ref", "entry", "citation", "index", "note", "couplet", "legend",
     "table", "list", "quote", "box", "footnote", "figure_group",
 })
-EXTRA_TYPES = frozenset({"key_couplet", "key_heading", "treatment", "figure"})
+EXTRA_TYPES = frozenset({"key_couplet", "key_heading", "treatment", "figure", "toc_entry", "toc_author"})
 TREATMENT_REQUIRED = ("latin", "ja", "ref", "description", "distribution", "caption")
 FIGNO = re.compile(r"^(?:図|Fig\.?|图)\s*(\d+)")
 NUM = re.compile(r"\d+(?:\.\d+)?")

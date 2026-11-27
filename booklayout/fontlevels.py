@@ -21,16 +21,23 @@ SIZE_RATIO = 1.15
 MAX_LEN = 120
 _SUBSET = re.compile(r"^[A-Z]{6}\+")
 _TRAIL_DIGITS = re.compile(r"\d+$")
+# "2.1 Morphology", "7.4.1 Name", and the bare one-level "1 Introduction" / "1. Introduction" (an
+# upper-case word must follow, so "12 mm long" or "3 setae" are not numbers).
 _NUMBER = re.compile(r"^(\d+(?:\.\d+)+)\.?\s+\S")
+_NUMBER_BARE = re.compile(r"^(\d{1,2})\.?\s+(?=[A-Z\xc0-\xde])")
+BARE_MAX_LEN = 60       # a bare "1 Xxx" line longer than this is a key couplet / list row, not a heading
+SAME_SIZE_MAX_LEN = 80  # a same-size bold line longer than this is run-in prose, not a heading
+_LEADERS = re.compile(r"(?:\.\s*){3,}|…")
 _PAGENO = re.compile(r"^(\d+|[ivxlcdm]{1,7}|[IVXLCDM]{1,7})$")
-_SANS = re.compile(r"sans|arial|helvet|calibri|verdana|gothic|meta(?!serif)|univers|frutiger", re.I)
+_SANS = re.compile(r"sans|arial|helvet|calibri|verdana|gothic|meta(?!serif)|univers|frutiger|simhei|heiti|yahei|黑|sourcehansans|notosanscjk", re.I)
 _SERIF = re.compile(r"serif|times|roman|georgia|garamond|palatino|minion|cambria|simsun|book", re.I)
 EDGE_BAND = 0.08
 
 
 def family_of(font: str) -> str:
     f = _TRAIL_DIGITS.sub("", _SUBSET.sub("", font))
-    f = re.sub(r"[-,]?(Bold|Regular|Italic|Oblique|Roman|Reg|Regul)?$", "", f, flags=re.I)
+    # every trailing weight/slant token: "Meta-BoldItalic" is the family "Meta", not "Meta-Bold"
+    f = re.sub(r"(?:[-,]?(?:Bold|Regular|Italic|Oblique|Roman|Regul|Reg))+(?:PS)?(?:MT)?$", "", f, flags=re.I)
     return f.rstrip("-,") or font
 
 
@@ -44,6 +51,39 @@ def is_serif(font: str, flags: int = 0) -> bool:
     return bool(flags & 4)
 
 
+def _line_styles(spans: list[dict]) -> set[tuple]:
+    """Styles of one line, tolerant of two common heading constructions.
+
+    * faux small caps: same family and weight, several sizes -> the largest size;
+    * mixed scripts at one size (CJK sans + Latin serif) -> the style carrying
+      most characters.
+    Anything else keeps every distinct style, so mixed body lines stay rejected.
+    """
+    chars: Counter = Counter()
+    for s in spans:
+        _it, bd = span_style(s)
+        chars[(family_of(s["font"]), round(s["size"], 1), bd, is_serif(s["font"], s["flags"]))] += len(s["text"].strip())
+    if len(chars) <= 1:
+        return set(chars)
+    if len({(f, b, sf) for f, _z, b, sf in chars}) == 1:
+        f, _z, b, sf = next(iter(chars))
+        return {(f, max(z for _f, z, _b, _s in chars), b, sf)}
+    sizes = [z for _f, z, _b, _s in chars]
+    if len({b for _f, _z, b, _s in chars}) > 1 and not any(0x3400 <= ord(c) <= 0x9fff for s in spans for c in s["text"]):
+        return set(chars)   # bold and light text in one line: a run-in head ("Prostomium. The ..."), not a heading
+    if max(sizes) - min(sizes) < 0.3:
+        return {chars.most_common(1)[0][0]}
+    return set(chars)
+
+
+def _in_edge(ln: dict) -> bool:
+    h = ln["height"]
+    return ln["y1"] < h * EDGE_BAND or ln["y0"] > h * (1 - EDGE_BAND)
+
+
+_CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")   # a stray BEL inside "7.7 Sedentaria" must not make the line differ from ingest's text
+
+
 def _lines(page: Any) -> list[dict]:
     out = []
     for b in page.get_text("dict")["blocks"]:
@@ -51,12 +91,9 @@ def _lines(page: Any) -> list[dict]:
             spans = [s for s in ln["spans"] if s["text"].strip()]
             if not spans:
                 continue
-            styles = set()
-            for s in spans:
-                _it, bd = span_style(s)
-                styles.add((family_of(s["font"]), round(s["size"], 1), bd, is_serif(s["font"], s["flags"])))
+            styles = _line_styles(spans)
             out.append(dict(
-                text=" ".join("".join(s["text"] for s in ln["spans"]).split()),
+                text=" ".join(_CTRL.sub("", "".join(s["text"] for s in ln["spans"])).split()),
                 styles=styles, spans=spans, y0=ln["bbox"][1], y1=ln["bbox"][3],
                 height=page.rect.height))
     return out
@@ -78,9 +115,12 @@ def body_style(pages: list[Any]) -> dict:
 
 
 def number_depth(text: str) -> tuple[str, int] | None:
-    m = _NUMBER.match(text.strip())
+    t = text.strip()
+    m = _NUMBER.match(t)
     if not m:
-        return None
+        m = _NUMBER_BARE.match(t)
+        if not m or len(t) > BARE_MAX_LEN or _LEADERS.search(t):
+            return None
     return m.group(1), m.group(1).count(".") + 1
 
 
@@ -88,10 +128,22 @@ def _edge_signatures(pages: list[Any]) -> set[str]:
     seen: dict[str, set[int]] = {}
     for n, page in enumerate(pages):
         for ln in _lines(page):
-            h = ln["height"]
-            if ln["y1"] < h * EDGE_BAND or ln["y0"] > h * (1 - EDGE_BAND):
+            if _in_edge(ln):
                 seen.setdefault(signature(ln["text"]), set()).add(n)
     return {s for s, p in seen.items() if len(p) >= 3}
+
+
+def _bold_short_line(text: str, bold: bool, body: dict, num: Any) -> bool:
+    """A single-style bold line in the body's own size/serif class ("1.1 Methods" in Times bold over
+    Times roman).  Guards against prose and keys: short, no leaders, no sentence end (unless numbered),
+    no lowercase start, not a bare page-number-ended row."""
+    if not bold or body["bold"] or len(text) > SAME_SIZE_MAX_LEN or _LEADERS.search(text):
+        return False
+    if text[:1].islower() or not re.search(r"[A-Za-z\xc0-\xff]{2}", text):
+        return False
+    if num is None and (text[-1] in ".,;" or re.search(r"\s\d{1,4}$", text)):
+        return False
+    return True
 
 
 def heading_candidates(page: Any, body: dict, furniture: set[str] | None = None,
@@ -105,11 +157,14 @@ def heading_candidates(page: Any, body: dict, furniture: set[str] | None = None,
         fam, size, bold, serif = next(iter(ln["styles"]))
         if (fam, size, bold) == bsty or _PAGENO.match(text) or text.endswith(":"):
             continue
-        if furniture and signature(text) in furniture:
-            continue
-        if not (size >= body["size"] * SIZE_RATIO or (bold and serif != body["serif"])):
+        # position AND repetition: a chapter title equal to the running head but
+        # set in the page body is a heading, not furniture
+        if furniture and signature(text) in furniture and _in_edge(ln):
             continue
         num = number_depth(text)
+        if not (size >= body["size"] * SIZE_RATIO or (bold and serif != body["serif"])
+                or _bold_short_line(text, bold, body, num)):
+            continue
         out.append(dict(
             page=page_no if page_no is not None else page.number + 1, text=text,
             style={"family": fam, "size": size, "bold": bold},
@@ -117,22 +172,66 @@ def heading_candidates(page: Any, body: dict, furniture: set[str] | None = None,
     return out
 
 
+def merge_levels(styles: dict[Any, tuple[Any, list[int]]]) -> tuple[dict[Any, int], int]:
+    """Merge number depth and the font ladder into one level scale.
+
+    `styles` maps a style key to (sort key, raw levels of its numbered members); a smaller sort key
+    is a bigger style.  A style with numbered members takes their most common level; an unnumbered
+    style takes the level of the next bigger numbered style (one rung down when the numbered levels
+    leave a gap), so a bigger unnumbered chapter title never ranks below a smaller numbered section;
+    unnumbered styles above every numbered one take the levels above them.  Levels are then shifted
+    so the top is 1.  Returns ({style key: level}, shift); numbered headings use own raw level + shift.
+    """
+    order = sorted(styles, key=lambda k: (styles[k][0], str(k)))
+    raw: dict[Any, int] = {}
+    nums = [k for k in order if styles[k][1]]
+    for k in nums:
+        cnt = Counter(styles[k][1])
+        raw[k] = min(cnt, key=lambda lv: (-cnt[lv], lv))
+    if not nums:
+        raw = {k: i + 1 for i, k in enumerate(order)}
+    else:
+        pos = {k: i for i, k in enumerate(order)}
+        for k in order:
+            if k in raw:
+                continue
+            above = [n for n in nums if pos[n] < pos[k]]
+            below = [n for n in nums if pos[n] > pos[k]]
+            run = [x for x in order if x not in nums and (not above or pos[x] > pos[above[-1]])
+                   and (not below or pos[x] < pos[below[0]])]
+            i = run.index(k)
+            if above and below:
+                gap = raw[below[0]] - raw[above[-1]]
+                raw[k] = raw[above[-1]] + min(i, max(gap - 1, 0))
+            elif above:
+                raw[k] = raw[above[-1]] + 1 + i
+            else:
+                raw[k] = raw[below[0]] - (len(run) - i)
+    shift = max(0, 1 - min(raw.values())) if raw else 0
+    return {k: v + shift for k, v in raw.items()}, shift
+
+
 def assign_levels(cands: list[dict]) -> dict:
-    """Return {headings, ladder, conflicts}; ladder ranks styles by size desc, bold first."""
-    styles = {(c["style"]["family"], c["style"]["size"], c["style"]["bold"]) for c in cands}
-    order = sorted(styles, key=lambda s: (-s[1], not s[2], s[0]))
-    rank = {s: i + 1 for i, s in enumerate(order)}
-    count = Counter((c["style"]["family"], c["style"]["size"], c["style"]["bold"]) for c in cands)
-    ladder = [dict(family=s[0], size=s[1], bold=s[2], level=rank[s], count=count[s]) for s in order]
+    """Return {headings, ladder, conflicts}; number depth and the style ladder share one scale."""
+    skey = lambda c: (c["style"]["family"], c["style"]["size"], c["style"]["bold"])  # noqa: E731
     depths = [c["depth"] for c in cands if c["depth"]]
     min_depth = min(depths) if depths else 1
+    groups: dict[tuple, tuple[Any, list[int]]] = {}
+    for c in cands:
+        s = skey(c)
+        _k, nl = groups.setdefault(s, ((-s[1], not s[2], s[0]), []))
+        if c["depth"]:
+            nl.append(c["depth"] - min_depth + 1)
+    rank, shift = merge_levels(groups)
+    count = Counter(skey(c) for c in cands)
+    ladder = [dict(family=s[0], size=s[1], bold=s[2], level=rank[s], count=count[s])
+              for s in sorted(groups, key=lambda s: (rank[s], -s[1], not s[2], s[0]))]
     heads, conflicts = [], []
     for c in cands:
-        s = (c["style"]["family"], c["style"]["size"], c["style"]["bold"])
-        style_lv = rank[s]
+        style_lv = rank[skey(c)]
         notes = []
         if c["depth"]:
-            level, source = c["depth"] - min_depth + 1, "number"
+            level, source = c["depth"] - min_depth + 1 + shift, "number"
             if level != style_lv:
                 notes.append(f"number={level} vs style={style_lv}")
         else:

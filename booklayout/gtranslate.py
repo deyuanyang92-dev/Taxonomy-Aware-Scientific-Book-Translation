@@ -26,7 +26,7 @@ from typing import Any
 
 from .english import worms_genera
 
-ROLES = {"heading", "body", "caption", "key", "index", "ref", "couplet", "legend"}
+ROLES = {"heading", "body", "caption", "key", "index", "ref", "couplet", "legend", "note", "toc_entry", "toc_author"}
 LEADER_RE = re.compile(r"^(?P<label>.*?)(?P<lead>\s*\.{3,}\s*|\s+…+\s*)(?P<tail>.*)$", re.S)
 BINOM_RE = re.compile(r"\b(?P<g>[A-Z][a-z]{3,}|[A-Z]\.)\s+(?P<s>[a-z]{3,})\b")
 RANK_RE = re.compile(

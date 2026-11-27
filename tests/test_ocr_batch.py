@@ -491,3 +491,41 @@ def test_render_page_writes_png(tmp_path):
     png = tmp_path / "p2.png"
     ob.render_page(src, 2, png, 50)
     assert png.exists() and png.read_bytes()[:4] == b"\x89PNG"
+
+
+def _timed_empty_fixture(tmp_path, n_pages: int):
+    p = mkpaths(tmp_path)
+    rel = "a.pdf"
+    mkpdf(p.src / rel, n_pages, "x")
+    p.out.mkdir(parents=True, exist_ok=True)
+    (p.out / (rel + ".json")).write_text(json.dumps({"pages": {}, "page_count": n_pages}))
+    for n in range(1, n_pages + 1):
+        ob.append_tsv(p.failed, ["2026-11-26T10:00:00", rel, str(n), "empty_suspect: x"], ob.FAILED_HDR)
+    return p, rel
+
+
+def test_empty_audit_pending_retry_pages_do_not_halt(tmp_path, monkeypatch):
+    """2026-11-27 根因：放行(unblock)后待重提的页不得让 empty_audit 再次停跑（否则死锁）。"""
+    monkeypatch.setattr(paddle_vl, "_is_blank", lambda src, n: False)
+    monkeypatch.setattr(paddle_vl, "local_ocr_chars", lambda src, n: 500)
+    monkeypatch.setattr(ob, "_write_md", lambda *a, **k: None)
+    p, rel = _timed_empty_fixture(tmp_path, 3)
+    for n in (1, 2, 3):
+        ob.append_tsv(p.unblock, ["2026-11-27T10:00:00", rel, str(n)], ["time", "file", "page"])
+    assert ob.empty_audit(p, threshold=3) == 3
+    assert not p.halt.exists()
+
+
+def test_empty_audit_retry_failed_again_halts(tmp_path, monkeypatch):
+    """放行后重提仍空返回（晚于放行时间的新记录）→ 该页恢复计入停跑。"""
+    monkeypatch.setattr(paddle_vl, "_is_blank", lambda src, n: False)
+    monkeypatch.setattr(paddle_vl, "local_ocr_chars", lambda src, n: 500)
+    monkeypatch.setattr(ob, "_write_md", lambda *a, **k: None)
+    p, rel = _timed_empty_fixture(tmp_path, 3)
+    for n in (1, 2, 3):
+        ob.append_tsv(p.unblock, ["2026-11-27T10:00:00", rel, str(n)], ["time", "file", "page"])
+    ob.append_tsv(p.failed, ["2026-11-27T11:00:00", rel, "1", "empty_suspect: x"], ob.FAILED_HDR)
+    assert ob.empty_audit(p, threshold=3) == 3  # 只有页 1 恢复计数（1 < 3），页 2、3 仍待重提
+    assert not p.halt.exists()
+    ob.empty_audit(p, threshold=1)
+    assert p.halt.exists()

@@ -113,14 +113,17 @@ def test_validate_v2_rejects_bad_fields():
 def test_handbook_vol3_p13_14_smoke():
     d = ingest_native.ingest(VOL3, [13, 14])
     heads = [(b["level"], b["text"]) for p in d["pages"] for b in p["blocks"] if b["role"] == "heading"]
-    # T2b: the 8 pt running head "7.4 Sedentaria..." (1 of 2 pages, so the 3-page signature misses it) is furniture
-    assert not any("Sedentaria" in t for _, t in heads)
+    # p13 sets "7.4 Sedentaria..." as the 15 pt chapter title; p14 repeats it as an 8 pt running head.
+    # The running head (edge band) is furniture, the chapter title in the page body is a heading.
+    by_page = {p["page"] if "page" in p else i: [b["text"] for b in p["blocks"] if b["role"] == "heading" and "Sedentaria" in b["text"]]
+               for i, p in enumerate(d["pages"])}
+    assert [len(v) for v in by_page.values()] == [1, 0]
     assert any(t == "7.4.8 Fabriciidae Rioja, 1923" for _, t in heads)
     assert d["pages"][0]["columns"] == 2
     doc = fitz.open(str(VOL3))
     ref = fontlevels.analyse([doc.load_page(12), doc.load_page(13)])["headings"]
-    kept = [(h["level"], h["text"]) for h in ref if "Sedentaria" not in h["text"]]
-    assert [t for _, t in kept] == [t for _, t in heads]   # same headings; levels re-based once the head is gone
+    kept = [(h["level"], h["text"]) for h in ref]
+    assert [t for _, t in kept] == [t for _, t in heads]   # same headings, including the chapter title
     assert validate_aligned(d) == []
 
 
@@ -169,10 +172,17 @@ def test_refine_levels_compacts_ladder():
     assert pages[0]["blocks"][2]["style"] == "Heading 2"
 
 
-def test_refine_levels_keeps_numbered_books():
-    pages = [{"page": 1, "blocks": [dict(_hb(14), level=1, level_source="number"), dict(_hb(12), level=3)]}]
+def test_refine_levels_merges_numbered_and_unnumbered():
+    num = dict(_hb(14), text="1 Introduction", level=1, level_source="number")
+    pages = [{"page": 1, "blocks": [num, dict(_hb(12), text="References", level=3)]}]
     ingest_native.refine_levels(pages, 10.0)
-    assert [b["level"] for b in pages[0]["blocks"]] == [1, 3]
+    assert [b["level"] for b in pages[0]["blocks"]] == [1, 2]      # smaller unnumbered sits below the numbered
+    big = dict(_hb(13), text="Part title", level=1)
+    sub = dict(_hb(11), text="2.1 Morphology", level=2, level_source="number")
+    top = dict(_hb(12), text="2 Results", level=1, level_source="number")
+    pages = [{"page": 1, "blocks": [big, top, sub]}]
+    ingest_native.refine_levels(pages, 10.0)
+    assert [b["level"] for b in pages[0]["blocks"]] == [1, 2, 3]   # larger unnumbered title is not below 2.1
 
 
 def test_small_running_head_dropped_in_two_page_sample(tmp_path):

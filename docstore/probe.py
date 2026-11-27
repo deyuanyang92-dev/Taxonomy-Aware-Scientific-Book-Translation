@@ -91,9 +91,24 @@ def _line_rows(page: Any) -> list[dict]:
     return rows
 
 
-def page_columns(rows: list[dict]) -> tuple[int, list[float] | None]:
-    """行框 -> layout._find_gutter；两侧各 >= MIN_SIDE 行才算 2 栏。"""
+def _inside_any(r: dict, boxes: Any) -> bool:
+    cx, cy = (r["x0"] + r["x1"]) / 2, (r["y0"] + r["y1"]) / 2
+    return any(b[0] - 2 <= cx <= b[2] + 2 and b[1] - 2 <= cy <= b[3] + 2 for b in boxes)
+
+
+def page_columns(rows: list[dict], page_height: float | None = None,
+                 exclude: Any = (), band: float = 0.08) -> tuple[int, list[float] | None]:
+    """行框 -> layout._find_gutter；两侧各 >= MIN_SIDE 行才算 2 栏。
+
+    图内标签、图注和页边带（页眉页脚）不是正文栏：给 `exclude`（图、图注的 bbox）
+    和 `page_height` 时先剔除，否则图多的页会因图内文字跨过中缝而误判单栏。
+    """
     from . import layout
+
+    if page_height:
+        rows = [r for r in rows if r["y1"] > band * page_height and r["y0"] < (1 - band) * page_height]
+    if exclude:
+        rows = [r for r in rows if not _inside_any(r, exclude)]
 
     if len(rows) < 2 * layout.MIN_SIDE:
         return 1, None
@@ -108,6 +123,16 @@ def page_columns(rows: list[dict]) -> tuple[int, list[float] | None]:
     if left >= layout.MIN_SIDE and right >= layout.MIN_SIDE:
         return 2, [round(g[0], 1), round(g[1], 1)]
     return 1, None
+
+
+def _figure_boxes(page: Any) -> list[tuple]:
+    """图和图注的外框；失败时返回空（只是少剔除，不影响探测）。"""
+    try:
+        from booklayout.pdffigures import image_placements, page_captions
+
+        return [p["bbox"] for p in image_placements(page, vector=True)] + [c["bbox"] for c in page_captions(page)]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _family(font: str) -> str:
@@ -267,8 +292,9 @@ def probe_pdf(path: Path, sample: int = 5, pages: list[int] | None = None, fonts
         for i in idx:
             pk = page_kind(doc[i])
             rows_by[i] = _line_rows(doc[i]) if pk["chars"] else []
-            c, gut = page_columns(rows_by[i])
-            if pk["page_kind"] != "blank":
+            c, gut = page_columns(rows_by[i], doc[i].rect.height, _figure_boxes(doc[i]) if rows_by[i] else ())
+            # 整页图/稀疏页（原始行 < 20）没有栏信息，不投 1 栏票
+            if pk["page_kind"] != "blank" and (c == 2 or len(rows_by[i]) >= 20):
                 cols.append(c)
             sampled.append({"page": i + 1, **pk, "columns": c, "gutter": gut})
         kind, reason = book_kind(meta, sampled)

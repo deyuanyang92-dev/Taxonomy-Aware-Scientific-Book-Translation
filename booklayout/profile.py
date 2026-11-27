@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any
 
 PROFILE_VERSION = 1
+MAX_HEADING_LEVEL = 6   # Word styles Heading 1..6 are defined; levels above 4 default to the level-4 look
 
 # Roles of the generic block model.  The first group is the historical Vol. 48
 # vocabulary and stays valid unchanged.
@@ -40,7 +41,7 @@ PROFILE_VERSION = 1
 # the three real books) and rendered by the builder, so the schema must accept them.
 LEGACY_ROLES = frozenset({"heading", "body", "caption", "key", "ref", "entry", "citation",
                           "index", "note", "couplet", "legend"})
-NEW_ROLES = frozenset({"table", "list", "quote", "box", "footnote", "figure_group"})
+NEW_ROLES = frozenset({"table", "list", "quote", "box", "footnote", "figure_group", "figure", "toc_entry", "toc_author"})
 ROLES = LEGACY_ROLES | NEW_ROLES
 
 
@@ -121,8 +122,23 @@ class StyleProfile:
     # "center": page number centred in the footer, running titles in the header
     # (Vol. 48 / Imajima baselines).  "folio": ruled footer, odd/even pages mirrored
     # (even: page number left, series right; odd: volume left, page number right),
-    # no header; the first page carries no folio.
+    # no header; the first page carries no folio.  "running_top": no footer; the header
+    # at the page top mirrored on odd/even pages (even: page number outside left, then the
+    # text; odd: the text, then the page number outside right); the first page prints none.
     footer_style: str = "center"
+    # Body columns (1 = single column).  >1: the chapter heading block and wide figures (a caption spanning
+    # most of the source text width) run full width in 1-column continuous sections, everything else flows
+    # in `columns` columns separated by `column_gap_mm`.  Set by `booklayout profile --from-pdf`.
+    columns: int = 1
+    column_gap_mm: float = 7.5
+    # Font of the headings and of the running head when the source sets them in another class than the body
+    # (e.g. sans bold headings over a serif body); None = body_font.
+    heading_font: str | None = None
+    caption_font: str | None = None
+    # footer_style "running_top": text of the running head on even / odd pages (measured from the source;
+    # the metadata's running_left / running_right are used when these are empty).
+    running_even: str = ""
+    running_odd: str = ""
     # Named Word paragraph styles for every non-heading role (design 2026-11-26 C).  One entry
     # per style name; a paragraph only references its style.  Fields: size (pt for a 10.5 pt body,
     # scaled with body_size), bold, italic, align (left|center|right|justify), first (first-line
@@ -183,6 +199,10 @@ class StyleProfile:
         """Effective style of heading `level` (defaults fill missing fields)."""
         base = {"size": 10.5, "before": 0, "after": 0, "align": "left",
                 "bold": True, "italic": False, "small_caps": False, "color": "000000"}
+        if level > 4 and str(level) not in self.heading_styles:
+            return self.heading_style(4)    # deeper than the profile defines: same look as the last defined level
+        if level > 4 and str(level) not in self.heading_styles:
+            return self.heading_style(4)    # deeper than the profile defines: same look as the last defined level
         base.update(self.heading_styles.get(str(level), {}))
         return base
 
@@ -208,8 +228,10 @@ class StyleProfile:
             raise ValueError(f"key_style must be 'tabs', 'table' or 'couplet', not {self.key_style!r}")
         if len(self.key_headers) != 3:
             raise ValueError("key_headers needs exactly 3 strings (marker, characters, target)")
-        if self.footer_style not in ("center", "folio"):
-            raise ValueError(f"footer_style must be 'center' or 'folio', not {self.footer_style!r}")
+        if self.footer_style not in ("center", "folio", "running_top"):
+            raise ValueError(f"footer_style must be 'center', 'folio' or 'running_top', not {self.footer_style!r}")
+        if not 1 <= self.columns <= 4:
+            raise ValueError(f"columns must be 1-4, not {self.columns}")
         for key, st in self.para_styles.items():
             if key not in PARA_STYLE_DEFAULTS:
                 raise ValueError(f"para_styles key {key!r}: unknown style (known: {sorted(PARA_STYLE_DEFAULTS)})")
@@ -219,8 +241,8 @@ class StyleProfile:
             if st.get("align", "left") not in ("left", "center", "right", "justify"):
                 raise ValueError(f"para_styles[{key}].align must be left/center/right/justify")
         for key, st in self.heading_styles.items():
-            if key not in ("1", "2", "3", "4"):
-                raise ValueError(f"heading_styles key {key!r}: only levels 1-4 exist")
+            if key not in tuple(str(i) for i in range(1, MAX_HEADING_LEVEL + 1)):
+                raise ValueError(f"heading_styles key {key!r}: only levels 1-{MAX_HEADING_LEVEL} exist")
             bad = sorted(set(st) - {"size", "before", "after", "align", "bold", "italic", "small_caps", "color"})
             if bad:
                 raise ValueError(f"heading_styles[{key}]: unknown fields {bad}")

@@ -608,6 +608,19 @@ def cmd_split(a) -> None:
                 print(f"  {r['file']}\t{r['pages']} 页\t{r['bytes'] / 1e6:.2f} MB\tok={r['ok']}")
 
 
+def cmd_layout(st: Store, a) -> None:
+    from . import probe
+    from .layoutfetch import fetch_layout
+
+    d = st.doc(a.key)
+    r = fetch_layout(Path(st.root), a.key, d["path"], probe.parse_pages(a.pages), force=a.force)
+    print(f"layout {a.key}: fetched {len(r['fetched'])} skipped {len(r['skipped'])} failed {len(r['failed'])}")
+    for p, why in sorted(r["failed"].items()):
+        print(f"  p{p}: {why}", file=sys.stderr)
+    if r["failed"]:
+        sys.exit(1)
+
+
 def cmd_probe(a) -> None:
     from . import probe
 
@@ -859,6 +872,12 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--list-targets", action="store_true", help="列出可用 profile 后退出")
     s.add_argument("--overwrite", action="store_true", help="已存在的块也重写（默认跳过）")
     s.set_defaults(fn=cmd_split)
+
+    s = sub.add_parser("layout", help="取 PaddleOCR-VL 版面（块标签+坐标）存 layout/<key>/，不改页文本；原生 PDF 结构用（#71）")
+    s.add_argument("key")
+    s.add_argument("--pages", required=True, help="如 1-20,35")
+    s.add_argument("--force", action="store_true", help="已缓存页也重取")
+    s.set_defaults(fn=cmd_layout)
 
     s = sub.add_parser("probe", help="PDF 体检：原生/扫描/OCR 层、分栏、书签、字体（只抽样页，不需要资料库）")
     s.add_argument("pdfs", nargs="+")

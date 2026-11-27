@@ -128,7 +128,7 @@ def _is_content_block(page: dict, block: dict, meta: "BookMeta | None" = None) -
             return True
         if role == "citation" and _SPANISH_LABEL.match((block.get("text") or "").strip()):
             return True
-    if role in {"caption", "citation", "ref", "index"}:
+    if role in {"caption", "citation", "ref", "index", "toc_entry", "toc_author"}:
         return False
     if page.get("kind") == "appendix" and role == "entry":
         return False
@@ -1071,7 +1071,8 @@ def _delivery_problems(data: dict, pdf: str | None) -> dict:
             orphans.append({"page": page["page"], "count": counts["orphan_targets"]})
         for block in page.get("blocks", []):
             tr = (block.get("translation") or "").strip()
-            if block.get("role") in ("body", "caption", "note") and "\n" in tr:
+            if block.get("role") in ("body", "caption", "note") and "\n" in tr and not block.get("author"):
+                # author addresses print one line per paragraph (builder.author_block), not justified
                 manual_breaks.append({"page": page["page"], "text": tr[:80]})
             if block.get("role") in ("body", "caption", "heading", "key") and len(tr) >= 24:
                 expected.append((page["page"], tr))
@@ -1190,6 +1191,13 @@ def cmd_qa(args: argparse.Namespace) -> int:
                 if report["folio_problems"]:
                     layout_problems.append(
                         f"{len(report['folio_problems'])} footer problems: {folio.summarize(report['folio_problems'])}")
+            from . import folio as _fol
+            report["front_heads"] = _fol.front_heads(args.pdf, meta, [p["page"] for p in data["pages"]],
+                                                     prof.margin_top * 72 / 25.4)
+            if report["front_heads"]:
+                layout_problems.append(
+                    f"{len(report['front_heads'])} front-matter pages print a running head "
+                    f"(first page {report['front_heads'][0]['page']}); the source front pages carry none")
             from .taxonlist import pdf_toc_rank_entries
             report["toc_rank_entries"] = pdf_toc_rank_entries(args.pdf)
             if report["toc_rank_entries"]:
@@ -1241,6 +1249,17 @@ def cmd_qa(args: argparse.Namespace) -> int:
             layout_problems.append(f"cannot read PDF: {exc}")
     else:
         layout_problems.append("no PDF supplied; layout review skipped")
+
+    if args.pdf and getattr(args, "likeness_src", None):
+        from . import likeness as likeness_module
+
+        try:
+            lk = likeness_module.run(args.likeness_src, args.pdf, args.likeness_src_pages,
+                                     args.likeness_out_pages, args.likeness_config)
+            report["likeness"] = lk
+            layout_problems.extend(likeness_module.failures(lk))
+        except Exception as exc:  # pragma: no cover - environment specific
+            layout_problems.append(f"likeness check failed to run: {exc}")
 
     text = _text_qa(data, meta)
     if not _residue_check_applies(getattr(args, "profile", None)):
@@ -1949,6 +1968,9 @@ def cmd_profile(args: argparse.Namespace) -> int:
     """Print the default style profile (a template to edit) or validate a file."""
     from .profile import StyleProfile
 
+    if getattr(args, "from_pdf", None):
+        from .profilegen import cmd_from_pdf
+        return cmd_from_pdf(args)
     if args.validate:
         prof = StyleProfile.from_file(args.validate)
         print(json.dumps({"ok": True, "name": prof.name, "sha256": prof.sha256()}, ensure_ascii=False))
@@ -2081,6 +2103,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--out", type=Path)
     q.add_argument("--title")
     q.add_argument("--profile", type=Path, help="build profile (unwrap_lines makes hand-made breaks harmless)")
+    q.add_argument("--likeness-src", type=Path, help="source PDF: also check the output is laid out like it (any book)")
+    q.add_argument("--likeness-src-pages")
+    q.add_argument("--likeness-out-pages")
+    q.add_argument("--likeness-config", type=Path, help="likeness.json (per-book tolerances, columns_out, skip)")
     q.set_defaults(func=cmd_qa)
 
     n = sub.add_parser("normalize", help="apply deterministic block repairs to aligned JSON")
@@ -2163,6 +2189,8 @@ def build_parser() -> argparse.ArgumentParser:
     sample_module.add_parser(sub)
     from . import run as run_module
     run_module.add_parser(sub)
+    from booklayout import docstruct as docstruct_module
+    docstruct_module.add_parser(sub)
     from . import editor as editor_module
 
     editor_module.add_parser(sub)
@@ -2184,6 +2212,13 @@ def build_parser() -> argparse.ArgumentParser:
     treatments_module.add_parser(sub)
     pdffigures.add_parser(sub)
     fontlevels_module.add_parser(sub)
+    from . import fingerprint as fingerprint_module
+    from . import likeness as likeness_module
+
+    fingerprint_module.add_parser(sub)
+    likeness_module.add_parser(sub)
+    from . import comparepages as comparepages_module
+    comparepages_module.add_parser(sub)
     from . import ingest_native as ingest_native_module
     ingest_native_module.add_parser(sub)
     keymodel.add_parser(sub)
@@ -2191,6 +2226,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     pr = sub.add_parser("profile", help="print the default style profile, or --validate a profile file")
     pr.add_argument("--validate", type=Path)
+    pr.add_argument("--from-pdf", type=Path, help="measure a profile from the layout of this PDF (see --pages)")
+    pr.add_argument("--pages", help="1-based page range of --from-pdf, e.g. 13-40 (default: all)")
+    pr.add_argument("-o", "--out", type=Path, help="write the measured profile here")
+    pr.add_argument("--serif-font", default="Times New Roman", help="font used for a serif source body")
+    pr.add_argument("--sans-font", default="Arial", help="font used for a sans source body/headings")
+    pr.add_argument("--name", help="profile name")
     pr.set_defaults(func=cmd_profile)
 
     va = sub.add_parser("validate-aligned", help="schema-check aligned JSON (generic block model)")

@@ -31,7 +31,7 @@ from docx.image.image import Image as DocxImage
 from docx.text.run import Run
 
 from booklayout.english import is_english_word, worms_genera
-from booklayout.profile import PARA_STYLE_DEFAULTS, StyleProfile
+from booklayout.profile import MAX_HEADING_LEVEL, PARA_STYLE_DEFAULTS, StyleProfile
 
 BODY_FONT = "Garamond"
 # 中文版把 eastAsia 字体设为宋体（Garamond 无汉字，Word 会随机回落）；英文版保持不变。
@@ -125,6 +125,7 @@ class BookMeta:
     own_pages: list[int] = field(default_factory=list)  # source pages that start a new page and are followed by one
     centered_pages: list[int] = field(default_factory=list)  # source pages set centred (cover, title)
     front_pages: list[int] = field(default_factory=list)  # title/copyright/board/author pages typeset line by line (frontmatter.py)
+    toc_pages: list[int] = field(default_factory=list)  # source contents pages: no book running head (folio.front_heads)
     # Source pages printed as the scan itself (cover photo, logo plates that OCR
     # cannot reproduce): figs_dir/source_pages/pNNNN.png, one full page each.
     image_pages: list[int] = field(default_factory=list)
@@ -268,7 +269,7 @@ def build_genus_set(data: dict) -> set[str]:
         # 缓存缺失时退回段首「属名 + 小写词」启发式（会混入普通词语，故只在
         # 没有 WoRMS 名单时使用）。
         for t in texts:
-            m = re.match(r'^([A-Z][a-z]{2,})\s+([a-z(][^\s]*)', t)
+            m = re.match(r'^([A-Z][a-z]{2,})\s+([a-z(][^\s]*)', t)  # type: ignore[assignment]
             if m:
                 second = m.group(2).lower().strip(',.;:()')
                 if second not in FUNCTION_WORDS and not is_english_word(second) \
@@ -330,8 +331,8 @@ def _patch_image_sha1() -> None:
             if v is None:
                 v = self.__dict__["_bl_sha1"] = hashlib.sha1(self.blob).hexdigest()
             return v
-        ImagePart.sha1 = property(sha1)
-        ImagePart._bl_sha1_cached = True
+        ImagePart.sha1 = property(sha1)  # type: ignore[method-assign,assignment]
+        ImagePart._bl_sha1_cached = True  # type: ignore[attr-defined]
     except Exception:
         pass
 
@@ -369,7 +370,7 @@ def _has_styles(doc) -> bool:
     return ok
 
 
-def add_runs(par, text: str, size: float, bold: bool = False, italic: bool = False,
+def add_runs(par, text: str, size: float | None, bold: bool = False, italic: bool = False,
              color: RGBColor | None = None, genera: set[str] | None = None,
              invert: bool = False):
     """Emit runs.  ``invert`` sets the taxon names opposite to the base style
@@ -604,6 +605,129 @@ def _set_folio_start(sec, start: int) -> None:
                              'w:printerSettings', 'w:sectPrChange')
 
 
+def _set_page_numbering(sec, fmt: str, start: int | None) -> None:
+    """Number format (decimal / lowerRoman) and first number of a section."""
+    sp = sec._sectPr
+    for old in sp.findall(qn('w:pgNumType')):
+        sp.remove(old)
+    pg = OxmlElement('w:pgNumType')
+    pg.set(qn('w:fmt'), fmt)
+    if start is not None:
+        pg.set(qn('w:start'), str(start))
+    sp.insert_element_before(pg, 'w:cols', 'w:formProt', 'w:vAlign', 'w:noEndnote', 'w:titlePg',
+                             'w:textDirection', 'w:bidi', 'w:rtlGutter', 'w:docGrid',
+                             'w:printerSettings', 'w:sectPrChange')
+
+
+_ROMAN_VAL = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100}
+
+
+def _roman_int(tok: str) -> int | None:
+    """Value of a lower/upper-case roman numeral, None when `tok` is not one."""
+    t = tok.lower()
+    if not t or any(c not in _ROMAN_VAL for c in t):
+        return None
+    v = [_ROMAN_VAL[c] for c in t]
+    return sum(-a if a < b else a for a, b in zip(v, v[1:] + [0]))
+
+
+def _norm_head(s: str) -> str:
+    return re.sub(r"[\W\d_]+", "", (s or "").lower())
+
+
+def front_groups(pages: list[dict]) -> tuple[dict[int, dict], dict[int, int]]:
+    """Front-matter page groups (Foreword, Contents, List of contributing authors ...) and the body start.
+
+    A group is a run of source pages with one `chapter` whose running heads carry roman folios and
+    print nothing but the group's own title.  A run without any head (its pages print none) that sits
+    right before such a group and opens with its own level-1 heading joins it.  Returns
+    ({page: {"title", "first", "start"}}, {first body page after a group: its first arabic folio}).
+    Folio start = printed folio minus the page's offset in the run, so output folios follow the source's."""
+    runs: list[list[dict]] = []
+    for p in pages:
+        if runs and runs[-1][0].get("chapter") == p.get("chapter"):
+            runs[-1].append(p)
+        else:
+            runs.append([p])
+    start_of: dict[int, int | None] = {}
+    for n, run in enumerate(runs):
+        ch = run[0].get("chapter") or ""
+        folios = [(k, _roman_int(f)) for k, p in enumerate(run)
+                  for f in [(p.get("head") or {}).get("folio") or ""] if f and not f.isdigit()]
+        nc = _norm_head(ch)
+        texts = set()
+        for p in run:
+            hd = p.get("head") or {}
+            f = _norm_head(hd.get("folio") or "")
+            t = _norm_head(hd.get("text") or "")
+            if t:      # drop the folio token and every copy of the group's title: what is left is foreign text
+                texts.add(t.replace(nc, "").replace(f, "") if f else t.replace(nc, ""))
+        if ch and folios and all(f for _, f in folios) and all(t == "" for t in texts):
+            start_of[n] = folios[0][1] - folios[0][0]  # type: ignore[operator]
+    for n in range(len(runs) - 2, -1, -1):          # headless run right before a front group (Foreword)
+        run = runs[n]
+        if n in start_of or n + 1 not in start_of or any(p.get("head") for p in run):
+            continue
+        lead = next((b for b in run[0]["blocks"] if b.get("role") not in ("caption", "figure")), None)
+        nxt = start_of[n + 1]
+        if (lead and lead.get("role") == "heading" and int(lead.get("level") or 2) <= 1
+                and _norm_head(lead.get("text") or "") == _norm_head(run[0].get("chapter") or "")
+                and nxt is not None and nxt - len(run) >= 1):
+            start_of[n] = nxt - len(run)
+    fronts: dict[int, dict] = {}
+    for n, st in start_of.items():
+        for k, p in enumerate(runs[n]):
+            fronts[p["page"]] = {"title": runs[n][0].get("chapter") or "", "first": k == 0, "start": st}
+    after: dict[int, int] = {}
+    for k, p in enumerate(pages[:-1]):
+        if p["page"] in fronts and pages[k + 1]["page"] not in fronts:
+            rest = pages[k + 1:]
+            start = 1
+            for m, q in enumerate(rest):
+                if q["page"] in fronts:
+                    break
+                f = ((q.get("head") or {}).get("folio") or "")
+                if f.isdigit():
+                    start = max(1, int(f) - m)
+                    break
+            after[rest[0]["page"]] = start
+    return fronts, after
+
+
+def front_section(doc, meta: BookMeta, title: str, start: int | None) -> None:
+    """New page and section for a front-matter group: roman folios, no head on its first page, then
+    "folio  title" / "title  folio" mirrored (the source's own running head, not the body's)."""
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    _set_page_numbering(sec, "lowerRoman", start)
+    sec.different_first_page_header_footer = True
+    for hf in (sec.first_page_header, sec.first_page_footer):
+        hf.is_linked_to_previous = False
+        for par in hf.paragraphs:
+            for r in list(par.runs):
+                r._r.getparent().remove(r._r)
+    _running_top_header(sec, meta, doc, even_txt=title, odd_txt=title)
+    _section_cols(sec, 1)
+    _COLS["n"] = 1
+
+
+def front_first_section(doc, meta: BookMeta, title: str, start: int | None) -> None:
+    """The document's own first section is the first front group: same settings as front_section."""
+    sec = doc.sections[-1]
+    _set_page_numbering(sec, "lowerRoman", start)
+    sec.different_first_page_header_footer = True
+    _running_top_header(sec, meta, doc, even_txt=title, odd_txt=title)
+
+
+def body_section(doc, meta: BookMeta, start: int) -> None:
+    """Back to the book's body numbering (arabic, printed folio) and running head after front matter."""
+    sec = doc.add_section(WD_SECTION.NEW_PAGE)
+    _set_page_numbering(sec, "decimal", start)
+    sec.different_first_page_header_footer = False
+    set_header_footer(sec, meta, doc)
+    _section_cols(sec, 1)
+    _COLS["n"] = 1
+
+
 def start_folio_section(doc: Any, meta: BookMeta) -> None:
     """New page and section where the source starts printing footers; numbering continues."""
     sec = doc.add_section(WD_SECTION.NEW_PAGE)
@@ -614,7 +738,50 @@ def start_folio_section(doc: Any, meta: BookMeta) -> None:
     set_header_footer(sec, meta, doc)
 
 
+def _running_top_header(sec, meta: BookMeta, doc: Any, even_txt: str | None = None,
+                        odd_txt: str | None = None) -> None:
+    """Running head at the page top, odd/even mirrored, no footer (a source whose furniture is "top").
+
+    Even page: folio, em space, running text, flush left.  Odd page: running text, em space,
+    folio, flush right.  The first page of the document carries none (titlePg, empty first header)."""
+    doc.settings.odd_and_even_pages_header_footer = True
+    size = PROFILE.header_size
+    if even_txt is None:
+        even_txt = PROFILE.running_even or meta.running_right
+    if odd_txt is None:
+        odd_txt = PROFILE.running_odd or meta.running_left
+    for hd, even in ((sec.even_page_header, True), (sec.header, False)):
+        hd.is_linked_to_previous = False
+        hp = hd.paragraphs[0]
+        for r in list(hp.runs):
+            r._r.getparent().remove(r._r)
+        _clear_style_tabs(hp)
+        hp.alignment = WD_ALIGN_PARAGRAPH.LEFT if even else WD_ALIGN_PARAGRAPH.RIGHT
+        txt = re.sub(r"</?i>", "", even_txt if even else odd_txt)
+
+        def text(s: str, hp=hp):
+            r = hp.add_run(s)
+            r.font.name, r.font.size = BODY_FONT, Pt(size)
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), CJK_FONT)
+            if _CJK.search(s):
+                r._element.rPr.rFonts.set(qn('w:hint'), 'eastAsia')
+        fsize = PROFILE.footer_size   # folio digits: bold, own size (profile.footer_size for a top-running source)
+        if even:
+            _page_field(hp, fsize, bold=True)
+            text("\N{EM SPACE}\N{EM SPACE}" + txt)
+        else:
+            text(txt + "\N{EM SPACE}\N{EM SPACE}")
+            _page_field(hp, fsize, bold=True)
+    for ft in (sec.footer, sec.even_page_footer):
+        ft.is_linked_to_previous = False
+        for r in list(ft.paragraphs[0].runs):
+            r._r.getparent().remove(r._r)
+
+
 def set_header_footer(sec, meta: BookMeta, doc: Any = None):
+    if PROFILE.footer_style == "running_top" and doc is not None:
+        _running_top_header(sec, meta, doc)
+        return
     if PROFILE.footer_style == "folio" and doc is not None:
         sec.header.is_linked_to_previous = False
         sec.header.paragraphs[0].text = ''
@@ -685,12 +852,35 @@ def para(doc, text='', size=10.5, bold=False, italic=False, align=None, first=0.
     return p
 
 
+def _ends_page(par) -> bool:
+    return any(br.get(qn("w:type")) == "page" for br in par._element.iter(qn("w:br")))
+
+
+def _breaks_to_before(doc: Any) -> int:
+    """Turn every empty page-break paragraph into page_break_before on the paragraph after it.
+    An empty break paragraph that lands on a new page (the page above it is full) breaks again and
+    leaves a blank page; page_break_before cannot."""
+    n = 0
+    for par in list(doc.paragraphs):
+        el = par._element
+        if par.text.strip() or not _ends_page(par) or el.find(".//" + qn("w:sectPr")) is not None:
+            continue
+        if el.find(".//" + qn("w:drawing")) is not None:
+            continue
+        nxt = el.getnext()
+        if nxt is None or nxt.tag != qn("w:p"):
+            continue
+        from docx.text.paragraph import Paragraph
+        Paragraph(nxt, par._parent).paragraph_format.page_break_before = True
+        el.getparent().remove(el)
+        n += 1
+    return n
+
+
 def page_break(doc) -> None:
     """Start a new page without creating an empty page after a page break."""
-    if doc.paragraphs:
-        last = doc.paragraphs[-1]._element
-        if any(br.get(qn("w:type")) == "page" for br in last.iter(qn("w:br"))):
-            return
+    if doc.paragraphs and _ends_page(doc.paragraphs[-1]):
+        return
     doc.add_page_break()
 
 
@@ -708,13 +898,13 @@ def define_heading_styles(doc: Any, profile: Any = None) -> None:
     second, without re-typesetting the book.
     """
     prof = profile or PROFILE
-    for level in (1, 2, 3, 4):
+    for level in range(1, MAX_HEADING_LEVEL + 1):
         cfg = prof.heading_style(level)
         st = doc.styles[f"Heading {level}"]
         st.base_style = doc.styles["Normal"]
         st.next_paragraph_style = doc.styles["Normal"]
         font = st.font
-        font.name = BODY_FONT
+        font.name = prof.heading_font or BODY_FONT
         font.size = Pt(round(cfg["size"] * prof.body_size / 10.5, 2))
         font.bold = bool(cfg["bold"])
         font.italic = bool(cfg["italic"])
@@ -890,15 +1080,26 @@ def spara(doc, text: str, style: str, genera=None, color=None, invert=False, **o
     return p
 
 
+def _set_run_font(p, name: str | None) -> None:
+    """Latin font of every run of `p` (add_runs writes BODY_FONT on each run, which would beat the style)."""
+    if not name:
+        return
+    for r in p.runs:
+        r.font.name = name
+
+
 def heading(doc, text, level, genera, chapter_start=False):
     """A heading paragraph: style reference only, all looks live in the style."""
     p = doc.add_paragraph(style=f"Heading {level}")
     add_runs(p, text, None, None, None, None, genera)
+    _set_run_font(p, PROFILE.heading_font)
     if PROFILE.lang_east_asia.lower().startswith("zh"):
         _suppress_hyphenation(p)
-    if chapter_start:
+    prev = doc.paragraphs[-2] if len(doc.paragraphs) > 1 else None
+    if chapter_start and not (prev is not None and _ends_page(prev)):
         # A separate page-break paragraph at the bottom of a full page creates
         # an empty page.  page_break_before on the heading itself cannot.
+        # (After a page-break paragraph the heading is already on a new page.)
         p.paragraph_format.page_break_before = True
     return p
 
@@ -1342,10 +1543,10 @@ def key_table(doc, rows: list[tuple[str, str, str]], genera, header: bool) -> No
         mar.append(e)
     tblPr.append(mar)
     widths = (KEY_MARK_MM, TEXT_W - KEY_MARK_MM - KEY_TARGET_MM, KEY_TARGET_MM)
-    for ci, w in enumerate(widths):
-        table.columns[ci].width = Mm(w)  # w:gridCol: LibreOffice lays out by the grid
+    for ci, wd in enumerate(widths):
+        table.columns[ci].width = Mm(wd)  # w:gridCol: LibreOffice lays out by the grid
         for cell in table.columns[ci].cells:
-            cell.width = Mm(w)
+            cell.width = Mm(wd)
     aligns = (WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT)
     all_rows = ([tuple(heads)] if use_header else []) + list(rows)
     for ri, (a, b, c) in enumerate(all_rows):
@@ -1475,6 +1676,7 @@ def caption(doc, text, genera):
     # keep_together (a caption split over a page break reads as two unrelated
     # fragments) lives in the Caption style.
     p = spara(doc, text, "Caption", genera=genera)
+    _set_run_font(p, PROFILE.caption_font)
     _suppress_hyphenation(p)
     return p
 
@@ -1599,7 +1801,8 @@ def chapter_title(page: dict, meta: BookMeta) -> str:
 
 
 def _is_index_chapter(chapter: str, meta: BookMeta) -> bool:
-    return chapter == meta.index_chapter or (not meta.index_chapter and "index" in chapter.lower())
+    # An empty chapter (front matter, issue #71) is never the index, even when index_chapter is unset.
+    return bool(chapter) and (chapter == meta.index_chapter or (not meta.index_chapter and "index" in chapter.lower()))
 
 
 KEY_REPAIRS: dict[str, int] = {}
@@ -1653,10 +1856,18 @@ from .keyfix import is_key_page  # noqa: E402
 _CONTENTS_LINE = re.compile(r"^(?P<title>.*?\S)\s*(?:(?:\.\s*){2,}|…+)\s*(?P<page>[\dIVXLCivxlc]+)$")
 
 
-def contents_lines(doc, text: str, genera, meta: BookMeta) -> None:
+def contents_lines(doc, text: str, genera, meta: BookMeta, entries: list[dict] | None = None) -> None:
     """Source contents lines ("Género Syllis ..... 336"): title, dot leader,
     page number flush right.  Without this the builder silently dropped the
-    contents of a source-only book (Fauna Ibérica 21, pp. 6-7)."""
+    contents of a source-only book (Fauna Ibérica 21, pp. 6-7).
+    `entries` (from the structure JSON, one per line) carry level, number, bold, part and the
+    author lines printed above a chapter entry (Handbook of Zoology)."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if entries and len(entries) == len(lines):
+        begin_contents_columns(doc)
+        for e, line in zip(entries, lines):
+            contents_entry(doc, e, line, genera)
+        return
     for line in text.splitlines():
         line = line.strip()
         if not line:
@@ -1671,10 +1882,170 @@ def contents_lines(doc, text: str, genera, meta: BookMeta) -> None:
             add_runs(p, m.group("page"), _sz(10))
 
 
+def render_toc_entry(doc, b: dict, text: str, genera) -> None:
+    """Offline contents line (ingest-native role toc_entry): title, dot leader, page number flush right.
+    Indent follows the entry level read from the source contents."""
+    level = max(0, int(b.get("toc_level") or 0))
+    p = para(doc, "", size=10, left=5.0 * min(level, 3), after=0.5, line=1.0)
+    # the page number is flush with the right edge of the column the line sits in (two-column contents)
+    p.paragraph_format.tab_stops.add_tab_stop(Mm(column_text_w()), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+    add_runs(p, text, _sz(10), genera=genera)
+    page = str(b.get("printed") or "").strip()
+    if page:
+        p.add_run("\t")
+        add_runs(p, page, _sz(10))
+
+
+def render_toc_author(doc, text: str, genera) -> None:
+    """Author line printed above a contents entry (role toc_author): roman, kept with its entry."""
+    para(doc, text, size=10, before=6, after=0, line=1.0, keep=True, genera=genera)
+
+
+FRONT_TITLE_PT = 22.0         # Handbook of Zoology: "Contents" and author-list titles, DGMetaScience-Bold 22 pt
+_TOC_COLS: list[bool] = []    # set while the two-column contents section is open
+
+
+def _section_cols(sec, n: int) -> None:
+    cols = sec._sectPr.xpath('./w:cols')
+    if not cols:
+        c = OxmlElement('w:cols')
+        sec._sectPr.append(c)
+        cols = [c]
+    cols[0].set(qn('w:num'), str(n))
+    cols[0].set(qn('w:space'), str(round(PROFILE.column_gap_mm * 56.7)))   # 7.5 mm = 425 twips, as the Handbook contents
+
+
+_COLS = {"n": 1, "wide_ref": 0.0}   # body column state: current section's column count, widest source block (pt)
+
+
+def _y0(b: dict) -> float:
+    """Top of a block on its source page: the flat `y0`, else `src.bbox` (aligned/2 has only the latter)."""
+    if b.get("y0") is not None:
+        return b["y0"]
+    bb = (b.get("src") or {}).get("bbox")
+    return bb[1] if bb else 999
+
+
+def _bbox_w(b: dict) -> float:
+    bb = (b.get("src") or {}).get("bbox")
+    return (bb[2] - bb[0]) if bb else 0.0
+
+
+def ensure_columns(doc, n: int) -> None:
+    """Switch the running body to `n` columns with a continuous section break (no-op when already so)."""
+    if _COLS["n"] == n:
+        return
+    sec = doc.add_section(WD_SECTION.CONTINUOUS)
+    sec.different_first_page_header_footer = False
+    _section_cols(sec, n)
+    _COLS["n"] = n
+
+
+def _is_wide(b: dict) -> bool:
+    """A caption (and its figure) spanning most of the page's widest block sets full width."""
+    ref = _COLS["wide_ref"]
+    return bool(ref) and _bbox_w(b) >= 0.75 * ref
+
+
+def column_text_w() -> float:
+    n = _COLS["n"]
+    return TEXT_W if n <= 1 else (TEXT_W - PROFILE.column_gap_mm * (n - 1)) / n
+
+
+def begin_contents_columns(doc) -> None:
+    """Contents entries run in two columns below a full-width "Contents" title (Handbook)."""
+    if _TOC_COLS:
+        return
+    sec = doc.add_section(WD_SECTION.CONTINUOUS)
+    _set_folio_start(sec, 1)
+    _section_cols(sec, 2)
+    _TOC_COLS.append(True)
+
+
+def end_contents_columns(doc, meta: BookMeta, folio_here: bool) -> None:
+    """Close the two-column contents section; the next page starts single-column."""
+    _TOC_COLS.clear()
+    if folio_here:
+        start_folio_section(doc, meta)
+    else:
+        sec = doc.add_section(WD_SECTION.NEW_PAGE)
+        _set_folio_start(sec, 1)
+    _section_cols(doc.sections[-1], 1)
+
+
+def _plain_run(p, text: str, size: float, bold: bool) -> None:
+    """A run kept verbatim (add_runs folds tabs and edge spaces)."""
+    r = p.add_run(text)
+    r.font.size = Pt(_sz(size))
+    r.bold = bold
+
+
+def author_block(doc, role: str, text: str, genera) -> None:
+    """List of contributing authors, set like the Handbook: two columns; the name bold; each
+    address line on its own printed line (the source never runs them together)."""
+    begin_contents_columns(doc)
+    if role == "entry":
+        para(doc, text, size=8.5, bold=True, before=7, after=0, line=1.0, keep=True,
+             align=WD_ALIGN_PARAGRAPH.LEFT, genera=genera)
+        return
+    lines = [s.strip() for s in text.splitlines() if s.strip()]
+    for i, s in enumerate(lines):
+        para(doc, s, size=8.5, after=0, line=1.0, keep=i < len(lines) - 1,
+             align=WD_ALIGN_PARAGRAPH.LEFT, genera=genera)
+
+
+def contents_entry(doc, e: dict, line: str, genera) -> None:
+    """One structured contents entry, set like the Handbook of Zoology contents: part heading;
+    roman author line(s) above a chapter; number in a fixed hanging column (all levels share it,
+    no indent per level); title, a dash and the bold page number run on inline.  Chapters and
+    Preface are bold."""
+    if e.get("part"):
+        para(doc, line, size=12, bold=True, before=10, after=4, keep=True)
+        return
+    hang = 13.0
+    num = e.get("number")
+    m = _CONTENTS_LINE.match(line)
+    title, page = (m.group("title"), m.group("page")) if m else (line, None)
+    if num and title.startswith(num):
+        title = title[len(num):].lstrip(" .")
+    bold = bool(e.get("bold"))
+    level = int(e.get("level") or 1)
+    flush = not num and level <= 1          # Preface, List of contributing authors
+    left = 0.0 if flush else hang
+    for i, a in enumerate(e.get("authors") or []):
+        para(doc, a, size=9.5, before=8 if i == 0 else 0, after=0, line=1.0, keep=True, genera=genera)
+    p = para(doc, "", size=9.5, left=left, after=0.5, line=1.0, align=WD_ALIGN_PARAGRAPH.LEFT,
+             before=8 if flush else (3 if bold and not e.get("authors") else 0))
+    if num:
+        p.paragraph_format.first_line_indent = Mm(-hang)
+        p.paragraph_format.tab_stops.add_tab_stop(Mm(hang), WD_TAB_ALIGNMENT.LEFT)
+        _plain_run(p, num + "\t", 9.5, bold)
+    add_runs(p, title, _sz(9.5), bold=bold, genera=genera)
+    if page:
+        _plain_run(p, " \u2014\u2014 ", 9.5, False)
+        add_runs(p, page, _sz(9.5), bold=True)
+
+
+def _starts_new_page(p: dict, prev_kind: Any, prev_ch: Any) -> bool:
+    """A source page that opens a new part (Foreword, Contents, List of contributing authors, a chapter)
+    starts a new output page: its kind changed from the previous page's, or its chapter changed and the
+    page opens with a level-1 heading."""
+    if p.get("kind") != prev_kind:
+        return True
+    lead = next((b for b in p["blocks"] if b.get("role") not in ("caption", "figure")), None)
+    return bool(lead and lead.get("role") == "heading" and int(lead.get("level") or 2) <= 1
+                and p.get("chapter") != prev_ch)
+
+
 def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Path,
                 key_breaks: set[str] | None = None):
     current_chapter = None
     rendered_any = prev_own = False
+    prev_kind = prev_ch = None
+    fronts, body_after = front_groups(data["pages"])
+    _COLS["n"], _COLS["wide_ref"] = 1, 0.0
+    if PROFILE.columns > 1:
+        _COLS["wide_ref"] = max((_bbox_w(b) for q in data["pages"] for b in q["blocks"]), default=0.0)
     for p in iter_pages(data, meta):
         if meta.skip_after_page is not None and p["page"] >= meta.skip_after_page:
             continue
@@ -1688,11 +2059,22 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             rendered_any, prev_own = False, False
         img_page = p["page"] in meta.image_pages
         own = p["page"] in meta.own_pages or img_page
-        if rendered_any and meta.folio_first_page > 1 and p["page"] == meta.folio_first_page:
+        folio_here = rendered_any and meta.folio_first_page > 1 and p["page"] == meta.folio_first_page
+        if _TOC_COLS and not any(b.get("author") or b.get("role") == "index" and b.get("entries")
+                                 for b in p["blocks"]):
+            end_contents_columns(doc, meta, folio_here)
+        elif folio_here:
             start_folio_section(doc, meta)
-        elif rendered_any and (own or prev_own):
+        elif not rendered_any and p["page"] in fronts:
+            front_first_section(doc, meta, fronts[p["page"]]["title"], fronts[p["page"]]["start"])
+        elif rendered_any and p["page"] in fronts and fronts[p["page"]]["first"]:
+            front_section(doc, meta, fronts[p["page"]]["title"], fronts[p["page"]]["start"])
+        elif rendered_any and p["page"] in body_after:
+            body_section(doc, meta, body_after[p["page"]])
+        elif rendered_any and (own or prev_own or _starts_new_page(p, prev_kind, prev_ch)):
             page_break(doc)
         prev_own, rendered_any = own, True
+        prev_kind, prev_ch = p.get("kind"), p.get("chapter")
         if img_page:
             scan = figs_dir / "source_pages" / f"p{p['page']:04d}.png"
             if scan.is_file():
@@ -1707,7 +2089,9 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
         first_page = ch != current_chapter
         synthetic_heading = False
         pending_heading = None
-        if first_page:
+        if first_page and not ch:   # front matter: no chapter heading, the page is set line by line
+            current_chapter = ch
+        elif first_page:
             current_chapter = ch
             source_title = chapter_title(p, meta)
             title = meta.display(ch, source_title)
@@ -1728,12 +2112,14 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                         pending_heading = id(candidate)
                         break
                 if pending_heading is None and meta.chapter_headings:
+                    if PROFILE.columns > 1:
+                        ensure_columns(doc, 1)
                     heading(doc, title, 1, genera, chapter_start=True)
                     synthetic_heading = True
         page_figs = figs.get(p["page"], [])
         caps = [b for b in p["blocks"] if b["role"] == "caption"]
-        first_y = min([b.get("y0", 999) for b in p["blocks"] if b["role"] != "caption"], default=999)
-        cap_first = any(b.get("y0", 999) < first_y for b in caps)
+        first_y = min([_y0(b) for b in p["blocks"] if b["role"] not in ("caption", "figure")], default=999)
+        cap_first = any(_y0(b) < first_y for b in caps)
         placed: set[int] = set()
         if cap_first:
             for b in caps:
@@ -1748,13 +2134,36 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
             if role not in ("key", "index"):
                 _KEY_STATE["open"] = False
             if pending_heading is not None and id(b) == pending_heading:
-                heading(doc, title, 1, genera, chapter_start=True)
+                # a byline set above the chapter title opens the new page with it
+                before = p["blocks"][:p["blocks"].index(b)]
+                lead = doc.paragraphs[n_before:]
+                if before and lead and all(x.get("role") == "entry" for x in before):
+                    if not (n_before and _ends_page(doc.paragraphs[n_before - 1])):
+                        lead[0].paragraph_format.page_break_before = True
+                    for lp in lead:
+                        lp.paragraph_format.keep_with_next = True
+                    heading(doc, title, 1, genera)
+                else:
+                    heading(doc, title, 1, genera, chapter_start=True)
                 synthetic_heading = True
                 prev_body = None
                 continue
             if role == "caption":
                 if id(b) not in placed:
                     place_figure(doc, b, page_figs, genera, figs_dir=figs_dir)
+                prev_body = None
+                continue
+            if role == "figure":
+                render_figure_block(doc, b, page_figs, figs_dir)
+                prev_body = None
+                continue
+            if role in ("toc_entry", "toc_author"):
+                if PROFILE.columns > 1:
+                    ensure_columns(doc, PROFILE.columns)
+                if text and role == "toc_entry":
+                    render_toc_entry(doc, b, text, genera)
+                elif text:
+                    render_toc_author(doc, text, genera)
                 prev_body = None
                 continue
             if role == "figure_group":
@@ -1767,6 +2176,21 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 continue
             if not text:
                 continue
+            if b.get("author"):
+                author_block(doc, role, text, genera)
+                prev_body = None
+                continue
+            if b.get("front_title"):    # source "Contents" / author-list title: 22 pt bold, no running head
+                if _TOC_COLS:           # the title runs full width above the two columns, as in the source
+                    _TOC_COLS.clear()
+                    sec = doc.add_section(WD_SECTION.CONTINUOUS)
+                    _set_folio_start(sec, 1)
+                    _section_cols(sec, 1)
+                hp = heading(doc, text, 2, genera)
+                for run in hp.runs:
+                    run.font.size = Pt(FRONT_TITLE_PT)
+                prev_body = None
+                continue
             if p["page"] in meta.front_pages and role in ("body", "heading", "note", "citation"):
                 from .frontmatter import front_block
                 front_block(doc, p["page"], b, text, genera, {
@@ -1778,6 +2202,9 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 continue
             if p["kind"] == "index" and text.upper().startswith("ALPHABETICAL INDEX"):
                 continue
+            if PROFILE.columns > 1 and role != "caption":
+                lv = b.get("level") or 2
+                ensure_columns(doc, 1 if role == "heading" and int(lv) <= 2 else PROFILE.columns)
             if role in {"heading", "body"}:
                 ack = re.match(r'^(Acknowledg(?:e)?ments)\b[\s.:\-—]*(.*)$',
                                text, re.I | re.S)
@@ -1809,7 +2236,7 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                     if PROFILE.heading_levels == "taxon":
                         from .headings import taxon_level
                         level = taxon_level(text, level)
-                    level = min(level, 4 if PROFILE.heading_levels == "taxon" else 3)
+                    level = max(1, min(level, MAX_HEADING_LEVEL))   # Heading 1..6 are defined (define_heading_styles)
                     from .headings import toc_title
                     TOC_ROWS.append((level, toc_title(text)))
                     heading(doc, text, level, genera,
@@ -1866,10 +2293,19 @@ def render_body(doc, data, genera, figs, page_map, meta: BookMeta, figs_dir: Pat
                 prev_body = None
             elif role == "index":
                 if meta.contents_in_place:
-                    contents_lines(doc, text, genera, meta)
+                    contents_lines(doc, text, genera, meta, b.get("entries"))
                 continue
             prev_body = prev_body if role == "body" else None
         key_flush(doc, genera)
+        for f in page_figs:   # a source figure without a caption is still a figure of the page
+            if not f.get("_placed") and not f.get("source_label"):
+                if PROFILE.columns > 1:
+                    ensure_columns(doc, PROFILE.columns)
+                path = figs_dir / f["crop"]
+                if path.exists():
+                    image_para(doc, path, max_w=column_text_w(), max_h=PAGE_H - 60) if PROFILE.columns > 1 \
+                        else image_para(doc, path)
+                    f["_placed"] = True
         if p["page"] in meta.centered_pages:
             for par in doc.paragraphs[n_before:]:
                 pf = par.paragraph_format
@@ -2007,6 +2443,25 @@ def join_texts(a: str, b: str) -> str:
     return a + ' ' + b
 
 
+def render_figure_block(doc, b: dict, page_figs: list[dict], figs_dir: Path) -> bool:
+    """Print a role=figure block (ingest-native) that has no caption block of its own; a figure whose
+    caption is on the page is placed by place_figure together with that caption.  Returns True when
+    an image was set."""
+    if b.get("caption_block_id"):
+        return False
+    name = Path(b.get("crop") or "").name
+    fig = next((f for f in page_figs if Path(f["crop"]).name == name and not f.get("_placed")), None)
+    if fig is None or not (figs_dir / fig["crop"]).exists():
+        return False
+    if PROFILE.columns > 1:
+        ensure_columns(doc, PROFILE.columns)
+        image_para(doc, figs_dir / fig["crop"], max_w=column_text_w(), max_h=PAGE_H - 60)
+    else:
+        image_para(doc, figs_dir / fig["crop"])
+    fig["_placed"] = True
+    return True
+
+
 def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
     # Never fall back to the Spanish source here: the English edition must
     # omit an untranslated caption rather than print source-language text.
@@ -2018,19 +2473,28 @@ def place_figure(doc, cap_block, page_figs, genera, figs_dir: Path):
     if m:
         label = m.group(1).replace('’', '′')
     fig = None
-    for f in page_figs:
-        if label and f['source_label'].replace('’', '′') == label:
-            fig = f
-            break
-    if fig is None:
-        # no label match: the first figure of the page not yet placed (never reuse one)
-        fig = next((f for f in page_figs if not f.get('_placed')), None)
+    fid = cap_block.get('figure_id')
+    if fid:   # ingest-native paired this caption with a figure block: use that crop, never guess
+        fig = next((f for f in page_figs if Path(f['crop']).name == Path(fid).name), None)
+    else:
+        for f in page_figs:
+            if label and f['source_label'].replace('’', '′') == label:
+                fig = f
+                break
+        if fig is None:
+            # no label match: the first figure of the page not yet placed (never reuse one)
+            fig = next((f for f in page_figs if not f.get('_placed')), None)
     if fig is not None:
         fig['_placed'] = True
+    if PROFILE.columns > 1:
+        ensure_columns(doc, 1 if _is_wide(cap_block) else PROFILE.columns)
     if fig:
         path = figs_dir / fig['crop']
         if path.exists():
-            image_para(doc, path)
+            if PROFILE.columns > 1:
+                image_para(doc, path, max_w=column_text_w(), max_h=PAGE_H - 60)
+            else:
+                image_para(doc, path)
     if text:
         caption(doc, text, genera)
 
@@ -2240,15 +2704,28 @@ def _fld(par, kind: str | None = None, instr: str | None = None, first: bool = F
         r = OxmlElement("w:r")
         (par._p.insert(1 if par._p.pPr is not None else 0, r) if first else par._p.append(r))
         return r
-    els = []
+    els: list = []
     if kind == "begin":
-        r = run(); c = OxmlElement("w:fldChar"); c.set(qn("w:fldCharType"), "begin"); r.append(c)
-        r2 = OxmlElement("w:r"); t = OxmlElement("w:instrText"); t.set(qn("xml:space"), "preserve")
-        t.text = instr; r2.append(t); r.addnext(r2)
-        r3 = OxmlElement("w:r"); c3 = OxmlElement("w:fldChar"); c3.set(qn("w:fldCharType"), "separate")
-        r3.append(c3); r2.addnext(r3)
+        r = run()
+        c = OxmlElement("w:fldChar")
+        c.set(qn("w:fldCharType"), "begin")
+        r.append(c)
+        r2 = OxmlElement("w:r")
+        t = OxmlElement("w:instrText")
+        t.set(qn("xml:space"), "preserve")
+        t.text = instr
+        r2.append(t)
+        r.addnext(r2)
+        r3 = OxmlElement("w:r")
+        c3 = OxmlElement("w:fldChar")
+        c3.set(qn("w:fldCharType"), "separate")
+        r3.append(c3)
+        r2.addnext(r3)
     elif kind == "end":
-        r = run(); c = OxmlElement("w:fldChar"); c.set(qn("w:fldCharType"), "end"); r.append(c)
+        r = run()
+        c = OxmlElement("w:fldChar")
+        c.set(qn("w:fldCharType"), "end")
+        r.append(c)
     return els
 
 
@@ -2344,6 +2821,7 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
     _set_folio_start(doc.sections[0], meta.folio_start)
     TOC_ROWS.clear()
     TOC_MARK.clear()
+    _TOC_COLS.clear()
     page_map = _CountingMap(page_map)
     front_matter(doc, data, genera, page_map, meta, paths.translation)
     render_body(doc, data, genera, figs, page_map, meta, paths.figures_dir, key_breaks)
@@ -2352,6 +2830,7 @@ def build(out_docx: Path, page_map: dict[str, int], paths: BookPaths, meta: Book
         fill_heading_contents(doc, genera, page_map)
         out_docx.with_suffix(".toc.json").write_text(
             json.dumps([[lv, tx] for lv, tx in TOC_ROWS], ensure_ascii=False), encoding="utf-8")
+    _breaks_to_before(doc)
     doc.save(str(out_docx))
     # make.py skips the page-number rebuild when nothing read the map (output would be identical)
     out_docx.with_suffix(".pagemap_reads.json").write_text(

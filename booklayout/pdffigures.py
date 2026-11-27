@@ -61,26 +61,121 @@ def _fitz() -> Any:
     return fitz
 
 
+SCAN_COVER = 0.85     # a raster covering this share of the page is the page itself (a scan), not a figure
+SCAN_MIN_WORDS = 30    # ... and a text layer this long means it is an OCR'd scan
+
+
+def _covers_page(page: Any, bbox: Sequence[float]) -> bool:
+    area = max(float(page.rect.width * page.rect.height), 1.0)
+    return (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) >= SCAN_COVER * area
+
+
+def is_scan_page(page: Any) -> bool:
+    """True for a page-sized image under a real text layer (scanned page with OCR).  A page-sized image with
+    (almost) no text is a plate and stays a figure."""
+    if not any(_covers_page(page, i["bbox"]) for i in page.get_image_info()):
+        return False
+    return len(page.get_text("words")) >= SCAN_MIN_WORDS
+
+
+BLANK_INK = 0.005      # inner-area share of dark pixels below which a page-sized image is a blank scan
+INK_GRAY = 190
+
+
+def _is_blank(page: Any) -> bool:
+    """Inner 76% of the page rendered small: nearly no ink -> an empty scanned page (borders/bleed only)."""
+    import fitz
+    pix = page.get_pixmap(dpi=40, colorspace=fitz.csGRAY)
+    w, h, s = pix.width, pix.height, pix.samples
+    mx, my = int(w * 0.12), int(h * 0.12)
+    tot = dark = 0
+    for y in range(my, h - my):
+        row = s[y * w + mx:y * w + w - mx]
+        tot += len(row)
+        dark += sum(1 for v in row if v < INK_GRAY)
+    return tot > 0 and dark / tot < BLANK_INK
+
+
 def image_placements(page: Any, vector: bool = False, min_side: float = MIN_SIDE_PT) -> list[dict[str, Any]]:
-    """Display rectangles of raster images (and optionally vector clusters)."""
+    """Display rectangles of raster images (and optionally vector clusters).
+
+    The image layers of one scan (same box, several resolutions) count once; on an OCR scan page
+    the page-sized image is the page, not a figure."""
     out: list[dict[str, Any]] = []
+    scan = is_scan_page(page) or (any(_covers_page(page, i["bbox"]) for i in page.get_image_info())
+                                  and _is_blank(page))
     for info in page.get_image_info(xrefs=True):
         x0, y0, x1, y1 = (float(v) for v in info["bbox"])
         if x1 - x0 < min_side or y1 - y0 < min_side:
             continue
-        out.append({"kind": "raster", "bbox": (x0, y0, x1, y1), "xref": int(info.get("xref") or 0),
-                    "px": (int(info.get("width", 0)), int(info.get("height", 0)))})
+        if scan and _covers_page(page, (x0, y0, x1, y1)):
+            continue
+        twin = next((o for o in out if all(abs(a - b) <= 1.0 for a, b in zip(o["bbox"], (x0, y0, x1, y1)))), None)
+        px = (int(info.get("width", 0)), int(info.get("height", 0)))
+        if twin is not None:
+            if px[0] * px[1] > twin["px"][0] * twin["px"][1]:
+                twin["px"], twin["xref"] = px, int(info.get("xref") or 0)
+            continue
+        out.append({"kind": "raster", "bbox": (x0, y0, x1, y1), "xref": int(info.get("xref") or 0), "px": px})
     if vector:
-        rects = [d["rect"] for d in page.get_drawings() if d["rect"].width > 1 or d["rect"].height > 1]
+        drawings = [d for d in page.get_drawings() if d["rect"].width > 1 or d["rect"].height > 1]
+        rects = [d["rect"] for d in drawings]
+        spans = _text_spans(page)
         for box in _cluster(rects):
             w, h = box[2] - box[0], box[3] - box[1]
             if w < min_side or h < min_side:
                 continue
             if any(_inside(box, p["bbox"]) for p in out):
                 continue
+            if _is_furniture_or_table(page, box, [d for d in drawings if _inside(tuple(d["rect"]), box)], spans):
+                continue
             out.append({"kind": "vector", "bbox": box, "xref": 0, "px": (0, 0)})
     out.sort(key=lambda p: (round(p["bbox"][1]), p["bbox"][0]))
     return out
+
+
+EDGE_BAND = 0.15      # header/footer band: fraction of the page height at top and bottom
+TABLE_TEXT_FRAC = 0.05  # text area / box area above which a ruled grid is a table, not a figure
+AXIS_FRAC = 0.9       # share of straight, axis-aligned strokes that makes a drawing a ruled grid
+TEXT_DENSE_FRAC = 0.35
+
+
+def _text_spans(page: Any) -> list[BBox]:
+    out: list[BBox] = []
+    for blk in page.get_text("dict").get("blocks", []):
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                if sp["text"].strip():
+                    out.append(tuple(float(v) for v in sp["bbox"]))  # type: ignore[arg-type]
+    return out
+
+
+def _is_furniture_or_table(page: Any, box: BBox, drawings: list[dict], spans: list[BBox]) -> bool:
+    """True for a vector cluster that is a header/footer rule, a boxed running head, a ruled table
+    or a block of text with underlines: not a figure."""
+    ph = float(page.rect.height)
+    if box[3] < EDGE_BAND * ph or box[1] > (1 - EDGE_BAND) * ph:   # lies wholly in the top/bottom band
+        return True
+    area = max((box[2] - box[0]) * (box[3] - box[1]), 1.0)
+    text = sum((min(s[2], box[2]) - max(s[0], box[0])) * (min(s[3], box[3]) - max(s[1], box[1]))
+               for s in spans if s[0] < box[2] and s[2] > box[0] and s[1] < box[3] and s[3] > box[1]
+               and _inside(s, box))
+    frac = text / area
+    if frac > TEXT_DENSE_FRAC:
+        return True
+    strokes = axis = 0
+    for d in drawings:
+        if d.get("fill") is not None:
+            return False                      # filled shapes are drawing, not a table grid
+        for it in d.get("items", []):
+            strokes += 1
+            if it[0] == "re":
+                axis += 1
+            elif it[0] == "l" and (abs(it[1].x - it[2].x) < 0.5 or abs(it[1].y - it[2].y) < 0.5):
+                axis += 1
+            elif it[0] in ("c", "qu"):
+                return False
+    return strokes >= 4 and axis / strokes >= AXIS_FRAC and frac >= TABLE_TEXT_FRAC
 
 
 def _inside(a: BBox, b: BBox, tol: float = 2.0) -> bool:

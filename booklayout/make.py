@@ -151,7 +151,7 @@ def make(args) -> int:
                "pages": args.pages, "lang": args.lang, "dict_lang": args.dict_lang,
                "translated": bool(args.translated)} if args.source_pdf else {}
     from . import buildcache
-    cur_state = {**aligned_digests(Path(args.aligned), getattr(args, "translation", None)),
+    cur_state: dict = {**aligned_digests(Path(args.aligned), getattr(args, "translation", None)),
                  "profile": _file_sha(args.profile),
                  "sc_key": _sha_bytes(json.dumps(sc_opts, sort_keys=True).encode(), _file_sha(args.accepted).encode(),
                                       _file_sha(args.metadata).encode()),
@@ -201,9 +201,16 @@ def make(args) -> int:
         stage("key-report2", lambda: _bl("key-report", "--pdf", pdf, "--out", key))
 
     qa, ck, sc = wk / "qa.json", wk / "check.json", wk / "source_check.json"
+    # layout-likeness to the source: opt-in via --likeness-config (any book; per-book values live in that file)
+    likeness_args: list = []
+    if args.source_pdf and getattr(args, "likeness_config", None):
+        likeness_args = ["--likeness-src", args.source_pdf, "--likeness-src-pages", args.pages,
+                         "--likeness-config", args.likeness_config]
+        if getattr(args, "likeness_out_pages", None):
+            likeness_args += ["--likeness-out-pages", args.likeness_out_pages]
     jobs = {
         "qa": lambda: _bl("qa", "--aligned", args.aligned, "--figures", args.figures, "--pdf", pdf,
-                          "--metadata", args.metadata, *prof, "--out", qa),
+                          "--metadata", args.metadata, *prof, *likeness_args, "--out", qa),
         "check": lambda: _bl("check", "--aligned", args.aligned, "--figures", args.figures,
                              "--pdf", pdf, "--metadata", args.metadata, "--out", ck),
         "stylecheck": lambda: _bl_mod("booklayout.stylecheck", docx),
@@ -303,6 +310,9 @@ def add_parser(sub) -> None:
     m.add_argument("--source-pdf", type=Path)
     m.add_argument("--translated", action="store_true", help="edition is a translation of --source-pdf (numbers/names check only)")
     m.add_argument("--pages", default="1-50")
+    m.add_argument("--likeness-config", type=Path,
+                   help="likeness.json: also check layout likeness to --source-pdf (columns_out etc.)")
+    m.add_argument("--likeness-out-pages", help="page range of the output PDF to compare (default all)")
     m.add_argument("--accepted", type=Path)
     m.add_argument("--lang", default=None, help="tesseract language (default spa; eng with --translated)")
     m.add_argument("--dict-lang", default=None, help="aspell dictionary (default es; en with --translated)")

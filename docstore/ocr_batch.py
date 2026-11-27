@@ -498,18 +498,32 @@ def cmd_reclassify(p: Paths, a: Any) -> None:
     log(f"reclassify: {fixed} 页由 empty_suspect 改判为 blank / no_text_local（本地判空白或本地 OCR 无字）")
 
 
+def pending_retry_keys(p: Paths) -> set[tuple[str, str]]:
+    """已 unblock 且放行之后还没再次空返回的页：正在等那一次重提，不计入停跑。
+    2026-11-27 根因：放行后 empty_audit 仍把这些页当作"有内容的空返回"计数，run 开头必停跑，放行永远无法生效（死锁）。
+    重提后若再次空返回，会产生晚于放行时间的 empty_suspect 记录，立即恢复计入停跑。"""
+    last_fail: dict[tuple[str, str], str] = {}
+    for f in read_tsv(p.failed):
+        if f["reason"].startswith("empty_suspect"):
+            k = (f["file"], f["page"])
+            last_fail[k] = max(last_fail.get(k, ""), f["time"])
+    return {k for k, t in unblocked_pages(p).items() if t > last_fail.get(k, "")}
+
+
 def empty_audit(p: Paths, threshold: int = EMPTY_AUDIT_N) -> int:
     """空返回审计：本地判定并修正空白页；仍判为有内容的页写 empty_audit.tsv。
     有内容的页数 >= threshold 时写 halt 文件停跑（不再提交），明细见 empty_audit.tsv。返回有内容的页数。"""
     results = apply_empty_judgement(p)
     content = [r for r in results if r[2] == "content"]
+    pending = pending_retry_keys(p)
+    halt_n = sum(1 for rel, n, _v, _c in content if (rel, str(n)) not in pending)
     with open(p.root / "empty_audit.tsv", "w", newline="") as fh:
         cw = csv.writer(fh, delimiter="\t")
         cw.writerow(EMPTY_AUDIT_HDR)
         for rel, n, verdict, c in results:
             cw.writerow([rel, n, verdict, "" if c is None else c])
-    log(f"empty_audit: 判定 {len(results)} 页，有内容 {len(content)} 页（阈值 {threshold}）")
-    if len(content) >= threshold:
+    log(f"empty_audit: 判定 {len(results)} 页，有内容 {len(content)} 页，其中待放行重提 {len(content) - halt_n} 页（阈值 {threshold}）")
+    if halt_n >= threshold:
         # 自动诊断：对这些页跑 preflight（页尺寸、图片字节/格式、文本层、墨迹、issues），明细写 empty_diag.tsv
         by: dict[str, list[int]] = {}
         for rel, n, _v, _c in content:

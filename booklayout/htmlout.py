@@ -22,7 +22,7 @@ EMU_MM = 36000
 
 def heading_css(profile) -> str:
     rules = []
-    for level in (1, 2, 3, 4):
+    for level in range(1, 7):
         c = profile.heading_style(level)
         size = round(c["size"] * profile.body_size / 10.5, 2)
         rules.append(

@@ -57,6 +57,28 @@ def blank_pages(meta: Any, pages: list[int] | None = None) -> set[int]:
 
 # ---------- built PDF ----------
 
+def front_heads(pdf: Path, meta: Any, pages: list[int], band_bottom: float) -> list[dict[str, Any]]:
+    """Running heads printed on the leading front-matter pages (cover, title, copyright...), which
+    carry none in the source.  Front pages are own pages, so output page k is the k-th source page."""
+    import fitz
+
+    # contents pages too: the source sets them without the book running head (Handbook, 2026-11-27)
+    front = set(_get(meta, "front_pages", []) or []) | set(_get(meta, "toc_pages", []) or [])
+    start = int(_get(meta, "body_start_page", 1) or 1)
+    lead = 0
+    for p in sorted(x for x in pages if x >= start):
+        if p not in front:
+            break
+        lead += 1
+    out: list[dict[str, Any]] = []
+    with fitz.open(str(pdf)) as doc:
+        for i in range(min(lead, len(doc))):
+            words = [w[4] for w in doc[i].get_text("words") if w[3] <= band_bottom]
+            if words:
+                out.append({"page": i + 1, "kind": "running_head_on_front_page", "found": " ".join(words)[:60]})
+    return out
+
+
 def output_footers(pdf: Path, band_top: float | None = None) -> tuple[list[dict[str, Any]], int, float, float]:
     """Footer line of every page, the page count and the text block's left/right edges (pt).
 

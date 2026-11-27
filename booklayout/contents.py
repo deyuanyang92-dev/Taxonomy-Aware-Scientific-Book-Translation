@@ -8,7 +8,7 @@ if it were an output page.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
@@ -29,6 +29,7 @@ class ContentsEntry:
     level: int = 0
     source_page: str | None = None
     output_page: str | None = None
+    authors: list[str] = field(default_factory=list)   # author lines printed above the entry (Handbook)
 
 
 def parse_contents(text: str) -> tuple[list[ContentsEntry], list[str]]:
@@ -123,14 +124,21 @@ def _rows(spans: list[tuple[float, float, float, float, str]]) -> list[tuple[flo
 
 
 def _column_entries(spans: list[tuple[float, float, float, float, str]],
-                    last_level: list[int]) -> list[ContentsEntry]:
+                    last_level: list[int], carry: list[str] | None = None) -> list[ContentsEntry]:
+    """Entries of one column.  `carry`: unfinished lines from the end of the previous column, which
+    start this one (a wrapped title, or author lines above this column's first numbered entry); on
+    return it holds this column's own unfinished tail."""
     rows = _rows(spans)
+    if carry is None:
+        carry = []
     if not rows:
         return []
     right = max(r[1] for r in rows)
     entries: list[ContentsEntry] = []
-    pending: list[str] = []
-    for _x0, x1, parts in rows:
+    pending: list[str] = list(carry)
+    authors: list[str] = []           # lines above a numbered entry: its author line(s)
+    left = min(r[0] for r in rows)
+    for x0, x1, parts in rows:
         text = re.sub(r"[\x00-\x1f\x7f]+", " ", " ".join(parts)).strip()
         toks = text.split()
         if not toks:
@@ -143,25 +151,35 @@ def _column_entries(spans: list[tuple[float, float, float, float, str]],
         is_page = bool(_PAGE_ONLY.match(toks[-1])) and (own_span_page or (
             at_right and (len(toks) > 1 or bool(pending))))
         if _NUM_ONLY.match(text) and not is_page:
-            pending = [text]          # chapter number alone: new entry starts here
+            authors = pending         # chapter number alone: new entry starts here
+            pending = [text]
             continue
-        if _NUMBERING.match(text + " ") and len(toks) > 1:
-            pending = []              # numbered row: drop author/stray lines gathered above
+        # a trailing page number is not part of the row's numbering: "1866 34" is a wrapped title end
+        head = " ".join(toks[:-1]) if is_page else text
+        numbered_row = bool(_NUMBERING.match(head + " ")) and len(head.split()) > 1
+        if numbered_row:
+            authors = pending         # numbered row: what was gathered above is its author line(s)
+            pending = []
         if is_page:
             body = " ".join(toks[:-1]).strip()
             title = re.sub(r"\s+", " ", " ".join(pending + ([body] if body else []))).strip()
             pending = []
-            if not title or len(title) > 160:   # body-text/table page, not a contents line
-                continue
             m = _NUMBERING.match(title + " ")
+            if not title or len(title) > (320 if m else 160):   # body-text/table page, not a contents line
+                continue
             if m:
                 level = m.group(1).count(".")
                 last_level[0] = level
+            elif x0 <= left + ROW_TOL * 2 and last_level[0] >= 0:
+                level = 0             # flush with the number column: a top-level item (Index, Foreword)
             else:
                 level = last_level[0] + 1 if last_level[0] >= 0 else 0
-            entries.append(ContentsEntry(title=title, level=level, source_page=toks[-1]))
+            entries.append(ContentsEntry(title=title, level=level, source_page=toks[-1],
+                                         authors=authors if m else []))
+            authors = []
         else:
             pending.append(text)
+    carry[:] = [] if authors else pending   # an open numbered entry is not carried over
     return entries
 
 
@@ -178,8 +196,9 @@ def contents_from_pdf_page(page: Any) -> list[ContentsEntry]:
     """
     last_level = [-1]
     out: list[ContentsEntry] = []
+    carry: list[str] = []
     for col in _split_columns(_spans(page)):
-        out += _column_entries(col, last_level)
+        out += _column_entries(col, last_level, carry)
     return out
 
 
