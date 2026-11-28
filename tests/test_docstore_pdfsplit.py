@@ -24,6 +24,16 @@ def test_tag_keeps_cjk_and_profile_10mb():
     assert pdfsplit.load_profile("gemini-10mb")["max_bytes"] < 10_000_000
 
 
+def test_oversize_block_is_replanned(tmp_path):
+    src = tmp_path / "x.pdf"
+    _mk(src, 12)
+    out = tmp_path / "o"
+    rows = pdfsplit.split_pdf(src, out, size=None, max_bytes=3000, encode="none")
+    assert all(r["ok"] for r in rows) or all(r["pages"] == 1 for r in rows if not r["ok"])
+    assert sum(r["pages"] for r in rows) == 12
+    assert [r["block"] for r in rows] == list(range(1, len(rows) + 1))
+
+
 def test_split_cli_resume(tmp_path, capsys):
     src = tmp_path / "FAUNA IBERICA（Vol.25）.pdf"
     _mk(src, 120)

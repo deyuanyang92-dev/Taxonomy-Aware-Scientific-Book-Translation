@@ -158,13 +158,19 @@ def split_pdf(
         rel = plan_by_size(pb, budget, max_pages, rec)
     rows: list[dict] = []
     try:
-        for i, (ra, rb) in enumerate(rel, 1):
+        work = list(rel)
+        i = 0
+        while work:
+            ra, rb = work.pop(0)
+            i += 1
             a, b = a0 + ra - 1, a0 + rb - 1
             f = d / f"{tag}_B{i:02d}_p{a:03d}-{b:03d}.pdf"
             status = "written"
             if f.exists() and not overwrite:
                 try:
-                    if len(PdfReader(str(f)).pages) == b - a + 1:
+                    if len(PdfReader(str(f)).pages) == b - a + 1 and (
+                        max_bytes is None or f.stat().st_size <= max_bytes
+                    ):
                         status = "skipped"
                 except Exception:
                     pass
@@ -179,6 +185,16 @@ def split_pdf(
                     with open(f, "wb") as fh:
                         wr.write(fh)
             nbytes = f.stat().st_size
+            if max_bytes is not None and nbytes > max_bytes and b > a and pb:
+                # 估算偏小：按实测/估算比例收紧预算，重排本块页范围后重写
+                est = sum(pb[a - a0:b - a0 + 1]) + BLOCK_BASE_BYTES
+                scale = max(nbytes / est, 1.02)
+                sub = plan_by_size(pb[a - a0:b - a0 + 1], (max_bytes - BLOCK_BASE_BYTES) / scale, max_pages, rec)
+                if len(sub) > 1:
+                    f.unlink()
+                    work[:0] = [(ra + s - 1, ra + e - 1) for s, e in sub]
+                    i -= 1
+                    continue
             ok = (max_bytes is None or nbytes <= max_bytes) and (max_pages is None or b - a + 1 <= max_pages)
             rows.append({"tag": tag, "block": i, "start": a, "end": b, "pages": b - a + 1, "file": f.name,
                          "status": status, "bytes": nbytes, "target": target, "ok": ok})
