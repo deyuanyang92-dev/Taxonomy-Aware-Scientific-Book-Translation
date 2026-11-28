@@ -23,7 +23,7 @@ def volume_tag(pdf: Path) -> str:
     m = re.search(r"vol\.?\s*(\d+)", pdf.stem, re.I)
     if m:
         return f"Vol{m.group(1)}"
-    return re.sub(r"[^0-9A-Za-z_-]+", "_", pdf.stem).strip("_") or "pdf"
+    return re.sub(r"[^\w-]+", "_", pdf.stem).strip("_") or "pdf"
 
 
 def plan(total: int, size: int) -> list[tuple[int, int]]:

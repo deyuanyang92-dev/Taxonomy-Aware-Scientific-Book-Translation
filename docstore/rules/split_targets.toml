@@ -14,6 +14,14 @@ note = "Gemini API inline：PDF 50 MB/文件、1000 页；整请求 100 MB；中
 source = "https://aistudio.google.com/docs/file-input-methods ; https://aistudio.google.com/docs/document-processing"
 checked = "2026-11-26"
 
+[profiles.gemini-10mb]
+max_bytes = 9_500_000
+render_dpi = 200
+encode = "flate"
+note = "Gemini 实际处理要求每文件 < 10 MB（用户 2026-11-28 实测）；取 9.5e6 留余量；不限页数，只按体积贪心装满"
+source = "user-observed"
+checked = "2026-11-28"
+
 [profiles.gemini-api-files]
 max_bytes = 50_000_000
 max_pages = 1000

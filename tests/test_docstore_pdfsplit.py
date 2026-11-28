@@ -18,6 +18,12 @@ def test_plan_and_tag():
     assert pdfsplit.volume_tag(__import__("pathlib").Path("FAUNA IBERICA（Vol.36).pdf")) == "Vol36"
 
 
+def test_tag_keeps_cjk_and_profile_10mb():
+    from pathlib import Path
+    assert pdfsplit.volume_tag(Path("中国近海沙蚕科研究.pdf")) == "中国近海沙蚕科研究"
+    assert pdfsplit.load_profile("gemini-10mb")["max_bytes"] < 10_000_000
+
+
 def test_split_cli_resume(tmp_path, capsys):
     src = tmp_path / "FAUNA IBERICA（Vol.25）.pdf"
     _mk(src, 120)
